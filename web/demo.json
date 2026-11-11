@@ -1,0 +1,96 @@
+[
+  {
+    "title": "[가상] 유안타증권, 재산승계신탁 '가온' 출시",
+    "source": "시나리오 · 기업 뉴스",
+    "category": "증권",
+    "kind": "news",
+    "minutes_ago": 2
+  },
+  {
+    "title": "[가상] AI 유니콘을 키운다…스타트업 생태계 지원 확대",
+    "source": "시나리오 · 정책 뉴스",
+    "category": "경제",
+    "kind": "news",
+    "minutes_ago": 3
+  },
+  {
+    "title": "[가상] TSMC, 오픈 AI·엔트로픽에 10억달러 투자",
+    "source": "시나리오 · 글로벌 기업 뉴스",
+    "category": "국제",
+    "kind": "news",
+    "minutes_ago": 5
+  },
+  {
+    "title": "[가상] 중동 긴장에 유가 상승…환율과 수입 원가 함께 점검",
+    "source": "시나리오 · 국제 뉴스",
+    "category": "국제",
+    "kind": "news",
+    "minutes_ago": 12,
+    "copies": 4
+  },
+  {
+    "title": "[가상] 달러 강세가 수출 기업의 실적에 미치는 영향",
+    "source": "시나리오 · 경제분석 리포트",
+    "category": "경제",
+    "kind": "report",
+    "minutes_ago": 28
+  },
+  {
+    "title": "[가상] AI 데이터센터 투자 확대, 반도체 수요와 전력 공급은?",
+    "source": "시나리오 · 산업분석 리포트",
+    "category": "증권",
+    "kind": "report",
+    "minutes_ago": 35,
+    "copies": 2
+  },
+  {
+    "title": "[가상] 정유와 항공, 같은 유가 상승에도 다른 비용 구조",
+    "source": "시나리오 · 산업분석 리포트",
+    "category": "증권",
+    "kind": "report",
+    "minutes_ago": 48
+  },
+  {
+    "title": "[가상] 연준 금리 결정 앞두고 외국인 수급과 달러 움직임 주목",
+    "source": "시나리오 · 경제 뉴스",
+    "category": "경제",
+    "kind": "news",
+    "minutes_ago": 60,
+    "copies": 3
+  },
+  {
+    "title": "[가상] 반도체 기업, 매출 성장보다 이익 지속성 확인해야",
+    "source": "시나리오 · 기업분석 리포트",
+    "category": "증권",
+    "kind": "report",
+    "minutes_ago": 75
+  },
+  {
+    "title": "[가상] 방산 테마 관심 증가…수주 잔고와 실제 매출 구분 필요",
+    "source": "시나리오 · 증권 뉴스",
+    "category": "증권",
+    "kind": "news",
+    "minutes_ago": 83
+  },
+  {
+    "title": "[가상] 수출 규제 변화가 반도체 공급망에 주는 영향",
+    "source": "시나리오 · 국제 뉴스",
+    "category": "국제",
+    "kind": "news",
+    "minutes_ago": 99
+  },
+  {
+    "title": "[가상] 배당 확대 발표, 현금흐름으로 지속 가능성 점검",
+    "source": "시나리오 · 기업 뉴스",
+    "category": "증권",
+    "kind": "news",
+    "minutes_ago": 118
+  },
+  {
+    "title": "[가상] 로봇 관련 ETF 관심…편입 기업의 실적 비교하기",
+    "source": "시나리오 · 증권 뉴스",
+    "category": "증권",
+    "kind": "news",
+    "minutes_ago": 140
+  }
+]
