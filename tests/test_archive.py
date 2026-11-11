@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import archive
+import intelligence
 
 
 class ArchiveTest(unittest.TestCase):
@@ -56,6 +57,13 @@ class ArchiveTest(unittest.TestCase):
         archive.store([self.item('정정 제목')])
         self.assertEqual(archive.pending(),item['url'])
 
+    def test_model_reuses_archive_but_only_limits_its_own_input(self):
+        item=self.item();full='본문 원본 '*2000
+        archive.store([item]);archive.save_body(item['url'],full)
+        engine=intelligence.Engine(archive.PATH.parent/'analysis.sqlite3')
+        with patch('intelligence.read_article') as fetch:
+            self.assertEqual(engine.body(item['url']),full[:6000]);fetch.assert_not_called()
+        self.assertEqual(archive.get_body(item['url']),full)
 
 
 if __name__=='__main__':unittest.main()
