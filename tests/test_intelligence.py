@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import intelligence as ai
-from evaluate_models import evaluate_equity
+from evaluate_models import evaluate_equity, evaluate_ranking
 
 BODY = '한빛에너지는 미국 고객사와 3000억원 규모의 전력변압기 공급 계약을 체결했다고 공시했다. 계약 기간은 2027년부터 2029년까지다.'
 GATE = {'driver':'기업 실적·수주·경쟁·비용 변화','reason':'실적에 영향을 주는 계약 변화','watch_for':'공시와 실적 전망 확인','stock_relevance':'주식 판단 재료','screen_policy_version':ai.SCREEN_VERSION}
@@ -21,6 +21,45 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def test_shared_rank_service_rejects_invalid_ids_before_calling_the_model(self):
+        with patch.object(self.engine,'call') as call:
+            self.assertEqual(self.engine.rank([],{}),[])
+            self.assertRaises(ValueError,self.engine.rank,[{'event_id':'E1'},{'event_id':'E1'}],{})
+            self.assertRaises(ValueError,self.engine.rank,[{'event_id':[]}],{})
+        call.assert_not_called()
+
+    def test_ranking_evaluator_matches_case_ids_even_when_the_model_changes_order(self):
+        engine=MagicMock(model='test',provider='ollama')
+        engine.usage.side_effect=[{'calls_today':0,'output_tokens':0},{'calls_today':1,'output_tokens':120}]
+        engine.rank.return_value=[{**rank_row('E2'),'stock_relevance':'배경·상품 안내'},rank_row('E1')]
+        data={'equity_screening':[{'id':'risk','summary':'확인된 차환 발행 실패입니다.','expected':'주식 판단 재료'},
+                                  {'id':'award','summary':'매출 변화 없는 수상 소식입니다.','expected':'배경·상품 안내'}]}
+        with patch('builtins.print'):
+            report=evaluate_ranking(engine,data)
+        self.assertTrue(report['valid'])
+        self.assertEqual(report['passed'],2)
+        self.assertEqual(report['call_delta'],1)
+        self.assertEqual(report['output_tokens_delta'],120)
+        self.assertEqual([r['id'] for r in report['checks']],['risk','award'])
+        self.assertNotIn('summary',engine.rank.call_args.args[0][0])
+        self.assertEqual(report['inputs'],engine.rank.call_args.args[0])
+        engine.call.assert_not_called()
+
+    def test_ranking_evaluator_does_not_score_incomplete_or_unknown_cases_as_success(self):
+        engine=MagicMock(model='test',provider='ollama')
+        engine.usage.return_value={}
+        engine.rank.return_value=[rank_row('unknown')]
+        with patch('builtins.print'):
+            report=evaluate_ranking(engine,{'equity_screening':[{'id':'risk','summary':'확인된 차환 실패','expected':'주식 판단 재료'}]})
+        self.assertFalse(report['valid'])
+        self.assertEqual(report['passed'],0)
+        self.assertIsNone(report['checks'][0]['actual'])
+
+    def test_ranking_evaluator_rejects_invalid_expected_labels_without_model_calls(self):
+        engine=MagicMock()
+        self.assertRaises(ValueError,evaluate_ranking,engine,{'equity_screening':[{'id':'bad','summary':'평가용 본문입니다.','expected':'수혜 확정'}]})
+        engine.rank.assert_not_called()
+
     def test_source_passages_cover_the_body_and_selected_ids_restore_exact_evidence(self):
         for length in (8,240,241,247,248,480,481,6000):
             original='가'*length

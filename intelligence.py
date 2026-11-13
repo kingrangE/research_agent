@@ -434,6 +434,17 @@ class Engine:
             db.execute('INSERT OR REPLACE INTO screens VALUES(?,?)',(key,json.dumps(result,ensure_ascii=False)))
         return result
 
+    def rank(self, events, market):
+        if not events:
+            return []
+        events=[{k:e.get(k) for k in ('event_id','evidence','published_at','first_published_at')} for e in events]
+        ids=[e['event_id'] for e in events]
+        if any(not isinstance(i,str) or not i for i in ids) or len(set(ids))!=len(ids):
+            raise ValueError('순위 입력 사건 ID 오류·중복')
+        rank_schema = schema({'ranking': {'type':'array', 'minItems':len(events), 'maxItems':len(events), 'items':schema({**RANK_SCHEMA['properties']['ranking']['items']['properties'],'event_id':{'type':'string','enum':ids}})}})
+        output = self.call('rank', {'task': EQUITY_POLICY,'as_of': now(),'events': events,'market': market}, rank_schema)
+        return validate_ranking(output,set(ids))
+
     def cycle(self, articles):
         if not self.enabled:
             return {'status': 'disabled', 'message': 'LLM 미연결 · 로컬 모델과 LLM_ENABLED 설정 필요', 'events': [], 'ranking': [], 'market': {}, 'model': self.model, 'updated_at': None}
@@ -485,10 +496,7 @@ class Engine:
         rank_failed = False
         if candidates and (rank_key != self.rank_key or time.time() - self.ranked_at >= 300):
             try:
-                rank_schema = schema({'ranking': {'type':'array', 'minItems':len(events), 'maxItems':len(events), 'items':schema({**RANK_SCHEMA['properties']['ranking']['items']['properties'],'event_id':{'type':'string','enum':list(labels)}})}})
-                output = self.call('rank', {'task': EQUITY_POLICY,
-                                            'as_of': now(), 'events': events, 'market': self.last_market}, rank_schema)
-                ranking = [{**r,'event_id':labels[r['event_id']]} for r in validate_ranking(output,set(labels))]
+                ranking = [{**r,'event_id':labels[r['event_id']]} for r in self.rank(events,self.last_market)]
                 self.last_ranking, self.rank_key, self.ranked_at = ranking, rank_key, time.time()
                 self.ranked_sources = source_keys
             except Exception as error:

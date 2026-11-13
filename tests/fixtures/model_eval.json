@@ -95,6 +95,11 @@
       "expected_match": ""
     }
   ],
+  "ranking_readings": [
+    {"id": "contract", "expected": "주식 판단 재료"},
+    {"id": "earnings", "expected": "주식 판단 재료"},
+    {"id": "denial", "expected": "주식 판단 재료"}
+  ],
   "equity_screening": [
     {
       "id": "brand-redesign",
