@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import intelligence as ai
+from evaluate_models import evaluate_equity
 
 BODY = '한빛에너지는 미국 고객사와 3000억원 규모의 전력변압기 공급 계약을 체결했다고 공시했다. 계약 기간은 2027년부터 2029년까지다.'
 GATE = {'driver':'기업 실적·수주·경쟁·비용 변화','reason':'실적에 영향을 주는 계약 변화','watch_for':'공시와 실적 전망 확인','stock_relevance':'주식 판단 재료'}
@@ -20,11 +21,15 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+
+
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        patcher=patch.dict(os.environ,{'LLM_ENABLED':'1','LLM_PROVIDER':'ollama','LLM_MODEL':'test-7b','LLM_DAILY_CALL_LIMIT':'2'})
+        patcher=patch.dict(os.environ,{'LLM_ENABLED':'1','LLM_PROVIDER':'ollama','LLM_MODEL':'test-7b','LLM_DAILY_CALL_LIMIT':'2','OLLAMA_URL':'http://127.0.0.1:11434'})
         patcher.start();self.addCleanup(patcher.stop)
+        clock=patch('intelligence.now',return_value='2026-11-11T12:00:00+00:00');clock.start();self.addCleanup(clock.stop)
         self.engine=ai.Engine(Path(self.temp.name)/'test.sqlite3')
 
     def test_parser_only_reads_public_article_and_ignores_scripts(self):
@@ -63,12 +68,45 @@ class IntelligenceTest(unittest.TestCase):
         with patch.object(other,'body',return_value=BODY+' 정정 사항 추가.'),patch.object(other,'call',return_value=copy.deepcopy(READING)) as call:
             other.reading(ARTICLE,[]);call.assert_called_once()
 
+    def test_body_mentions_are_proven_by_body_and_old_body_is_not_reused_for_new_headline(self):
+        body='한빛에너지는 공급 계약을 체결했다. 엔비디아는 본문에만 언급됐다.'
+        mentions=ai.entity_mentions(body,['엔비디아','가짜기업'])
+        self.assertEqual([m['name'] for m in mentions],['엔비디아'])
+        self.assertIn(mentions[0]['evidence'],body)
+        stale={'text':BODY,'fingerprint':'old','observed_at':'2026-11-11T00:00:00Z','status':'pending','title':ARTICLE['title']}
+        with patch('intelligence.archive.body_snapshot',return_value=stale),patch.object(self.engine,'body') as read,patch.object(self.engine,'call') as call:
+            self.assertIsNone(self.engine.reading(ARTICLE,[]))
+            read.assert_not_called();call.assert_not_called()
+        stale.update(status='ok',title='이전 계약 체결')
+        with patch('intelligence.archive.body_snapshot',return_value=stale),patch.object(self.engine,'call') as call:
+            self.assertIsNone(self.engine.reading(ARTICLE,[]));call.assert_not_called()
+
+    def test_cancellation_and_certainty_updates_cannot_merge_into_old_contract(self):
+        anchors=[{'event_id':'old','certainty':'확정','event_title':'공급 계약 체결','event_type':'계약','summary':'계약 체결'}]
+        cancel={**READING,'match_event_id':'old','event_title':'공급 계약 취소','event_type':'계약 취소'}
+        self.assertEqual(ai.separate_event_update(cancel,anchors)['match_event_id'],'')
+        self.assertEqual(ai.separate_event_update({**READING,'match_event_id':'old','certainty':'부인'},anchors)['match_event_id'],'')
+        self.assertEqual(ai.separate_event_update({**READING,'match_event_id':'old'},anchors)['match_event_id'],'old')
+
+    def test_old_undated_and_future_events_are_context_only(self):
+        as_of=ai.analysis_store.epoch('2026-11-11T12:00:00Z')
+        for date,state in [('2026-11-11T11:00:00Z','current'),('2026-11-10T10:00:00Z','current'),
+                           ('2026-11-10T09:59:00Z','old'),(None,'unknown'),('2026-11-11T12:01:00Z','future')]:
+            self.assertEqual(ai.event_recency(date,as_of),state)
+        old={**READING,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],'published_at':'2026-10-01T00:00:00Z'}
+        with patch.object(self.engine,'reading',return_value=old),patch.object(self.engine,'screen',return_value=GATE),patch.object(self.engine,'call') as call,patch('intelligence.market_snapshot') as market:
+            result=self.engine.cycle([{**ARTICLE,'published_at':old['published_at']}])
+        self.assertEqual(result['ranking'],[])
+        self.assertEqual(result['events'][0]['recency_status'],'old')
+        self.assertEqual(result['assessments'][0]['stock_relevance'],'주식 판단 재료')
+        market.assert_not_called();call.assert_not_called()
+
     def test_failed_read_has_cooldown_without_fabricated_result(self):
         with patch.object(self.engine,'body',return_value=BODY),patch.object(self.engine,'call',return_value={}) as call:
             self.assertRaises(ValueError,self.engine.reading,ARTICLE,[])
             self.assertIsNone(self.engine.reading(ARTICLE,[]));call.assert_called_once()
 
-    def test_local_requests_use_schema_and_budget_persists_failed_calls(self):
+    def test_local_requests_ignore_daily_cap_and_keep_usage_after_restart(self):
         response=MagicMock()
         response.__enter__.return_value.read.return_value=json.dumps({'done':True,'done_reason':'stop','message':{'content':json.dumps(READING)},'prompt_eval_count':40,'eval_count':20}).encode()
         with patch('intelligence.urlopen',return_value=response) as request:
@@ -81,9 +119,32 @@ class IntelligenceTest(unittest.TestCase):
         with patch('intelligence.urlopen',side_effect=TimeoutError):
             self.assertRaises(TimeoutError,self.engine.call,'read',{},ai.READ_SCHEMA)
         other=ai.Engine(self.engine.path)
-        with patch('intelligence.urlopen') as request:
-            self.assertRaises(ValueError,other.call,'read',{},ai.READ_SCHEMA);request.assert_not_called()
-        self.assertEqual(other.usage(),{'calls_today':2,'input_tokens':40,'output_tokens':20})
+        self.assertIsNone(other.daily_limit)
+        with patch('intelligence.urlopen',return_value=response):
+            self.assertEqual(other.call('read',{},ai.READ_SCHEMA),READING)
+        self.assertEqual(other.usage(),{'calls_today':3,'input_tokens':80,'output_tokens':40})
+
+    def test_cloud_daily_cap_still_counts_failures_after_restart(self):
+        with patch.dict(os.environ, {'LLM_PROVIDER':'gemini','GEMINI_API_KEY':'test-only'}):
+            engine=ai.Engine(self.engine.path)
+            with patch('intelligence.urlopen',side_effect=TimeoutError):
+                for _ in range(2):
+                    self.assertRaises(TimeoutError,engine.call,'read',{},ai.READ_SCHEMA)
+            other=ai.Engine(engine.path)
+            self.assertEqual(other.daily_limit,2)
+            with patch('intelligence.urlopen') as request:
+                self.assertRaisesRegex(ValueError,'일일 LLM 요청 한도',other.call,'read',{},ai.READ_SCHEMA)
+                request.assert_not_called()
+            self.assertEqual(other.usage()['calls_today'],2)
+
+    def test_local_cycle_continues_past_validation_errors_without_daily_cap(self):
+        self.assertIsNone(self.engine.daily_limit)
+        with patch.object(self.engine,'reading',side_effect=[ValueError('invalid'),None]) as reading,patch('intelligence.market_snapshot') as market:
+            result=self.engine.cycle([ARTICLE,{**ARTICLE,'id':'b','url':ARTICLE['url']+'b'}])
+        self.assertEqual(reading.call_count,2)
+        self.assertEqual(result['status'],'partial')
+        self.assertIsNone(result['daily_call_limit'])
+        market.assert_not_called()
 
     def test_disabled_model_does_not_fetch_bodies_market_or_call_api(self):
         self.engine.enabled=False
@@ -121,6 +182,30 @@ class IntelligenceTest(unittest.TestCase):
         self.assertFalse(failed['ranking_stale']);self.assertTrue(failed['ranking_partial']);self.assertEqual(failed['status'],'partial')
         self.assertEqual(failed['ranking'],first['ranking'])
 
+
+
+    def test_queue_processes_more_than_thirty_articles_after_they_leave_feed_and_restart(self):
+        articles=[{**ARTICLE,'id':str(i),'url':ARTICLE['url']+str(i)} for i in range(40)]
+        def reading(article,anchors):
+            return {**READING,'article_id':article['id'],'event_id':'e-'+article['id'],'source_url':article['url'],'published_at':article.get('published_at')}
+        background={**GATE,'stock_relevance':'배경·상품 안내'}
+        with patch.object(self.engine,'reading',side_effect=reading),patch.object(self.engine,'screen',return_value=background):
+            self.engine.cycle(articles)
+        self.assertEqual(self.engine.queue.summary()['done'],6)
+        other=ai.Engine(self.engine.path)
+        with patch.object(other,'reading',side_effect=reading),patch.object(other,'screen',return_value=background):
+            for _ in range(6):
+                other.cycle([])
+        self.assertEqual(other.queue.summary()['done'],40)
+        self.assertEqual(other.queue.summary()['pending'],0)
+
+    def test_archive_sync_error_does_not_stop_existing_analysis_queue(self):
+        with patch('intelligence.Engine',return_value=self.engine),patch('intelligence.archive.analysis_batch',side_effect=OSError),patch.object(self.engine,'cycle',return_value={'coverage':{'candidates':0}}) as cycle,patch('intelligence.time.sleep',side_effect=StopIteration),patch.object(ai,'STATE',{}):
+            with self.assertRaises(StopIteration):
+                ai.collector(lambda:[])
+            cycle.assert_called_once_with([])
+            self.assertIn('보관소 대기열 동기화 실패',ai.STATE['queue_sync_error'])
+
     def test_snapshot_marks_expired_ranking_without_model_call(self):
         with patch.object(ai,'STATE',{'ranked_at':'2000-01-01T00:00:00+00:00','ranking_stale':False}):
             self.assertTrue(ai.snapshot()['ranking_stale'])
@@ -130,13 +215,14 @@ class IntelligenceTest(unittest.TestCase):
         readings=[{**copy.deepcopy(READING),'event_id':'event-'+a['id'],'article_id':a['id'],'source_url':a['url'],'published_at':a['published_at']} for a in articles]
         def provider(task,payload,output_schema):
             rule=output_schema['properties']['ranking']
-            self.assertEqual(rule.get('minItems'),9)
-            self.assertEqual(rule.get('maxItems'),9)
+            self.assertEqual(rule.get('minItems'),len(payload['events']))
+            self.assertEqual(rule.get('maxItems'),len(payload['events']))
             ids=[e['event_id'] for e in payload['events']]
             self.assertTrue(all(len(i)<=3 for i in ids))
             self.assertEqual(set(rule['items']['properties']['event_id']['enum']),set(ids))
             return {'ranking':[rank_row(i) for i in reversed(ids)]}
-        with patch.object(self.engine,'screen',return_value=GATE),patch.object(self.engine,'reading',side_effect=readings),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',side_effect=provider):
+        with patch.object(self.engine,'screen',return_value=GATE),patch.object(self.engine,'reading',side_effect=lambda a,anchors: next(r for r in readings if r['article_id']==a['id'])),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',side_effect=provider):
+            self.engine.cycle(articles)
             result=self.engine.cycle(articles)
         self.assertFalse(result['ranking_stale'])
         self.assertEqual([r['event_id'] for r in result['ranking']],['event-'+str(i) for i in reversed(range(9))])
@@ -151,6 +237,8 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(result['ranking'],[])
         self.assertEqual(result['assessments'][0]['stock_relevance'],'배경·상품 안내')
         call.assert_not_called()
+
+
 
     def test_screening_is_per_event_cached_and_separate_from_ranking(self):
         output={'driver':'금융상품 조건·청약·판매 안내','reason':'국채 발행 조건 안내이며 증권사 이익 변화 미확인','watch_for':'상장사 실적 영향이 있는지 확인'}

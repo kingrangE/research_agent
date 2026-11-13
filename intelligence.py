@@ -6,6 +6,7 @@ from hashlib import sha256
 from html.parser import HTMLParser
 import json
 import os
+import re
 from pathlib import Path
 import sqlite3
 import threading
@@ -15,9 +16,10 @@ from urllib.request import Request, urlopen, HTTPRedirectHandler, build_opener
 
 import stocks
 import archive
+import analysis_store
 
 ROOT = Path(__file__).resolve().parent
-VERSION = 'events-v2'
+VERSION = 'events-v3-update-guard'
 LOCK = threading.Lock()
 STATE = {'status': 'disabled', 'message': 'LLM 미연결 · 최신성 순위 유지', 'events': [], 'ranking': [], 'market': {}, 'updated_at': None}
 MARKETS = {'069500': 'KOSPI200 ETF', '229200': 'KOSDAQ150 ETF', 'SPY': 'S&P500 ETF',
@@ -39,7 +41,7 @@ READ_SCHEMA = schema({'summary': TEXT, 'event_title': TEXT, 'event_type': TEXT,
     'entities': {'type': 'array', 'items': TEXT}, 'certainty': {'type': 'string', 'enum': ['확정', '계획', '전망', '부인', '미확인']},
     'amount': TEXT, 'timing': TEXT, 'evidence': {'type': 'array', 'items': TEXT}, 'match_event_id': TEXT})
 RELEVANCE = ['주식 판단 재료', '배경·상품 안내', '연결 미확인']
-RANK_VERSION = 'equity-catalyst-v2'
+RANK_VERSION = 'equity-catalyst-v3-current'
 GATE_VERSION = 'equity-screen-v1'
 RANK_SCHEMA = schema({'ranking': {'type': 'array', 'items': schema({'event_id': TEXT, 'reason': TEXT,
     'stock_relevance': {'type':'string','enum':RELEVANCE}, 'watch_for': TEXT})}})
@@ -69,6 +71,39 @@ existing_events는 같은 사건인지 비교하는 용도일 뿐 현재 기사�
 summary·금액·시점·당사자·evidence는 반드시 현재 body에서만 추출한다. 기존 사건의 사실로 빈칸을 채우지 않는다.
 제공된 자료 외의 최신 사실이나 숫자를 만들지 않는다. 미확인은 미확인으로 남긴다.
 관계·상관관계는 수혜·매수 신호가 아니다. 특정 업종에 고정 우대를 주지 않는다.'''
+
+
+
+
+def entity_mentions(body, entities):
+    mentions = []
+    for name in entities:
+        match = re.search(re.escape(name),body,re.I) if len(name.strip())>=2 else None
+        if match:
+            start,end = match.span()
+            mentions.append({'name':name,'evidence':body[max(0,start-70):min(len(body),end+140)]})
+    return mentions
+
+
+def event_recency(published_at, as_of):
+    published = analysis_store.epoch(published_at)
+    if not published:
+        return 'unknown'
+    age = as_of-published
+    return 'future' if age<0 else 'current' if age<=26*3600 else 'old'
+
+
+def separate_event_update(output, anchors):
+    anchor = next((a for a in anchors if a['event_id']==output['match_event_id']),None)
+    if not anchor:
+        return output
+    old_certainty = anchor.get('certainty')
+    action = r'부인|취소|해지|철회|무산'
+    current_action = bool(re.search(action,' '.join(output.get(k,'') for k in ('event_title','event_type','summary'))))
+    previous_action = bool(re.search(action,' '.join(anchor.get(k) or '' for k in ('event_title','event_type','summary'))))
+    if (old_certainty and old_certainty!=output['certainty']) or current_action!=previous_action:
+        return {**output,'match_event_id':''}
+    return output
 
 
 class ArticleParser(HTMLParser):
@@ -160,7 +195,7 @@ class Engine:
         self.model = os.environ.get('LLM_MODEL', 'ax4-light:latest' if self.provider == 'ollama' else 'gemini-3.5-flash-lite')
         self.key = os.environ.get('GEMINI_API_KEY', '')
         self.enabled = os.environ.get('LLM_ENABLED') == '1' and (self.provider == 'ollama' or (self.provider == 'gemini' and bool(self.key)))
-        self.daily_limit = max(1, min(5000, int(os.environ.get('LLM_DAILY_CALL_LIMIT', '200'))))
+        self.daily_limit = None if self.provider == 'ollama' else max(1, min(5000, int(os.environ.get('LLM_DAILY_CALL_LIMIT', '200'))))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.db() as db:
             db.executescript('''CREATE TABLE IF NOT EXISTS readings (cache_key TEXT PRIMARY KEY, article_id TEXT, payload TEXT, updated_at TEXT);
@@ -168,6 +203,7 @@ class Engine:
                 CREATE TABLE IF NOT EXISTS screens (cache_key TEXT PRIMARY KEY, payload TEXT);
                 CREATE TABLE IF NOT EXISTS failures (cache_key TEXT PRIMARY KEY, retry_after REAL);
                 CREATE TABLE IF NOT EXISTS bodies (url TEXT PRIMARY KEY, text TEXT, retry_after REAL);''')
+        self.queue = analysis_store.Store(self.path, VERSION + ':' + GATE_VERSION + ':' + self.provider + ':' + self.model)
         self.last_market = {}
         self.last_ranking = []
         self.ranked_at = 0
@@ -190,12 +226,13 @@ class Engine:
     def call(self, task, payload, output_schema):
         if not self.enabled:
             raise ValueError('LLM 미연결')
-        # One background worker; failed calls also consume the persistent daily request allowance.
+        # Keep local usage records without a daily cap; failed cloud calls still consume the allowance.
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            used = db.execute('SELECT count(*) FROM attempts WHERE day=?', (now()[:10],)).fetchone()[0]
-            if used >= self.daily_limit:
-                raise ValueError('일일 LLM 요청 한도 도달')
+            if self.daily_limit is not None:
+                used = db.execute('SELECT count(*) FROM attempts WHERE day=?', (now()[:10],)).fetchone()[0]
+                if used >= self.daily_limit:
+                    raise ValueError('일일 LLM 요청 한도 도달')
             row = db.execute('INSERT INTO attempts(day,task,model,status) VALUES(?,?,?,?)', (now()[:10], task, self.model, 'attempted'))
             call_id = row.lastrowid
         messages = [{'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False) + '\n응답 JSON Schema: ' + json.dumps(output_schema, ensure_ascii=False)}]
@@ -251,7 +288,8 @@ class Engine:
         return text
 
     def reading_key(self, article, body):
-        return sha256((VERSION + self.provider + self.model + article['url'] + article['title'] + body).encode()).hexdigest()
+        return sha256((VERSION + self.provider + self.model + article['url'] + article['title'] + body + article.get('_body_version','')).encode()).hexdigest()
+
 
     def cached_reading(self, article):
         with self.db() as db:
@@ -262,14 +300,21 @@ class Engine:
         return json.loads(row[0]) if row else None
 
     def reading(self, article, anchors):
-        body = self.body(article['url'])
+        body = article.get('_analysis_body')
+        if body is None:
+            snapshot = archive.body_snapshot(article['url'])
+            if snapshot and (snapshot['status'] != 'ok' or (snapshot['title'] and snapshot['title'] != article['title'])
+                    or (analysis_store.epoch(article.get('_version_at')) > analysis_store.epoch(snapshot['observed_at']))):
+                return None
+            body = self.body(article['url'])
         if not body:
             return None
         key = self.reading_key(article, body)
         with self.db() as db:
             row = db.execute('SELECT payload FROM readings WHERE cache_key=?', (key,)).fetchone()
         if row:
-            return json.loads(row[0])
+            output = json.loads(row[0])
+            return {**output,'article_title':article['title'],'entity_mentions':entity_mentions(body,output.get('entities',[]))}
         with self.db() as db:
             failure = db.execute('SELECT retry_after FROM failures WHERE cache_key=?',(key,)).fetchone()
         if failure and time.time() < failure[0]:
@@ -278,13 +323,16 @@ class Engine:
             output = self.call('read', {'task': '본문의 사건을 추출하라. evidence는 본문에서 그대로 인용한 짧은 문장 1~3개. 금액·시점은 원문에 없으면 미확인. summary와 event_title은 사실에 한정. 기존 사건과 당사자·사건·발생 시점이 모두 같을 때만 match_event_id를 지정하라. 단순 같은 테마는 다른 사건이다. 새로운 계약·정정·부인은 새 사건으로 둔다. 일치가 없으면 빈 문자열.',
                                       'article': {k: article.get(k) for k in ('id', 'title', 'url', 'published_at')}, 'body': body, 'existing_events': anchors[-6:]}, READ_SCHEMA)
             validate_reading(output, body, {a['event_id'] for a in anchors[-6:]})
+            output = separate_event_update(output,anchors[-6:])
         except Exception:
             with self.db() as db:
                 db.execute('INSERT OR REPLACE INTO failures VALUES(?,?)',(key,time.time()+300))
             raise
-        output.update(article_id=article['id'], source_url=article['url'], published_at=article.get('published_at'),
+        output.update(article_title=article['title'],entity_mentions=entity_mentions(body,output['entities']),article_id=article['id'], source_url=article['url'], published_at=article.get('published_at'),
                       analyzed_at=now(), model=self.model, body_chars=len(body), body_truncated=len(body) == 6000,
-                      event_id=output['match_event_id'] or 'event-' + article['id'])
+                      event_id=output['match_event_id'] or 'event-' + key[:20],
+                      body_version=article.get('_body_version') or sha256(body.encode()).hexdigest(),
+                      source_version_at=article.get('_version_at') if '_analysis_body' in article else now())
         with self.db() as db:
             db.execute('INSERT OR REPLACE INTO readings VALUES(?,?,?,?)', (key, article['id'], json.dumps(output, ensure_ascii=False), now()))
         return output
@@ -308,39 +356,43 @@ class Engine:
     def cycle(self, articles):
         if not self.enabled:
             return {'status': 'disabled', 'message': 'LLM 미연결 · 로컬 모델과 LLM_ENABLED 설정 필요', 'events': [], 'ranking': [], 'market': {}, 'model': self.model, 'updated_at': None}
-        readings, anchors, errors = [], [], []
-        initial_calls = self.usage()['calls_today']
-        # Restore a useful order from verified cached readings before waiting on new extraction.
-        cached = {a['id']: r for a in articles[:30] if (r := self.cached_reading(a))} if not self.last_ranking else {}
-        candidates = [a for a in articles[:30] if a['id'] in cached] if cached else articles[:30]
-        # shortcut: newest 30 candidates per cycle, expand after latency and cost evaluation.
-        for article in candidates:
-            if len(readings) >= 12 or self.usage()['calls_today'] - initial_calls >= 6:
+        errors = []
+        self.queue.enqueue([{'article':article} for article in articles])
+        for _ in range(6):
+            job = self.queue.claim()
+            if not job:
                 break
+            with LOCK:
+                STATE.update(status='processing',message='분석 대기열 처리 중',model=self.model,
+                             queue=self.queue.summary(),daily_call_limit=self.daily_limit,usage=self.usage())
+            article = job['article']
+            if job['body'] is not None:
+                article = {**article,'_analysis_body':job['body'],'_body_version':job['body_version']}
             try:
-                reading = cached.get(article['id']) or self.reading(article, anchors)
-                if reading:
-                    readings.append(reading)
-                    anchors.append({k: reading[k] for k in ('event_id', 'event_title', 'entities', 'published_at', 'summary')})
+                reading = self.reading(article,self.queue.anchors(article))
+                if not reading:
+                    raise ValueError('공개 본문 또는 재시도 대기')
+                assessment = self.screen(reading)
+                self.queue.complete(job,reading,assessment)
             except Exception as error:
+                self.queue.retry(job,error)
                 errors.append(type(error).__name__)
-                if not isinstance(error, ValueError) or self.usage()['calls_today'] >= self.daily_limit:
+                if not isinstance(error,ValueError) or (self.daily_limit is not None and self.usage()['calls_today'] >= self.daily_limit):
                     break
             with LOCK:
-                STATE.update(status='processing', message=f'본문·사건 분석 중 · {len(readings)}건 처리', model=self.model)
+                STATE.update(status='processing',message='분석 대기열 처리 중',model=self.model,
+                             queue=self.queue.summary(),daily_call_limit=self.daily_limit,usage=self.usage())
+        readings, gates = self.queue.readings(articles)
         grouped = group_events(readings)
-        gates = []
+        gates = list({g['event_id']:g for g in gates}.values())
+        origins = self.queue.first_published([e['event_id'] for e in grouped])
         for event in grouped:
-            try:
-                gates.append({'event_id':event['event_id'],**self.screen(event)})
-                with LOCK:
-                    STATE.update(status='processing',message=f'주식 투자 적합성 검토 중 · {len(gates)}/{len(grouped)}건',model=self.model)
-            except Exception as error:
-                errors.append(type(error).__name__)
-                if not isinstance(error,ValueError):
-                    break
+            event['history'] = self.queue.history(event['event_id'])
+            event['first_published_at'] = origins.get(event['event_id']) or event.get('published_at')
+            event['recency_status'] = event_recency(event['first_published_at'],analysis_store.epoch(now()))
         eligible = {g['event_id'] for g in gates if g['stock_relevance']=='주식 판단 재료'}
-        candidates = [e for e in grouped if e['event_id'] in eligible]
+        eligible &= {e['event_id'] for e in grouped if e['recency_status']=='current'}
+        candidates = [e for e in grouped if e['event_id'] in eligible][:12]
         if candidates and (not self.last_market or time.time() - self.last_market['fetched_epoch'] >= 300):
             self.last_market = {**market_snapshot(), 'fetched_epoch': time.time()}
         rank_key = sha256((RANK_VERSION+json.dumps(candidates, sort_keys=True)).encode()).hexdigest()
@@ -368,7 +420,8 @@ class Engine:
                 'updated_at': now(), 'ranked_at': datetime.fromtimestamp(self.ranked_at, timezone.utc).isoformat() if self.ranked_at else None,
                 'ranking_stale': not assessments or bool(candidates and not ranking) or time.time() - self.ranked_at > 600,
                 'ranking_partial': rank_failed or self.rank_key != rank_key or len(assessments) != len(grouped),
-                'coverage': {'candidates': min(30, len(articles)), 'analyzed_articles': len(readings), 'events': len(grouped)},
+                'coverage': {'candidates': len(articles), 'analyzed_articles': len(readings), 'events': len(grouped)},
+                'queue': self.queue.summary(),
                 'usage': self.usage(), 'daily_call_limit': self.daily_limit,
                 'error': '분석 일부 실패 · 최신성 목록에서 전체 자료 확인' if errors else None}
 
@@ -407,7 +460,7 @@ def group_events(readings):
     for r in readings:
         if r['event_id'] not in groups:
             groups[r['event_id']] = {**r, 'articles': []}
-        groups[r['event_id']]['articles'].append({'id': r['article_id'], 'url': r['source_url'], 'published_at': r['published_at'], 'summary': r['summary'], 'evidence': r['evidence']})
+        groups[r['event_id']]['articles'].append({'id': r['article_id'], 'url': r['source_url'], 'published_at': r['published_at'], 'summary': r['summary'], 'evidence': r['evidence'],'entity_mentions':r.get('entity_mentions',[]),'article_title':r.get('article_title')})
     return list(groups.values())
 
 
@@ -421,7 +474,16 @@ def collector(get_articles):
     while True:
         result = {}
         try:
+            sync_error = None
+            if engine.enabled:
+                try:
+                    records,cursors = archive.analysis_batch(engine.queue.cursors())
+                    engine.queue.enqueue(records,cursors)
+                except Exception as error:
+                    sync_error = f'보관소 대기열 동기화 실패 ({type(error).__name__})'
             result = engine.cycle(get_articles())
+            if sync_error:
+                result.update(status='partial',queue_sync_error=sync_error)
             with LOCK:
                 STATE.clear()
                 STATE.update(result)
