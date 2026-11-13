@@ -97,6 +97,33 @@ class IntelligenceTest(unittest.TestCase):
                 self.assertEqual(run['top8'],[str(i) for i in range(size-1,size-9,-1)])
                 self.assertTrue(all(len(w['inputs'])<=12 for w in run['windows']))
 
+    def test_excluded_rows_cannot_displace_better_material_events_from_the_next_window(self):
+        cases=[{'id':str(i),'summary':f'공개 원문 검증용 사례 번호 {i}',
+                'expected':'배경·상품 안내' if 4<=i<8 else '주식 판단 재료'} for i in range(16)]
+        dataset={'equity_screening':cases,'priority_checks':['8','9']}
+        engine=MagicMock(model='test',provider='ollama')
+        engine.usage.return_value={}
+        def rank(events,market):
+            def number(event):return int(event['evidence'][0].split()[-1])
+            ordered=sorted(events,key=lambda e:(0 if 4<=number(e)<8 else 1,-number(e)))
+            return [dict(rank_row(e['event_id']),stock_relevance=cases[number(e)]['expected']) for e in ordered]
+        engine.rank.side_effect=rank
+        with patch('builtins.print'):
+            result=evaluate_window_ranking(engine,dataset)
+        self.assertEqual(result['retention_policy'],'eligible-first-v1')
+        for run in result['runs'][1:]:
+            self.assertEqual(run['top8'],[str(i) for i in range(15,7,-1)])
+            self.assertEqual(run['eligibility_passed'],16)
+            self.assertEqual(run['critical_hits'],2)
+            for w in run['windows']:
+                raw=w['model_ranking'];selected=w['ranking']
+                self.assertEqual({r['event_id']:r for r in raw},{r['event_id']:r for r in selected})
+                for relevance in (True,False):
+                    self.assertEqual([r['event_id'] for r in raw if (r['stock_relevance']=='주식 판단 재료')==relevance],
+                                     [r['event_id'] for r in selected if (r['stock_relevance']=='주식 판단 재료')==relevance])
+                self.assertEqual(selected[0]['stock_relevance'],'주식 판단 재료')
+            self.assertEqual(run['windows'][0]['model_ranking'][0]['stock_relevance'],'배경·상품 안내')
+
     def test_window_evaluator_rejects_bad_model_ids_and_missing_expected_labels(self):
         dataset=self.coverage_fixture()
         engine=MagicMock(model='test',provider='ollama')

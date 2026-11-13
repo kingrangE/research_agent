@@ -106,7 +106,10 @@ def evaluate_window_ranking(engine,dataset):
                 local={f'E{i+1}':event_id for i,event_id in enumerate(ids)}
                 rows=validate_ranking({'ranking':engine.rank([{**events[event_id],'event_id':label} for label,event_id in local.items()],market)},set(local))
                 rows=[{**r,'event_id':local[r['event_id']]} for r in rows]
-                windows.append({'inputs':ids,'labels':local,'ranking':rows})
+                model_rows=rows
+                # Excluded rows must not consume the overlap reserved for material candidates.
+                rows=sorted(rows,key=lambda r:r['stock_relevance']!='주식 판단 재료')
+                windows.append({'inputs':ids,'labels':local,'model_ranking':model_rows,'ranking':rows})
                 known.update({r['event_id']:r for r in rows})
                 order[start:end]=[r['event_id'] for r in rows]
                 if start==0:break
@@ -129,8 +132,8 @@ def evaluate_window_ranking(engine,dataset):
         runs.append(result)
         print(engine.model,{k:result[k] for k in ('strategy','valid','reviewed','total','passed','eligibility_passed','critical_hits','seconds','call_delta')},flush=True)
     return {'model':engine.model,'provider':engine.provider,'runs':runs,'inputs':events,'market':market,
-            'window_size':12,'step':4,'top_k':8,
-            'priority_checks':critical,'limitations':'실험 전용. 앞 12개와 창 크기 12·이동 4의 뒤→앞 비교 및 입력 역순을 검사한다. 화면과 같은 상위 8개 중요 자료 회수는 개발자 가상 기대값이며 전역 최적 순위·전문가 정확도·투자 성과를 보장하지 않는다. 실패한 회차는 전체 검토 성공으로 취급하지 않는다. 운영 순위는 변경하지 않는다.'}
+            'window_size':12,'step':4,'top_k':8,'retention_policy':'eligible-first-v1',
+            'priority_checks':critical,'limitations':'실험 전용. 앞 12개와 창 크기 12·이동 4의 뒤→앞 비교 및 입력 역순을 검사한다. 다음 비교에는 판단 재료를 먼저 넘기며 해당 집합 안의 모델 순서는 유지한다. 원래 응답과 인계 순서를 함께 기록한다. 화면과 같은 상위 8개 중요 자료 회수는 개발자 가상 기대값이며 전역 최적 순위·전문가 정확도·투자 성과를 보장하지 않는다. 실패한 회차는 전체 검토 성공으로 취급하지 않는다. 운영 순위는 변경하지 않는다.'}
 
 
 def evaluate_equity(engine,dataset):
