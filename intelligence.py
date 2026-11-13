@@ -37,7 +37,7 @@ def schema(properties):
 
 
 TEXT = {'type': 'string'}
-READ_VERSION = 'source-passages-v4-event-scale'
+READ_VERSION = 'source-passages-v5-compatible-anchors'
 READ_SCHEMA = schema({'summary': TEXT, 'event_title': TEXT, 'event_type': TEXT,
     'entities': {'type': 'array', 'items': TEXT}, 'certainty': {'type': 'string', 'enum': ['확정', '계획', '전망', '부인', '미확인'],
         'description':'핵심 경제 사건의 진행 단계. 검토·추진 중인 제도/계약은 계획, 예측은 전망, 이미 체결·시행·발생한 사실은 확정. 발표나 발언이 실제 있었다는 이유로 그 안의 계획을 확정으로 바꾸지 않는다.'},
@@ -461,7 +461,7 @@ class Engine:
                 article = {**article,'_analysis_body':job['body'],'_body_version':job['body_version']}
             try:
                 previous=json.loads(job['result']) if job['job_key'].startswith('screen-review:') and job['result'] else None
-                reading = previous if previous and previous.get('read_policy_version')==READ_VERSION else self.reading(article,self.queue.anchors(article))
+                reading = previous if previous and previous.get('read_policy_version')==READ_VERSION else self.reading(article,self.queue.anchors(article,READ_VERSION))
                 if not reading:
                     raise ValueError('공개 본문 또는 재시도 대기')
                 assessment = self.screen(reading)

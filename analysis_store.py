@@ -164,12 +164,13 @@ class Store:
         selected = [latest[a['id']] for a in articles if a['id'] in latest and latest[a['id']]['status']=='done'][:limit]
         return [json.loads(row['result']) for row in selected], [dict(json.loads(row['assessment']),event_id=row['event_id']) for row in selected]
 
-    def anchors(self, article, limit=6):
-        # shortcut: scan 500 recent analyses; add embedding retrieval after recall evaluation.
+    def anchors(self, article, reading_policy, limit=6):
+        # shortcut: scan 500 compatible analyses; add embedding retrieval after recall evaluation.
         tokens = set(re.findall(r'[가-힣A-Za-z0-9]{2,}',article['title'].lower()))
         with self.db() as db:
             rows = db.execute('''SELECT event_id,result FROM analysis_jobs WHERE namespace=? AND status='done'
-                ORDER BY finished_at DESC LIMIT 500''',(self.namespace,)).fetchall()
+                AND json_extract(result,'$.read_policy_version')=?
+                ORDER BY finished_at DESC LIMIT 500''',(self.namespace,reading_policy)).fetchall()
         candidates = {}
         with self.db() as db:
             own_events = {row[0] for row in db.execute("SELECT DISTINCT event_id FROM analysis_jobs WHERE namespace=? AND article_id=? AND status='done'",(self.namespace,article['id']))}

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -139,8 +140,8 @@ class AnalysisStoreTest(unittest.TestCase):
         a=self.article(1,_version_at='2026-11-11T02:00:00Z')
         self.store.enqueue([{'article':a,'body':'수정 본문','body_version':'v2'}])
         self.finish(self.store.claim())
-        self.assertEqual(self.store.anchors(self.article(2,_version_at='2026-11-11T01:00:00Z')),[])
-        self.assertEqual(len(self.store.anchors(self.article(2,_version_at='2026-11-11T03:00:00Z'))),1)
+        self.assertEqual(self.store.anchors(self.article(2,_version_at='2026-11-11T01:00:00Z'),'read-v1'),[])
+        self.assertEqual(len(self.store.anchors(self.article(2,_version_at='2026-11-11T03:00:00Z'),'read-v1')),1)
 
     def test_same_revision_is_idempotent_but_body_changes_leave_history(self):
         a=self.article(1)
@@ -195,12 +196,25 @@ class AnalysisStoreTest(unittest.TestCase):
     def test_candidates_find_persistent_related_events_and_exclude_future_and_own_revisions(self):
         self.store.enqueue([{'article':self.article(1)}]);self.finish(self.store.claim())
         other=Store(self.path,'test-model-v1')
-        self.assertEqual(other.anchors(self.article(2))[0]['event_id'],'event-contract')
-        self.assertEqual(other.anchors(self.article(1)),[])
-        self.assertEqual(other.anchors(self.article(2,published_at='2026-11-10T23:00:00+00:00')),[])
+        self.assertEqual(other.anchors(self.article(2),'read-v1')[0]['event_id'],'event-contract')
+        self.assertEqual(other.anchors(self.article(1),'read-v1'),[])
+        self.assertEqual(other.anchors(self.article(2,published_at='2026-11-10T23:00:00+00:00'),'read-v1'),[])
         isolated=Store(self.path,'other-model')
         self.assertEqual(isolated.summary()['done'],0)
-        self.assertEqual(isolated.anchors(self.article(2)),[])
+        self.assertEqual(isolated.anchors(self.article(2),'read-v1'),[])
+
+    def test_candidate_policy_filter_precedes_the_recent_analysis_limit(self):
+        self.store.enqueue([{'article':self.article(1)}]);self.finish(self.store.claim())
+        self.store.enqueue([{'article':self.article(i)} for i in range(2,503)])
+        old={'event_id':'old','event_title':'한빛에너지 계약','entities':['한빛에너지'],
+             'published_at':self.article(1)['published_at'],'summary':'이전 기준 요약','read_policy_version':'read-old'}
+        with self.store.db() as db:
+            db.execute("UPDATE analysis_jobs SET status='done',finished_at=9999999999,event_id='old',result=?,assessment='{}' WHERE article_id!='1'",(json.dumps(old),))
+            db.execute("UPDATE analysis_jobs SET result=json_remove(result,'$.read_policy_version') WHERE article_id='2'")
+        found=self.store.anchors(self.article(999),reading_policy='read-v1')
+        self.assertEqual([r['event_id'] for r in found],['event-contract'])
+        self.assertEqual(self.store.anchors(self.article(999),reading_policy='read-missing'),[])
+        self.assertEqual(self.store.summary()['done'],502)
 
     def test_reprint_keeps_the_first_publication_time_of_the_event(self):
         for i,date in [(1,'2026-11-09T00:00:00Z'),(2,'2026-11-11T00:00:00Z')]:
