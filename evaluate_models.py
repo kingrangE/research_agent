@@ -5,11 +5,9 @@ import json
 import os
 from pathlib import Path
 import time
-from unittest.mock import patch
 
-import intelligence
 
-from intelligence import VERSION, RANK_VERSION, Engine, READ_SCHEMA, RANK_SCHEMA, validate_reading, validate_ranking
+from intelligence import VERSION, RANK_VERSION, GATE_VERSION, Engine, READ_SCHEMA, RANK_SCHEMA, validate_reading, validate_ranking
 
 
 def evaluate(engine, dataset):
@@ -51,17 +49,20 @@ def evaluate(engine, dataset):
 
 def evaluate_equity(engine,dataset):
     cases=dataset['equity_screening']
-    readings={c['id']:{'event_id':c['id'],'article_id':c['id'],'source_url':'https://example.com/'+c['id'],
-        'published_at':'2026-11-11T00:00:00Z','event_title':c['id'],'summary':c['summary'],'event_type':'가상 검증',
-        'certainty':'확정','amount':'본문 확인','timing':'당일·수일','entities':[],'evidence':[c['summary']]} for c in cases}
-    articles=[{'id':c['id'],'title':c['id'],'url':'https://example.com/'+c['id']} for c in cases]
-    with patch.object(engine,'cached_reading',return_value=None),patch.object(engine,'reading',side_effect=lambda a,anchors:readings[a['id']]),patch('intelligence.market_snapshot',return_value={'observations':[],'limitations':'가상 정책 검증: 시장 관측 미제공'}):
-        result=engine.cycle(articles)
-    assessed={a['event_id']:a for a in result.get('assessments',[])}
-    checks=[{'id':c['id'],'expected':c['expected'],'actual':assessed.get(c['id'],{}).get('stock_relevance'),
-             'pass':assessed.get(c['id'],{}).get('stock_relevance')==c['expected']} for c in cases]
-    for c in checks:print(engine.model,c,flush=True)
-    return {'model':engine.model,'provider':engine.provider,'checks':checks,'passed':sum(c['pass'] for c in checks),'total':len(checks),'result':result}
+    checks=[]
+    for case in cases:
+        row={'id':case['id'],'expected':case['expected'],'pass':False}
+        try:
+            output=engine.screen({'event_title':case['id'],'summary':case['summary'],'entities':[],
+                'certainty':'확정','amount':'본문 확인','timing':'당일·수일','evidence':[case['summary']]})
+            row.update(actual=output['stock_relevance'],output=output,
+                       **{'pass':output['stock_relevance']==case['expected']})
+        except Exception as error:
+            row['error']=type(error).__name__
+        checks.append(row)
+        print(engine.model,{k:v for k,v in row.items() if k!='output'},flush=True)
+    return {'model':engine.model,'provider':engine.provider,'checks':checks,
+            'passed':sum(c['pass'] for c in checks),'total':len(checks),'usage':engine.usage()}
 
 
 if __name__ == '__main__':
@@ -73,7 +74,7 @@ if __name__ == '__main__':
     args=parser.parse_args()
     os.environ['LLM_ENABLED']='1'
     dataset=json.loads(Path(args.dataset).read_text())
-    report={'prompt_version':VERSION,'rank_policy_version':RANK_VERSION,'as_of':datetime.now(timezone.utc).isoformat(),'limitations':dataset['note'],'results':[]}
+    report={'prompt_version':VERSION,'rank_policy_version':RANK_VERSION,'gate_policy_version':GATE_VERSION,'as_of':datetime.now(timezone.utc).isoformat(),'limitations':dataset['note'],'results':[]}
     for model in args.models:
         os.environ['LLM_MODEL']=model
         engine=Engine('.data/evaluation-usage.sqlite3')

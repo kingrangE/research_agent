@@ -21,6 +21,36 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def test_background_screen_can_abstain_without_inventing_a_followup(self):
+        result={'driver':ai.DRIVERS[-1],'impact_evidence':'','reason':'원문에 경제적 변화 근거 없음','watch_for':''}
+        with patch.object(self.engine,'call',return_value=result):
+            answer=self.engine.screen(READING)
+        self.assertEqual(answer['stock_relevance'],'연결 미확인')
+        self.assertEqual(answer['watch_for'],'')
+
+    def test_stock_gate_requires_a_verbatim_economic_evidence_quote(self):
+        base={'driver':ai.DRIVERS[0],'impact_evidence':'','reason':'일반 투자심리 개선 가능','watch_for':'실적 확인'}
+        with patch.object(self.engine,'call',return_value=base):
+            result=self.engine.screen(READING)
+        self.assertEqual(result['stock_relevance'],'연결 미확인')
+        with patch.object(self.engine,'call',return_value={**base,'impact_evidence':'원문에 없는 계약 규모 100조원 발표'}):
+            with self.assertRaisesRegex(ValueError,'원문 인용'):
+                self.engine.screen({**READING,'summary':'다른 사건'})
+        with patch.object(self.engine,'call',return_value={**base,'impact_evidence':READING['evidence'][0]}):
+            result=self.engine.screen({**READING,'summary':'확인한 계약'})
+        self.assertEqual(result['stock_relevance'],'주식 판단 재료')
+
+    def test_equity_evaluator_isolates_screening_and_continues_after_failure(self):
+        engine=MagicMock(model='test',provider='ollama')
+        engine.screen.side_effect=[ValueError('bad quote'),{'stock_relevance':'주식 판단 재료'}]
+        engine.usage.return_value={}
+        cases=[{'id':str(i),'summary':'본문 근거입니다.','expected':'주식 판단 재료'} for i in range(2)]
+        with patch('builtins.print'):
+            result=evaluate_equity(engine,{'equity_screening':cases})
+        self.assertEqual(result['passed'],1)
+        self.assertEqual(result['checks'][0]['error'],'ValueError')
+        engine.cycle.assert_not_called()
+
 
 
 
@@ -241,7 +271,7 @@ class IntelligenceTest(unittest.TestCase):
 
 
     def test_screening_is_per_event_cached_and_separate_from_ranking(self):
-        output={'driver':'금융상품 조건·청약·판매 안내','reason':'국채 발행 조건 안내이며 증권사 이익 변화 미확인','watch_for':'상장사 실적 영향이 있는지 확인'}
+        output={'driver':'금융상품 조건·청약·판매 안내','impact_evidence':'','reason':'국채 발행 조건 안내이며 증권사 이익 변화 미확인','watch_for':'상장사 실적 영향이 있는지 확인'}
         with patch.object(self.engine,'call',return_value=output) as call:
             first=self.engine.screen(READING)
             second=self.engine.screen(READING)

@@ -42,7 +42,7 @@ READ_SCHEMA = schema({'summary': TEXT, 'event_title': TEXT, 'event_type': TEXT,
     'amount': TEXT, 'timing': TEXT, 'evidence': {'type': 'array', 'items': TEXT}, 'match_event_id': TEXT})
 RELEVANCE = ['주식 판단 재료', '배경·상품 안내', '연결 미확인']
 RANK_VERSION = 'equity-catalyst-v3-current'
-GATE_VERSION = 'equity-screen-v1'
+GATE_VERSION = 'equity-screen-v3-business-evidence'
 RANK_SCHEMA = schema({'ranking': {'type': 'array', 'items': schema({'event_id': TEXT, 'reason': TEXT,
     'stock_relevance': {'type':'string','enum':RELEVANCE}, 'watch_for': TEXT})}})
 EQUITY_POLICY = '''목표는 일반 금융 뉴스 추천이 아니라 오늘·수일 내 국내·미국 주식 투자 판단에 쓸 새로운 재료 선별이다.
@@ -58,9 +58,14 @@ watch_for에는 다음 확인할 수치·공시·실적 전망·가격 반영 �
 특정 업종에 고정 우대를 주지 않고 이미 급등한 종목만 우대하지 않는다. 시장 관측의 시각을 확인한다. reason과 watch_for는 각 120자 이내.'''
 DRIVERS = ['기업 실적·수주·경쟁·비용 변화', '상장사 자금조달·희석·상환 위험', '규제·인허가·법적 위험 변화',
            '예상 밖 금리·환율·수급·산업 충격', '금융상품 조건·청약·판매 안내', '홍보·행사·수상·반복 정보', '주식 영향 근거 미확인']
-GATE_SCHEMA = schema({'driver': {'type':'string','enum':DRIVERS}, 'reason':TEXT, 'watch_for':TEXT})
+GATE_SCHEMA = schema({'driver': {'type':'string','enum':DRIVERS}, 'impact_evidence':TEXT, 'reason':TEXT, 'watch_for':TEXT})
 GATE_POLICY = """한 사건만 검토하라. 목적은 오늘·수일 내 어떤 주식의 판단을 바꿀 새 근거인지 판정하는 것이다.
-현재 사건의 주된 경제적 변화를 driver에서 하나 선택하고 reason에 대상 기업/산업과 실제 변화·전달 경로를 써라. watch_for에는 다음 확인할 공시/수치/반영 여부를 쓴다. 각 120자 이내.
+먼저 입력 evidence에서 기업 실적·수주·영업 조건·자본·법적 의무 또는 실제 시장 가격/수급에 생긴 구체적인 변화를 직접 보여주는 한 문장을 impact_evidence에 그대로 복사하라. 8~200자, 원문을 바꾸지 말 것. 그런 문장이 없으면 빈 문자열로 두어라. summary의 추정 설명을 원문 인용으로 대신하지 않는다.
+그 다음 확인된 경제적 변화를 driver에서 선택한다. '영향을 미칠 수 있다'는 상상, 평판/정치적 불확실성/일반 투자심리만으로 첫 네 driver를 선택하지 않는다. 경제적 변화가 원문 인용에 없으면 주식 영향 근거 미확인이다.
+쇼핑백·로고·패키지 디자인 개편, 팝업 행사, 브랜드 홍보만 있고 수요·계약·영업 조건의 실제 변화 근거가 없으면 홍보·행사·수상·반복 정보다. 이미지 개선 → 고객 유입 기대 → 매출 증가라는 가정을 경제적 사실로 만들지 않는다. 반대로 실제 수수료율 변경·면제처럼 거래 조건이 바뀐 사실은 비용/수익 변화이며 브랜드·플랫폼 기사라는 이유로 제외하지 않는다. 가능한 인용 중 실제 변경 조건이나 비용 규모가 드러난 문장을 우선하고 막연한 경쟁사의 고민·기대 같은 문장은 피하라.
+reason에는 현재 확인된 사실과 실제 영향 경로를 쓰고 watch_for에는 다음 확인할 공시/수치/반영 여부를 쓴다. 각각 120자 이내.
+대조 사례: 증권사 애널리스트 이직 → 수익·계약·운영 조건 변화 근거가 없으면 주식 영향 근거 미확인. 정치인의 성격·옛 일화·공직 제안 농담 → 새 경제 정책·규제·시장 관측 변화가 없으면 주식 영향 근거 미확인. 기업의 김장·빵·차량 기부나 수상 → 홍보·행사·수상·반복 정보. 기부 규모나 횟수만으로 기업 이익 전망 변화라고 추정하지 않는다. 협동조합 임원 선출 방식 변화 → 상장사 실적·운영 조건으로 전달되는 근거가 없으면 주식 영향 근거 미확인.
+반대로 순이익 26.6% 감소 발표, 고객 주문 취소, 차환 발행 실패, 예상 밖 금리 급등과 주택대출 비용 상승, 수출 금지로 인한 공급 중단처럼 직접 보고된 경제적 변화는 기회/위험을 가리지 않고 유지한다. 금액이 없어도 구체적인 영업 중단·계약 취소·규제 적용 사실은 판단 재료가 될 수 있다.
 판매 채널과 발행·조달 주체를 구분하라. 개인투자용국채 정기 청약, 만기 수익률과 발행액은 정부 채권 상품의 조건이다. 증권사가 판매해도 증권사의 실적 변화나 예상 밖 시장 충격 근거가 없으면 금융상품 조건·청약·판매 안내다. 일반적인 투자 기회나 유동성 기여를 주식 영향 근거로 만들지 않는다.
 예: 증권사의 국채 청약 안내 → 금융상품 조건·청약·판매 안내. 상장사의 차환 실패·상환자금 미확보 → 상장사 자금조달·희석·상환 위험. 예상 밖 국채금리 급등과 주택 수요/비용 충격 → 예상 밖 금리·환율·수급·산업 충격.
 부인·계약 취소·실적 하향 등 위험도 주식 판단 재료다. 행사·수상은 이익 변화 근거가 없으면 홍보다. 기업·산업 전달 경로가 자료에 없으면 주식 영향 근거 미확인으로 남긴다. 근거 없는 상승·매수·시장 예상치를 만들지 않는다."""
@@ -345,8 +350,15 @@ class Engine:
         if row:
             return json.loads(row[0])
         result = self.call('screen',{'task':GATE_POLICY,'event':fact},GATE_SCHEMA)
-        if not isinstance(result,dict) or set(result)!=set(GATE_SCHEMA['properties']) or result.get('driver') not in DRIVERS or any(not isinstance(result.get(k),str) or not 1 <= len(result[k]) <= 800 for k in ('reason','watch_for')):
+        if not isinstance(result,dict) or set(result)!=set(GATE_SCHEMA['properties']) or result.get('driver') not in DRIVERS or not isinstance(result.get('reason'),str) or not 1<=len(result['reason'])<=800 or not isinstance(result.get('watch_for'),str) or len(result['watch_for'])>800:
             raise ValueError('주식 적합성 판정 오류')
+        result = dict(result)
+        evidence = result['impact_evidence']
+        if not isinstance(evidence,str) or len(evidence)>300 or (evidence and (len(evidence)<8 or not any(evidence in quote for quote in fact.get('evidence') or []))):
+            raise ValueError('주식 영향 근거가 원문 인용에 없음')
+        if result['driver'] in DRIVERS[:4] and not evidence:
+            result.update(model_driver=result['driver'],model_reason=result['reason'],driver=DRIVERS[-1],
+                          reason='현재 원문 인용에서 주식 판단을 바꿀 구체적인 경제적 변화 근거를 확인하지 못했습니다.')
         result['assessed_at'] = now()
         result['stock_relevance'] = '주식 판단 재료' if result['driver'] in DRIVERS[:4] else '연결 미확인' if result['driver']==DRIVERS[-1] else '배경·상품 안내'
         with self.db() as db:
