@@ -74,10 +74,12 @@ def evaluate_ranking(engine,dataset):
     actual={r['event_id']:r for r in rows} if not error else {}
     checks=[{'id':c['id'],'event_id':label,'expected':c['expected'],'actual':actual.get(label,{}).get('stock_relevance'),
              'pass':actual.get(label,{}).get('stock_relevance')==c['expected']} for label,c in labels.items()]
+    for check in checks:
+        check['eligibility_pass']=check['actual'] in RELEVANCE and (check['actual']=='주식 판단 재료')==(check['expected']=='주식 판단 재료')
     after=engine.usage()
     for row in checks:print(engine.model,row,flush=True)
     return {'model':engine.model,'provider':engine.provider,'valid':error is None,'error':error,
-            'checks':checks,'passed':sum(c['pass'] for c in checks),'total':len(checks),'ranking':rows,'inputs':events,'market':market,
+            'checks':checks,'passed':sum(c['pass'] for c in checks),'eligibility_passed':sum(c['eligibility_pass'] for c in checks),'total':len(checks),'ranking':rows,'inputs':events,'market':market,
             'seconds':round(time.monotonic()-started,2),'call_delta':after.get('calls_today',0)-before.get('calls_today',0),
             'output_tokens_delta':after.get('output_tokens',0)-before.get('output_tokens',0),'usage':after,
             'limitations':'개발자 가상 자료의 최종 순위 경로만 검증. 수집·본문 읽기·적합성은 실행하지 않고 시장 관측도 비워 둠. 전문가 정답·독립 일반화·투자 성과 평가 아님.'}
@@ -115,15 +117,17 @@ def evaluate_window_ranking(engine,dataset):
         top=[labels[r['event_id']]['id'] for r in rows if r['stock_relevance']=='주식 판단 재료'][:8]
         checks=[{'id':c['id'],'expected':c['expected'],'actual':known.get(label,{}).get('stock_relevance'),
                  'reviewed':label in known,'pass':known.get(label,{}).get('stock_relevance')==c['expected']} for label,c in labels.items()]
+        for check in checks:
+            check['eligibility_pass']=check['actual'] in RELEVANCE and (check['actual']=='주식 판단 재료')==(check['expected']=='주식 판단 재료')
         after=engine.usage()
         result={'strategy':strategy,'valid':error is None,'error':error,'windows':windows,'ranking':rows,'checks':checks,
-                'reviewed':len(known),'total':len(cases),'passed':sum(c['pass'] for c in checks),'top8':top,
+                'reviewed':len(known),'total':len(cases),'passed':sum(c['pass'] for c in checks),'eligibility_passed':sum(c['eligibility_pass'] for c in checks),'top8':top,
                 'critical_hits':sum(c in top for c in critical),'critical_total':len(critical),
                 'seconds':round(time.monotonic()-started,2),'call_delta':after.get('calls_today',0)-before.get('calls_today',0),
                 'input_tokens_delta':after.get('input_tokens',0)-before.get('input_tokens',0),
                 'output_tokens_delta':after.get('output_tokens',0)-before.get('output_tokens',0)}
         runs.append(result)
-        print(engine.model,{k:result[k] for k in ('strategy','valid','reviewed','total','passed','critical_hits','seconds','call_delta')},flush=True)
+        print(engine.model,{k:result[k] for k in ('strategy','valid','reviewed','total','passed','eligibility_passed','critical_hits','seconds','call_delta')},flush=True)
     return {'model':engine.model,'provider':engine.provider,'runs':runs,'inputs':events,'market':market,
             'window_size':12,'step':4,'top_k':8,
             'priority_checks':critical,'limitations':'실험 전용. 앞 12개와 창 크기 12·이동 4의 뒤→앞 비교 및 입력 역순을 검사한다. 화면과 같은 상위 8개 중요 자료 회수는 개발자 가상 기대값이며 전역 최적 순위·전문가 정확도·투자 성과를 보장하지 않는다. 실패한 회차는 전체 검토 성공으로 취급하지 않는다. 운영 순위는 변경하지 않는다.'}

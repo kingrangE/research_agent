@@ -51,6 +51,7 @@ class IntelligenceTest(unittest.TestCase):
         for run in (forward,reverse):
             self.assertTrue(run['valid'])
             self.assertEqual((run['reviewed'],run['passed'],run['critical_hits']),(24,24,2))
+            self.assertEqual(run['eligibility_passed'],24)
             self.assertEqual(len({r['event_id'] for r in run['ranking']}),24)
             self.assertEqual([len(w['inputs']) for w in run['windows']],[12,12,12,12])
         original={c['summary'] for c in dataset['equity_screening']}
@@ -79,6 +80,7 @@ class IntelligenceTest(unittest.TestCase):
         self.assertFalse(run['valid'])
         self.assertEqual(run['error'],'TimeoutError')
         self.assertEqual((run['reviewed'],run['passed'],run['total']),(12,12,24))
+        self.assertEqual(run['eligibility_passed'],12)
         self.assertEqual(sum(c['reviewed'] for c in run['checks']),12)
 
     def test_window_boundaries_keep_top_eight_with_a_consistent_ranker(self):
@@ -103,6 +105,7 @@ class IntelligenceTest(unittest.TestCase):
         with patch('builtins.print'):
             report=evaluate_window_ranking(engine,dataset)
         self.assertTrue(all(not r['valid'] and r['reviewed']==0 for r in report['runs']))
+        self.assertTrue(all(r['eligibility_passed']==0 for r in report['runs']))
         for broken in ({**dataset,'priority_checks':['not-a-case']},
                        {**dataset,'equity_screening':[{**c,'expected':'unknown'} for c in dataset['equity_screening']]}):
             engine.rank.reset_mock()
@@ -187,6 +190,25 @@ class IntelligenceTest(unittest.TestCase):
         engine=MagicMock()
         self.assertRaises(ValueError,evaluate_ranking,engine,{'equity_screening':[{'id':'bad','summary':'평가용 본문입니다.','expected':'수혜 확정'}]})
         engine.rank.assert_not_called()
+
+    def test_ranking_evaluator_separates_label_agreement_from_equity_eligibility_without_guessing_missing_results(self):
+        engine=MagicMock(model='test',provider='ollama')
+        engine.usage.return_value={}
+        data={'equity_screening':[{'id':'background','summary':'일반 금융교육 일정 안내입니다.','expected':'배경·상품 안내'},
+                                  {'id':'risk','summary':'상장사 채무 불이행 공시입니다.','expected':'주식 판단 재료'}]}
+        engine.rank.return_value=[dict(rank_row('E1'),stock_relevance='연결 미확인'),dict(rank_row('E2'),stock_relevance='배경·상품 안내')]
+        with patch('builtins.print'):
+            result=evaluate_ranking(engine,data)
+        self.assertEqual(result['passed'],0)
+        self.assertEqual(result['eligibility_passed'],1)
+        self.assertTrue(result['checks'][0]['eligibility_pass'])
+        self.assertFalse(result['checks'][1]['eligibility_pass'])
+        engine.rank.return_value=[]
+        with patch('builtins.print'):
+            missing=evaluate_ranking(engine,data)
+        self.assertFalse(missing['valid'])
+        self.assertEqual(missing['eligibility_passed'],0)
+        self.assertTrue(all(c['actual'] is None and not c['eligibility_pass'] for c in missing['checks']))
 
     def test_source_passages_cover_the_body_and_selected_ids_restore_exact_evidence(self):
         for length in (8,240,241,247,248,480,481,6000):
