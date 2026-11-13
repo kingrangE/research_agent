@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from html.parser import HTMLParser
 import json
+import math
 import os
 import re
 from pathlib import Path
@@ -238,6 +239,7 @@ class Engine:
             db.executescript('''CREATE TABLE IF NOT EXISTS readings (cache_key TEXT PRIMARY KEY, article_id TEXT, payload TEXT, updated_at TEXT);
                 CREATE TABLE IF NOT EXISTS attempts (id INTEGER PRIMARY KEY, day TEXT, task TEXT, model TEXT, input_tokens INTEGER DEFAULT 0, output_tokens INTEGER DEFAULT 0, status TEXT);
                 CREATE TABLE IF NOT EXISTS screens (cache_key TEXT PRIMARY KEY, payload TEXT);
+                CREATE TABLE IF NOT EXISTS rank_snapshots (namespace TEXT PRIMARY KEY, payload TEXT);
                 CREATE TABLE IF NOT EXISTS failures (cache_key TEXT PRIMARY KEY, retry_after REAL);
                 CREATE TABLE IF NOT EXISTS bodies (url TEXT PRIMARY KEY, text TEXT, retry_after REAL);''')
             db.execute('BEGIN IMMEDIATE')
@@ -249,6 +251,50 @@ class Engine:
         self.ranked_sources = {}
         self.ranked_at = 0
         self.rank_key = ''
+        self.rank_namespace=sha256(json.dumps([self.queue.namespace,READ_VERSION,SCREEN_VERSION,RANK_VERSION]).encode()).hexdigest()
+        self.rank_cache_error=None
+        self.restore_rank()
+
+    def restore_rank(self):
+        try:
+            with self.db() as db:
+                row=db.execute('SELECT payload FROM rank_snapshots WHERE namespace=?',(self.rank_namespace,)).fetchone()
+            if not row:
+                return
+            saved=json.loads(row[0])
+            generated=saved['ranked_at']
+            if not math.isfinite(generated) or generated>time.time():
+                raise ValueError('순위 시각 오류')
+            if time.time()-generated>600:
+                return
+            market,sources=saved['market'],saved['sources']
+            if not isinstance(market,dict) or not isinstance(market.get('observations'),list) or not isinstance(sources,dict):
+                raise ValueError('순위 입력 오류')
+            fetched=market['fetched_epoch']
+            if not math.isfinite(fetched) or not 0<fetched<=generated:
+                raise ValueError('시장 입력 시각 오류')
+            if not all(isinstance(v,str) and re.fullmatch('[0-9a-f]{64}',v) for v in sources.values()):
+                raise ValueError('원문 입력 지문 오류')
+            if not isinstance(saved['rank_key'],str) or not re.fullmatch('[0-9a-f]{64}',saved['rank_key']):
+                raise ValueError('순위 입력 지문 오류')
+            ranking=validate_ranking({'ranking':saved['ranking']},set(sources))
+            self.last_market,self.ranked_sources,self.last_ranking=market,sources,ranking
+            self.rank_key,self.ranked_at=saved['rank_key'],generated
+        except (ValueError,TypeError,KeyError,sqlite3.Error) as error:
+            self.rank_cache_error=f'순위 캐시 복구 실패 · 현재 입력으로 재계산 ({type(error).__name__})'
+
+    def save_rank(self):
+        try:
+            with self.db() as db:
+                if self.last_ranking:
+                    saved={'market':self.last_market,'sources':self.ranked_sources,'ranking':self.last_ranking,
+                           'rank_key':self.rank_key,'ranked_at':self.ranked_at}
+                    db.execute('INSERT OR REPLACE INTO rank_snapshots VALUES(?,?)',(self.rank_namespace,json.dumps(saved,ensure_ascii=False)))
+                else:
+                    db.execute('DELETE FROM rank_snapshots WHERE namespace=?',(self.rank_namespace,))
+            self.rank_cache_error=None
+        except sqlite3.Error as error:
+            self.rank_cache_error=f'순위 캐시 저장 실패 · 현재 결과는 유지 ({type(error).__name__})'
 
     @contextmanager
     def db(self):
@@ -512,6 +558,7 @@ class Engine:
                     'coverage': {'candidates': len(articles), 'analyzed_articles': len(readings), 'events': len(grouped)},
                     'queue': self.queue.summary(),
                     'usage': self.usage(), 'daily_call_limit': self.daily_limit,
+                    'rank_cache_error':self.rank_cache_error,
                     'error': '분석 일부 실패 · 최신성 목록에서 전체 자료 확인' if errors else None}
         rank_failed = False
         if candidates and (rank_key != self.rank_key or time.time() - self.ranked_at >= 300):
@@ -523,12 +570,14 @@ class Engine:
                 ranking = [{**r,'event_id':labels[r['event_id']]} for r in self.rank(events,self.last_market)]
                 self.last_ranking, self.rank_key, self.ranked_at = ranking, rank_key, time.time()
                 self.ranked_sources = source_keys
+                self.save_rank()
             except Exception as error:
                 rank_failed = True
                 errors.append(type(error).__name__)
         if gates and not candidates:
             self.last_ranking, self.rank_key, self.ranked_at = [],rank_key,time.time()
             self.ranked_sources = {}
+            self.save_rank()
         return result(rank_failed)
 
 

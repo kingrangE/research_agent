@@ -165,6 +165,16 @@ test('briefing selects the evidence representative and explains filtered source 
   assert.ok(!run(`readingHTML(data.articles[0])`).includes('href="javascript:'));
 });
 
+test('rank storage errors stay in operations and are escaped without expiring a valid rank', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{events:[],ranking:[],ranked_at:new Date().toISOString(),ranking_stale:false,rank_cache_error:'<저장 실패> 현재 결과 유지'}};render()`);
+  const html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('순위 복구·저장 상태'));
+  assert.ok(html.includes('&lt;저장 실패&gt;'));
+  assert.ok(!html.includes('<저장 실패>'));
+  assert.equal(run('rankingExpired()'),false);
+});
+
 test('collection view exposes unfinished coverage and escapes provider errors', () => {
   const run=ui();
   run(`data={articles:[],sources:[],collection:{day:'2026-11-12',next_page:73,last_success:'2026-11-12T10:00:00Z',complete_at:null,last_error:'<script>provider error</script>'}};render()`);

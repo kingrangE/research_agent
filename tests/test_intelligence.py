@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
@@ -380,6 +381,98 @@ class IntelligenceTest(unittest.TestCase):
             failed=self.engine.cycle([ARTICLE])
         self.assertFalse(failed['ranking_stale']);self.assertTrue(failed['ranking_partial']);self.assertEqual(failed['status'],'partial')
         self.assertEqual(failed['ranking'],first['ranking'])
+
+    def test_restart_reuses_only_the_same_fresh_rank_inputs_and_generation_time(self):
+        reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=[rank_row('E1')]):
+            first=self.engine.cycle([ARTICLE])
+        other=ai.Engine(self.engine.path)
+        with patch.object(other,'rank',return_value=[rank_row('E1')]) as rank,patch('intelligence.market_snapshot',return_value={'observations':[]}) as market:
+            restored=other.cycle([ARTICLE])
+        rank.assert_not_called();market.assert_not_called()
+        self.assertEqual(restored['ranking'],first['ranking'])
+        self.assertEqual(restored['ranked_at'],first['ranked_at'])
+        self.assertEqual(restored['market'],first['market'])
+
+    def seed_saved_rank(self, relevance='주식 판단 재료'):
+        reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=[dict(rank_row('E1'),stock_relevance=relevance)]):
+            result=self.engine.cycle([ARTICLE])
+        return reading,result
+
+    def test_saved_rank_isolated_by_model_and_each_analysis_policy(self):
+        self.seed_saved_rank()
+        for policy in ('READ_VERSION','SCREEN_VERSION','RANK_VERSION'):
+            with patch.object(ai,policy,'changed-policy'):
+                other=ai.Engine(self.engine.path)
+            self.assertEqual(other.last_ranking,[])
+            self.assertIsNone(other.rank_cache_error)
+        with patch.dict(os.environ,{'LLM_MODEL':'other-model'}):
+            other=ai.Engine(self.engine.path)
+        self.assertEqual(other.last_ranking,[])
+        with patch.dict(os.environ,{'LLM_PROVIDER':'gemini','LLM_MODEL':self.engine.model,'GEMINI_API_KEY':''}):
+            other=ai.Engine(self.engine.path)
+        self.assertEqual(other.last_ranking,[])
+
+    def test_restored_market_and_rank_still_refresh_after_the_original_five_minutes(self):
+        self.seed_saved_rank()
+        later=self.engine.ranked_at+301
+        with patch('intelligence.time.time',return_value=later):
+            other=ai.Engine(self.engine.path)
+            with patch('intelligence.market_snapshot',return_value={'observations':[]}) as market,patch.object(other,'rank',return_value=[rank_row('E1')]) as rank:
+                result=other.cycle([ARTICLE])
+        market.assert_called_once();rank.assert_called_once()
+        self.assertEqual(result['market']['fetched_epoch'],later)
+        self.assertEqual(other.ranked_at,later)
+
+    def test_expired_future_or_damaged_rank_cache_cannot_block_readings_or_restore_rank(self):
+        self.seed_saved_rank()
+        with self.engine.db() as db:
+            saved=json.loads(db.execute('SELECT payload FROM rank_snapshots WHERE namespace=?',(self.engine.rank_namespace,)).fetchone()[0])
+        variants=[('expired',{**saved,'ranked_at':ai.time.time()-601}),
+                  ('future',{**saved,'ranked_at':ai.time.time()+60}),
+                  ('bad-source',{**saved,'sources':{'e':'bad'}}),
+                  ('bad-schema',{**saved,'ranking':[{'event_id':'e'}]}),
+                  ('future-market',{**saved,'market':{**saved['market'],'fetched_epoch':ai.time.time()+60}}),
+                  ('broken-json',None)]
+        for name,payload in variants:
+            with self.subTest(name=name),self.engine.db() as db:
+                db.execute('UPDATE rank_snapshots SET payload=? WHERE namespace=?',('{' if payload is None else json.dumps(payload),self.engine.rank_namespace))
+            other=ai.Engine(self.engine.path)
+            self.assertEqual(other.last_ranking,[])
+            self.assertEqual(other.queue.summary()['done'],1)
+            if name!='expired':
+                self.assertIn('복구 실패',other.rank_cache_error)
+
+    def test_changed_evidence_after_restart_cannot_reuse_previous_reasons_on_failure(self):
+        reading,first=self.seed_saved_rank()
+        other=ai.Engine(self.engine.path)
+        changed={**ARTICLE,'title':'계약 변경 공시'}
+        new={**reading,'article_title':changed['title'],'summary':'새 계약 조건','evidence':['한빛에너지는 공급 조건이 변경됐다고 공시했다.']}
+        with patch.object(other,'reading',return_value=new),patch.object(other,'screen',return_value=GATE),patch.object(other,'rank',side_effect=TimeoutError):
+            result=other.cycle([changed])
+        self.assertEqual(result['ranking'],[])
+        self.assertEqual(result['events'][0]['summary'],'새 계약 조건')
+        self.assertEqual(result['ranked_at'],first['ranked_at'])
+
+    def test_restored_final_rejection_stays_excluded_without_another_rank_call(self):
+        self.seed_saved_rank('배경·상품 안내')
+        other=ai.Engine(self.engine.path)
+        with patch.object(other,'rank') as rank,patch('intelligence.market_snapshot') as market:
+            result=other.cycle([ARTICLE])
+        rank.assert_not_called();market.assert_not_called()
+        self.assertEqual(result['ranking'],[])
+        self.assertEqual(result['assessments'][0]['stock_relevance'],'배경·상품 안내')
+
+    def test_rank_cache_write_failure_keeps_current_valid_result_and_empty_inputs_clear_cache(self):
+        reading,first=self.seed_saved_rank()
+        with patch.object(self.engine,'db',side_effect=sqlite3.OperationalError('busy')):
+            self.engine.save_rank()
+        self.assertEqual(self.engine.last_ranking,first['ranking'])
+        self.assertIn('저장 실패',self.engine.rank_cache_error)
+        with patch.object(self.engine.queue,'readings',return_value=([reading],[dict(GATE,event_id='e',stock_relevance='배경·상품 안내')])):
+            self.engine.cycle([ARTICLE])
+        self.assertEqual(ai.Engine(self.engine.path).last_ranking,[])
 
     def test_finished_article_is_published_before_waiting_for_the_next_article(self):
         articles=[ARTICLE,{**ARTICLE,'id':'b','url':ARTICLE['url']+'b'}]
