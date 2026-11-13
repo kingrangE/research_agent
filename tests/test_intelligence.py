@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import intelligence as ai
-from evaluate_models import evaluate, evaluate_equity, evaluate_ranking
+from evaluate_models import evaluate, evaluate_equity, evaluate_ranking, evaluate_window_ranking
 
 BODY = '한빛에너지는 미국 고객사와 3000억원 규모의 전력변압기 공급 계약을 체결했다고 공시했다. 계약 기간은 2027년부터 2029년까지다.'
 GATE = {'driver':'기업 실적·수주·경쟁·비용 변화','reason':'실적에 영향을 주는 계약 변화','watch_for':'공시와 실적 전망 확인','stock_relevance':'주식 판단 재료','screen_policy_version':ai.SCREEN_VERSION}
@@ -23,6 +23,90 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def coverage_fixture(self):
+        return json.loads((Path(__file__).parent/'fixtures/ranking_coverage_eval.json').read_text())
+
+    def coverage_oracle(self,dataset):
+        cases=dataset['equity_screening']
+        priorities={case['summary']:i+2 for i,case in enumerate(cases)}
+        priorities[cases[12]['summary']]=0
+        priorities[cases[13]['summary']]=1
+        labels={c['summary']:c['expected'] for c in cases}
+        def rank(events,market):
+            return [dict(rank_row(e['event_id']),stock_relevance=labels[e['evidence'][0]]) for e in sorted(events,key=lambda e:priorities[e['evidence'][0]])]
+        return rank
+
+    def test_window_comparison_covers_tail_candidates_with_a_consistent_mock_ranker(self):
+        dataset=self.coverage_fixture()
+        engine=MagicMock(model='test',provider='ollama')
+        engine.usage.return_value={}
+        engine.rank.side_effect=self.coverage_oracle(dataset)
+        with patch('builtins.print'):
+            report=evaluate_window_ranking(engine,dataset)
+        first,forward,reverse=report['runs']
+        self.assertEqual(engine.rank.call_count,5)
+        self.assertEqual((first['reviewed'],first['critical_hits']),(12,0))
+        for run in (forward,reverse):
+            self.assertTrue(run['valid'])
+            self.assertEqual((run['reviewed'],run['passed'],run['critical_hits']),(18,18,2))
+            self.assertEqual(len({r['event_id'] for r in run['ranking']}),18)
+            self.assertEqual([len(w['inputs']) for w in run['windows']],[12,12])
+        original={c['summary'] for c in dataset['equity_screening']}
+        for call in engine.rank.call_args_list:
+            self.assertEqual([e['event_id'] for e in call.args[0]],[f'E{i+1}' for i in range(len(call.args[0]))])
+            for event in call.args[0]:
+                self.assertEqual(set(event),{'event_id','evidence','published_at','first_published_at'})
+                self.assertIn(event['evidence'][0],original)
+                self.assertRegex(event['event_id'],r'^E\d+$')
+
+    def test_failed_window_is_not_full_coverage_even_after_a_successful_window(self):
+        dataset=self.coverage_fixture()
+        engine=MagicMock(model='test',provider='ollama')
+        engine.usage.return_value={}
+        oracle=self.coverage_oracle(dataset)
+        count=0
+        def rank(events,market):
+            nonlocal count
+            count+=1
+            if count==3:raise TimeoutError()
+            return oracle(events,market)
+        engine.rank.side_effect=rank
+        with patch('builtins.print'):
+            report=evaluate_window_ranking(engine,dataset)
+        run=report['runs'][1]
+        self.assertFalse(run['valid'])
+        self.assertEqual(run['error'],'TimeoutError')
+        self.assertEqual((run['reviewed'],run['passed'],run['total']),(12,12,18))
+        self.assertEqual(sum(c['reviewed'] for c in run['checks']),12)
+
+    def test_window_boundaries_keep_top_six_with_a_consistent_ranker(self):
+        for size in (13,19,35):
+            cases=[{'id':str(i),'summary':f'공개 계약 원문 사례 번호 {i}','expected':'주식 판단 재료'} for i in range(size)]
+            dataset={'equity_screening':cases,'priority_checks':[str(size-1),str(size-2)]}
+            engine=MagicMock(model='test',provider='ollama')
+            engine.usage.return_value={}
+            engine.rank.side_effect=lambda events,market:[rank_row(e['event_id']) for e in sorted(events,key=lambda e:int(e['evidence'][0].split()[-1]),reverse=True)]
+            with patch('builtins.print'):
+                report=evaluate_window_ranking(engine,dataset)
+            for run in report['runs'][1:]:
+                self.assertEqual(run['reviewed'],size)
+                self.assertEqual(run['top6'],[str(i) for i in range(size-1,size-7,-1)])
+                self.assertTrue(all(len(w['inputs'])<=12 for w in run['windows']))
+
+    def test_window_evaluator_rejects_bad_model_ids_and_missing_expected_labels(self):
+        dataset=self.coverage_fixture()
+        engine=MagicMock(model='test',provider='ollama')
+        engine.usage.return_value={}
+        engine.rank.return_value=[rank_row('invented')]
+        with patch('builtins.print'):
+            report=evaluate_window_ranking(engine,dataset)
+        self.assertTrue(all(not r['valid'] and r['reviewed']==0 for r in report['runs']))
+        for broken in ({**dataset,'priority_checks':['not-a-case']},
+                       {**dataset,'equity_screening':[{**c,'expected':'unknown'} for c in dataset['equity_screening']]}):
+            engine.rank.reset_mock()
+            self.assertRaises(ValueError,evaluate_window_ranking,engine,broken)
+            engine.rank.assert_not_called()
+
     def test_cluster_evaluation_checks_facts_and_does_not_pass_unlabelled_cases(self):
         engine=MagicMock(model='test',provider='ollama')
         engine.extract_reading.return_value={**READING,'match_event_id':'same'}
