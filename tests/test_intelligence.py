@@ -67,6 +67,11 @@ class IntelligenceTest(unittest.TestCase):
         parser.feed('<nav>메뉴</nav><div id="articletxt"><p>본문 하나</p><script>악성 지시</script><p>둘</p></div><footer>푸터</footer>')
         self.assertEqual(' '.join(parser.parts),'본문 하나 둘')
         self.assertTrue(ai.article_url(ARTICLE['url']))
+        self.assertTrue(ai.article_url('https://n.news.naver.com/article/001/0012345678'))
+        self.assertFalse(ai.article_url('https://n.news.naver.com.evil.test/article/001/0012345678'))
+        self.assertFalse(ai.article_url('https://n.news.naver.com/article/001/../secret'))
+        portal=ai.ArticleParser();portal.feed('<div id="dic_area">실제 본문<script>skip</script></div><nav>메뉴</nav>')
+        self.assertEqual(' '.join(portal.parts),'실제 본문')
         for url in ['http://www.hankyung.com/article/a','https://www.hankyung.com.evil.test/article/a','https://127.0.0.1/article/a','https://user@www.hankyung.com/article/a']:
             self.assertFalse(ai.article_url(url))
         with self.assertRaises(ValueError):

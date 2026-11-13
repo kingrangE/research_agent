@@ -126,7 +126,7 @@ class ArticleParser(HTMLParser):
         if tag in ('script', 'style'):
             self.skip += 1
         attrs = dict(attrs)
-        if attrs.get('id') in ('articletxt', 'article-body', 'articleBody') or 'article-body' in attrs.get('class', '').split():
+        if attrs.get('id') in ('articletxt', 'article-body', 'articleBody', 'dic_area') or 'article-body' in attrs.get('class', '').split():
             self.article_depth = self.depth
 
     def handle_endtag(self, tag):
@@ -144,8 +144,12 @@ class ArticleParser(HTMLParser):
 
 
 def article_url(url):
-    p = urlsplit(url)
-    return p.scheme == 'https' and p.hostname in ('www.hankyung.com', 'hankyung.com') and not p.username and p.port in (None, 443) and p.path.startswith('/article/')
+    try:
+        p = urlsplit(url)
+        path_ok = (p.hostname in ('www.hankyung.com','hankyung.com') and p.path.startswith('/article/')) or (p.hostname=='n.news.naver.com' and re.fullmatch(r'/(?:mnews/)?article/\d{3}/\d{10}',p.path))
+        return bool(p.scheme=='https' and not (p.username or p.password) and p.port in (None,443) and path_ok)
+    except (ValueError,TypeError):
+        return False
 
 
 class ArticleRedirect(HTTPRedirectHandler):
@@ -242,7 +246,7 @@ class Engine:
             call_id = row.lastrowid
         messages = [{'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False) + '\n응답 JSON Schema: ' + json.dumps(output_schema, ensure_ascii=False)}]
         if self.provider == 'ollama':
-            endpoint = 'http://127.0.0.1:11434/api/chat'
+            endpoint = os.environ.get('OLLAMA_URL','http://127.0.0.1:11434').rstrip('/')+'/api/chat'
             request = {'model': self.model, 'messages': messages, 'stream': False, 'format': output_schema,
                        'options': {'temperature': 0, 'num_ctx': 16384, 'num_predict': {'read':1800,'screen':600,'rank':3000}[task]}}
             headers = {'Content-Type': 'application/json'}

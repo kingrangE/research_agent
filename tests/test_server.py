@@ -9,6 +9,15 @@ import server
 
 
 class DashboardTest(unittest.TestCase):
+    def test_archive_api_validates_filters_and_pages_without_recommendation_filter(self):
+        rows=[self.article(f'행사 {i}',id=str(i),url=f'https://example.com/{i:02}') for i in range(32)]
+        server.archive.store(rows)
+        first=server.archive_snapshot({})
+        self.assertEqual(len(first['articles']),30)
+        second=server.archive_snapshot({'cursor':[first['next_cursor']]})
+        self.assertEqual(len(second['articles']),2)
+        for params in [{'cursor':['invalid']},{'since':['2026-99-01']},{'since':['2026-11-12'],'until':['2026-11-11']},{'kind':['bad']}]:
+            self.assertRaises(ValueError,server.archive_snapshot,params)
 
     def setUp(self):
         temp = tempfile.TemporaryDirectory()

@@ -1,6 +1,7 @@
 """맥락 prototype: public-feed collection and an explainable reading queue."""
 
 import argparse
+import base64
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -20,6 +21,7 @@ import stocks
 import relations
 import intelligence
 import archive
+import news_ingestion
 from analysis_store import epoch
 
 ROOT = Path(__file__).resolve().parent
@@ -131,6 +133,8 @@ def classify(article, now=None, reading=None):
 def snapshot():
     with LOCK:
         state = {**STATE, "articles": [dict(a) for a in STATE["articles"]], "sources": [dict(s) for s in STATE["sources"]]}
+    portal_articles=archive.browse(limit=90,source_id='naver')
+    state['articles'].extend(portal_articles['articles'])
     analysis = intelligence.snapshot()
     readings = {a['id']:a for event in analysis.get('events',[]) for a in event['articles']}
     articles = [classify({k:v for k,v in a.items() if k != 'feed_xml'},reading=readings.get(a['id'])) for a in deduplicate(state['articles'])]
@@ -139,16 +143,51 @@ def snapshot():
                "count": sum(any(m["id"] == t["id"] for m in a["themes"]) for a in articles)} for t in THEMES]
     with stocks.LOCK:
         stock_status = dict(stocks.CATALOGUE_STATUS)
+    portal=news_ingestion.status()
+    state['sources'].append({'id':'naver','name':'Npay 증권 · 전체 속보','url':'https://stock.naver.com/news/flashnews',
+        'status':'stale' if portal.get('last_error') else 'ok' if portal.get('last_success') and time.time()-epoch(portal['last_success'])<60 else 'stale' if portal.get('last_success') else 'pending',
+        'count':portal_articles['total'],'last_success':portal.get('last_success'),
+        'error':portal.get('last_error') or ('상시 작업자 확인 필요' if not portal.get('last_success') or time.time()-epoch(portal['last_success'])>=60 else None)})
     return {**state, "articles": articles, "themes": themes, "raw_count": len(state["articles"]), "interval": INTERVAL,
             "stock_status": stock_status, "quote_interval": stocks.QUOTE_TTL, "intelligence": analysis, "archive": archive.summary(),
+            "collection":portal,
             "method": "기본 추천은 주식 적합성을 검토한 사건의 모델 순위. 전체 자료의 최신성 점수는 별도 유지. 국내·미국 종목 연결과 공개 근거를 제공하며 실적·가격 반영 정도는 추가 확인 필요."}
 
 
+def archive_snapshot(params):
+    value=lambda name:params.get(name,[''])[0]
+    query,source,since,until=value('q'),value('source'),value('since'),value('until')
+    if len(query)>200 or len(source)>100:
+        raise ValueError('검색 조건 길이 초과')
+    for date in (since,until):
+        if date:datetime.strptime(date,'%Y-%m-%d')
+    if since and until and since>until:
+        raise ValueError('기간 순서 오류')
+    before=None
+    if value('cursor'):
+        try:
+            before=json.loads(base64.urlsafe_b64decode(value('cursor').encode()).decode())
+            if not isinstance(before,list) or len(before)!=2 or type(before[0]) is not int or not isinstance(before[1],str) or len(before[1])>2000:
+                raise ValueError()
+        except Exception as error:
+            raise ValueError('기사 페이지 위치 오류') from error
+    theme=next((t for t in THEMES if t['id']==value('theme')),None)
+    kind=value('kind') or 'all'
+    if kind not in ('all','news','report') or (value('theme') and not theme):
+        raise ValueError('분류 조건 오류')
+    result=archive.browse(before=before,query=query,source=source,since=since,until=until,words=theme['keywords'] if theme else (),kind=kind)
+    analysis=intelligence.snapshot()
+    readings={a['id']:a for e in analysis.get('events',[]) for a in e['articles']}
+    result['articles']=[classify({k:v for k,v in a.items() if k!='feed_xml'},reading=readings.get(a['id'])) for a in result['articles']]
+    result['next_cursor']=base64.urlsafe_b64encode(json.dumps(result.pop('next')).encode()).decode() if result['next'] else None
+    result.pop('next',None)
+    return result
 
 
 def analysis_articles():
     with LOCK:
         articles = [dict(a) for a in STATE['articles']]
+    articles.extend(archive.browse(limit=90,source_id='naver')['articles'])
     return sorted(deduplicate(articles), key=lambda a: epoch(a.get('published_at')), reverse=True)
 
 
@@ -210,6 +249,14 @@ def demo_snapshot():
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path == '/api/articles':
+            try:
+                result=archive_snapshot(parse_qs(urlsplit(self.path).query))
+            except ValueError:
+                self.respond(b'{"error":"Invalid article query"}', 'application/json',400)
+                return
+            self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == "/api/dashboard":
             self.respond(json.dumps(snapshot(), ensure_ascii=False).encode(), "application/json; charset=utf-8")
             return
@@ -251,6 +298,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="맥락 투자 정보 대시보드 시제품")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument('--host',default='127.0.0.1',help='기본 로컬 접속 · 컨테이너 내부에서만 0.0.0.0 사용')
     parser.add_argument('--analysis', action='store_true', help='Ollama 본문 분석·사건 묶기·시장 맥락순 활성화')
     args = parser.parse_args()
     if args.analysis:
@@ -266,4 +314,4 @@ if __name__ == "__main__":
     threading.Thread(target=stocks.catalogue_collector, daemon=True).start()
     threading.Thread(target=intelligence.collector, args=(analysis_articles,), daemon=True).start()
     print(f"맥락 prototype: http://127.0.0.1:{args.port} ({INTERVAL}초 간격 수집)", flush=True)
-    ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()
+    ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
