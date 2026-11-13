@@ -44,13 +44,15 @@ class IntelligenceTest(unittest.TestCase):
         with patch('builtins.print'):
             report=evaluate_window_ranking(engine,dataset)
         first,forward,reverse=report['runs']
-        self.assertEqual(engine.rank.call_count,5)
+        self.assertEqual((report['window_size'],report['step'],report['top_k']),(12,4,8))
+        self.assertGreater(sum(c['expected']=='주식 판단 재료' for c in dataset['equity_screening']),8)
+        self.assertEqual(engine.rank.call_count,9)
         self.assertEqual((first['reviewed'],first['critical_hits']),(12,0))
         for run in (forward,reverse):
             self.assertTrue(run['valid'])
-            self.assertEqual((run['reviewed'],run['passed'],run['critical_hits']),(18,18,2))
-            self.assertEqual(len({r['event_id'] for r in run['ranking']}),18)
-            self.assertEqual([len(w['inputs']) for w in run['windows']],[12,12])
+            self.assertEqual((run['reviewed'],run['passed'],run['critical_hits']),(24,24,2))
+            self.assertEqual(len({r['event_id'] for r in run['ranking']}),24)
+            self.assertEqual([len(w['inputs']) for w in run['windows']],[12,12,12,12])
         original={c['summary'] for c in dataset['equity_screening']}
         for call in engine.rank.call_args_list:
             self.assertEqual([e['event_id'] for e in call.args[0]],[f'E{i+1}' for i in range(len(call.args[0]))])
@@ -76,10 +78,10 @@ class IntelligenceTest(unittest.TestCase):
         run=report['runs'][1]
         self.assertFalse(run['valid'])
         self.assertEqual(run['error'],'TimeoutError')
-        self.assertEqual((run['reviewed'],run['passed'],run['total']),(12,12,18))
+        self.assertEqual((run['reviewed'],run['passed'],run['total']),(12,12,24))
         self.assertEqual(sum(c['reviewed'] for c in run['checks']),12)
 
-    def test_window_boundaries_keep_top_six_with_a_consistent_ranker(self):
+    def test_window_boundaries_keep_top_eight_with_a_consistent_ranker(self):
         for size in (13,19,35):
             cases=[{'id':str(i),'summary':f'공개 계약 원문 사례 번호 {i}','expected':'주식 판단 재료'} for i in range(size)]
             dataset={'equity_screening':cases,'priority_checks':[str(size-1),str(size-2)]}
@@ -90,7 +92,7 @@ class IntelligenceTest(unittest.TestCase):
                 report=evaluate_window_ranking(engine,dataset)
             for run in report['runs'][1:]:
                 self.assertEqual(run['reviewed'],size)
-                self.assertEqual(run['top6'],[str(i) for i in range(size-1,size-7,-1)])
+                self.assertEqual(run['top8'],[str(i) for i in range(size-1,size-9,-1)])
                 self.assertTrue(all(len(w['inputs'])<=12 for w in run['windows']))
 
     def test_window_evaluator_rejects_bad_model_ids_and_missing_expected_labels(self):

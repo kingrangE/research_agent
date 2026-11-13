@@ -108,16 +108,16 @@ def evaluate_window_ranking(engine,dataset):
                 known.update({r['event_id']:r for r in rows})
                 order[start:end]=[r['event_id'] for r in rows]
                 if start==0:break
-                end-=6
+                end-=4
         except Exception as failure:
             error=type(failure).__name__
         rows=[known[i] for i in order if i in known]
-        top=[labels[r['event_id']]['id'] for r in rows if r['stock_relevance']=='주식 판단 재료'][:6]
+        top=[labels[r['event_id']]['id'] for r in rows if r['stock_relevance']=='주식 판단 재료'][:8]
         checks=[{'id':c['id'],'expected':c['expected'],'actual':known.get(label,{}).get('stock_relevance'),
                  'reviewed':label in known,'pass':known.get(label,{}).get('stock_relevance')==c['expected']} for label,c in labels.items()]
         after=engine.usage()
         result={'strategy':strategy,'valid':error is None,'error':error,'windows':windows,'ranking':rows,'checks':checks,
-                'reviewed':len(known),'total':len(cases),'passed':sum(c['pass'] for c in checks),'top6':top,
+                'reviewed':len(known),'total':len(cases),'passed':sum(c['pass'] for c in checks),'top8':top,
                 'critical_hits':sum(c in top for c in critical),'critical_total':len(critical),
                 'seconds':round(time.monotonic()-started,2),'call_delta':after.get('calls_today',0)-before.get('calls_today',0),
                 'input_tokens_delta':after.get('input_tokens',0)-before.get('input_tokens',0),
@@ -125,7 +125,8 @@ def evaluate_window_ranking(engine,dataset):
         runs.append(result)
         print(engine.model,{k:result[k] for k in ('strategy','valid','reviewed','total','passed','critical_hits','seconds','call_delta')},flush=True)
     return {'model':engine.model,'provider':engine.provider,'runs':runs,'inputs':events,'market':market,
-            'priority_checks':critical,'limitations':'실험 전용. 앞 12개와 창 크기 12·이동 6의 뒤→앞 비교 및 입력 역순을 검사한다. 상위 6개 중요 자료 회수는 개발자 가상 기대값이며 전역 최적 순위·전문가 정확도·투자 성과를 보장하지 않는다. 실패한 회차는 전체 검토 성공으로 취급하지 않는다. 운영 순위는 변경하지 않는다.'}
+            'window_size':12,'step':4,'top_k':8,
+            'priority_checks':critical,'limitations':'실험 전용. 앞 12개와 창 크기 12·이동 4의 뒤→앞 비교 및 입력 역순을 검사한다. 화면과 같은 상위 8개 중요 자료 회수는 개발자 가상 기대값이며 전역 최적 순위·전문가 정확도·투자 성과를 보장하지 않는다. 실패한 회차는 전체 검토 성공으로 취급하지 않는다. 운영 순위는 변경하지 않는다.'}
 
 
 def evaluate_equity(engine,dataset):
