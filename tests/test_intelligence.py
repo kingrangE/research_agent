@@ -256,6 +256,49 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(timings['rank']['failed'],1)
         self.assertEqual(other.usage()['calls_today'],2)
 
+    def test_invalid_content_and_incomplete_responses_are_counted_separately_from_transport(self):
+        responses=[{'done':True,'done_reason':'stop','message':{'content':'{'},'prompt_eval_count':10,'eval_count':2},
+                   {'done':True,'done_reason':'length','message':{'content':'{}'},'prompt_eval_count':10,'eval_count':2},[]]
+        for payload in responses:
+            response=MagicMock()
+            response.__enter__.return_value.read.return_value=json.dumps(payload).encode()
+            with patch('intelligence.urlopen',return_value=response):
+                self.assertRaises((ValueError,AttributeError),self.engine.call,'read',{},ai.READ_SCHEMA)
+        timing=self.engine.usage()['timings'][0]
+        self.assertEqual(timing['failed'],0)
+        self.assertEqual(timing['response_checked'],3)
+        self.assertEqual(timing['response_failed'],3)
+        self.assertEqual(self.engine.usage()['calls_today'],3)
+        self.assertEqual(self.engine.usage()['output_tokens'],4)
+
+    def test_response_json_success_is_not_an_analysis_schema_success_and_legacy_is_unknown(self):
+        with self.engine.db() as db:
+            db.execute('INSERT INTO attempts(day,task,model,status,duration_seconds) VALUES(?,?,?,?,?)',(ai.now()[:10],'read',self.engine.model,'received',1))
+        timing=self.engine.usage()['timings'][0]
+        self.assertEqual(timing['response_checked'],0)
+        response=MagicMock()
+        response.__enter__.return_value.read.return_value=json.dumps({'done':True,'done_reason':'stop','message':{'content':'[]'}}).encode()
+        with patch('intelligence.urlopen',return_value=response):
+            self.assertEqual(self.engine.call('read',{},ai.READ_SCHEMA),[])
+        timing=self.engine.usage()['timings'][0]
+        self.assertEqual(timing['response_checked'],1)
+        self.assertEqual(timing['response_failed'],0)
+
+    def test_cloud_response_failures_keep_reported_tokens_without_retrying(self):
+        cases=[{'choices':[]},
+               {'choices':[{'finish_reason':'length','message':{'content':'{}'}}]},
+               {'choices':[{'finish_reason':'stop','message':{'refusal':'blocked','content':'{}'}}]}]
+        for payload in cases:
+            response=MagicMock()
+            response.__enter__.return_value.read.return_value=json.dumps({**payload,'usage':{'prompt_tokens':20,'completion_tokens':5}}).encode()
+            with patch.object(self.engine,'provider','gemini'),patch('intelligence.urlopen',return_value=response) as request:
+                self.assertRaises((ValueError,IndexError),self.engine.call,'read',{},ai.READ_SCHEMA)
+            request.assert_called_once()
+        timing=self.engine.usage()['timings'][0]
+        self.assertEqual(timing['response_failed'],3)
+        self.assertEqual(self.engine.usage()['input_tokens'],60)
+        self.assertEqual(self.engine.usage()['output_tokens'],15)
+
     def test_legacy_usage_migration_preserves_counts_without_fabricated_timings(self):
         with self.engine.db() as db:
             db.execute('DROP TABLE attempts')

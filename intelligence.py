@@ -310,7 +310,9 @@ class Engine:
             row = db.execute('SELECT count(*),coalesce(sum(input_tokens),0),coalesce(sum(output_tokens),0) FROM attempts WHERE day=?', (now()[:10],)).fetchone()
             measured = db.execute('SELECT task,status,duration_seconds FROM attempts WHERE model=? AND duration_seconds IS NOT NULL ORDER BY id DESC LIMIT 100',(self.model,)).fetchall()
         timings=[{'task':task,**analysis_store.timing_summary(r[2] for r in measured if r[0]==task),
-            'failed':sum(r[0]==task and r[1]=='failed' for r in measured)} for task in sorted({r[0] for r in measured})]
+            'failed':sum(r[0]==task and r[1]=='failed' for r in measured),
+            'response_checked':sum(r[0]==task and r[1] in ('parsed','response_failed') for r in measured),
+            'response_failed':sum(r[0]==task and r[1]=='response_failed' for r in measured)} for task in sorted({r[0] for r in measured})]
         return {**dict(zip(('calls_today', 'input_tokens', 'output_tokens'), row)),'timings':timings}
 
     def call(self, task, payload, output_schema):
@@ -350,21 +352,33 @@ class Engine:
             duration=time.monotonic()-requested
             with self.db() as db:
                 db.execute('UPDATE attempts SET duration_seconds=?,status=? WHERE id=?',(duration,request_status,call_id))
-        if self.provider == 'ollama':
-            usage = {'prompt_tokens': response.get('prompt_eval_count', 0), 'completion_tokens': response.get('eval_count', 0)}
-            complete = response.get('done') and response.get('done_reason') == 'stop'
-            content = response.get('message', {}).get('content', '')
-        else:
-            usage = response.get('usage', {})
-            choice = response['choices'][0]
-            complete = choice.get('finish_reason') == 'stop' and not choice['message'].get('refusal')
-            content = choice['message'].get('content', '')
+        try:
+            if not isinstance(response,dict):
+                raise ValueError('모델 응답 객체 형식 오류')
+            if self.provider == 'ollama':
+                usage = {'prompt_tokens': response.get('prompt_eval_count', 0), 'completion_tokens': response.get('eval_count', 0)}
+            else:
+                usage = response.get('usage', {})
+            with self.db() as db:
+                db.execute('UPDATE attempts SET input_tokens=?,output_tokens=? WHERE id=?',
+                           (usage.get('prompt_tokens', 0), usage.get('completion_tokens', 0), call_id))
+            if self.provider == 'ollama':
+                complete = response.get('done') and response.get('done_reason') == 'stop'
+                content = response.get('message', {}).get('content', '')
+            else:
+                choice = response['choices'][0]
+                complete = choice.get('finish_reason') == 'stop' and not choice['message'].get('refusal')
+                content = choice['message'].get('content', '')
+            if not complete:
+                raise ValueError('모델 응답 미완료·거절')
+            output=json.loads(content)
+        except (ValueError,TypeError,KeyError,IndexError,AttributeError):
+            with self.db() as db:
+                db.execute("UPDATE attempts SET status='response_failed' WHERE id=?",(call_id,))
+            raise
         with self.db() as db:
-            db.execute('UPDATE attempts SET input_tokens=?,output_tokens=?,status=? WHERE id=?',
-                       (usage.get('prompt_tokens', 0), usage.get('completion_tokens', 0), 'received', call_id))
-        if not complete:
-            raise ValueError('모델 응답 미완료·거절')
-        return json.loads(content)
+            db.execute("UPDATE attempts SET status='parsed' WHERE id=?",(call_id,))
+        return output
 
     def body(self, url):
         archived = archive.get_body(url)
