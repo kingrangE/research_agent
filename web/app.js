@@ -114,8 +114,12 @@ function filteredArticles() {
   list.sort((a,b)=>b.score-a.score || (Date.parse(b.published_at) || 0)-(Date.parse(a.published_at) || 0));
   if (hasContextRanking() && view!=='feed') {
     const rank = new Map(data.intelligence.ranking.map((r,i)=>[r.event_id,i]));
-    const seen = new Set();
-    return list.filter(a=>{const e=eventFor(a);if (!e || !rank.has(e.event_id)) return view === 'feed';if(seen.has(e.event_id)) return false;seen.add(e.event_id);return true;})
+    const selected = new Map();
+    for (const a of list) {
+      const e=eventFor(a);
+      if (e && rank.has(e.event_id) && (!selected.has(e.event_id) || a.id===e.article_id)) selected.set(e.event_id,a);
+    }
+    return [...selected.values()]
       .sort((a,b)=>(rank.get(eventFor(a)?.event_id) ?? Infinity)-(rank.get(eventFor(b)?.event_id) ?? Infinity));
   }
   if (sort === 'context' && view === 'briefing') return [];
@@ -127,7 +131,9 @@ function readingHTML(article) {
   const assessment = (data?.intelligence?.assessments || data?.intelligence?.ranking)?.find(r=>r.event_id === e?.event_id);
   if (!e) return `<section class="detail-overview"><h3>본문 분석 대기</h3><p>아직 본문에서 확인한 사건 정보가 없습니다.</p><div class="detail-question">확인할 것 · ${escape(article.question || '원문에서 사건 당사자와 새 사실을 확인하세요.')}</div></section>`;
   const excluded = assessment?.stock_relevance && assessment.stock_relevance !== '주식 판단 재료';
-  return `<section class="detail-overview"><div class="overview-heading"><h3>핵심 사건</h3><span class="certainty-badge">모델 요약 · 검수 전</span></div><p class="event-summary">${escape(e.summary)}</p><dl class="event-facts">${[['사건 상태',e.certainty],['유형',e.event_type],['규모',e.amount],['시점',e.timing]].map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value || '미확인')}</dd></div>`).join('')}</dl></section><div class="detail-decision-grid"><section class="decision-tile"><h3>${excluded ? '추천 제외 이유' : '주식에 미칠 영향'}</h3><p>${escape(assessment?.reason || '아직 주식 영향 검토를 완료하지 않았습니다.')}</p><span class="assessment-label">${escape(recencyLabel(e) || assessment?.stock_relevance || '판단 대기')}${rankingExpired() ? ' · 갱신 지연' : ''}</span></section><section class="decision-tile next-check"><h3>다음 확인</h3><p>${escape(excluded ? '전체 자료로 보관 중입니다. 주식에 전달되는 구체적인 새 사실이 있는지 확인하세요.' : assessment?.watch_for || '원문의 새 사실과 관련 기업의 실적·가격 반영 여부를 확인하세요.')}</p></section></div>`;
+  const representativeLink=safeLink(e.source_url);
+  const representativeNote=e.article_id && e.article_id!==article.id ? `<p class="detail-meta">사건 대표 원문 기준${representativeLink ? ` · <a href="${escape(representativeLink)}" target="_blank" rel="noopener noreferrer">대표 원문 ↗</a>` : ''}</p>` : '';
+  return `${representativeNote}<section class="detail-overview"><div class="overview-heading"><h3>핵심 사건</h3><span class="certainty-badge">모델 요약 · 검수 전</span></div><p class="event-summary">${escape(e.summary)}</p><dl class="event-facts">${[['사건 상태',e.certainty],['유형',e.event_type],['규모',e.amount],['시점',e.timing]].map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value || '미확인')}</dd></div>`).join('')}</dl></section><div class="detail-decision-grid"><section class="decision-tile"><h3>${excluded ? '추천 제외 이유' : '주식에 미칠 영향'}</h3><p>${escape(assessment?.reason || '아직 주식 영향 검토를 완료하지 않았습니다.')}</p><span class="assessment-label">${escape(recencyLabel(e) || assessment?.stock_relevance || '판단 대기')}${rankingExpired() ? ' · 갱신 지연' : ''}</span></section><section class="decision-tile next-check"><h3>다음 확인</h3><p>${escape(excluded ? '전체 자료로 보관 중입니다. 주식에 전달되는 구체적인 새 사실이 있는지 확인하세요.' : assessment?.watch_for || '원문의 새 사실과 관련 기업의 실적·가격 반영 여부를 확인하세요.')}</p></section></div>`;
 }
 
 function articleHTML(a, index) {

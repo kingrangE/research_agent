@@ -152,6 +152,19 @@ test('market panel preserves delay disclosure and exposes incomplete market cont
   assert.ok(!html.includes('+0.00%'));
 });
 
+test('briefing selects the evidence representative and explains filtered source fallbacks', () => {
+  const run=ui();
+  run(`data={articles:[{id:'brief',title:'짧은 재보도',source:'test',score:49,themes:[]},{id:'detailed',title:'계약 조건 상세',source:'test',score:40,themes:[]}],intelligence:{ranking_stale:false,events:[{event_id:'e',article_id:'detailed',source_url:'https://example.com/detailed',summary:'검증할 계약 조건',articles:[{id:'brief'},{id:'detailed'}]}],assessments:[{event_id:'e',stock_relevance:'주식 판단 재료'}],ranking:[{event_id:'e'}]}}`);
+  assert.equal(run(`filteredArticles().map(a=>a.id).join(',')`),'detailed');
+  run(`query='짧은'`);
+  assert.equal(run(`filteredArticles().map(a=>a.id).join(',')`),'brief');
+  const html=run(`readingHTML(data.articles[0])`);
+  assert.ok(html.includes('사건 대표 원문 기준'));
+  assert.ok(html.includes('https://example.com/detailed'));
+  run(`data.intelligence.events[0].source_url='javascript:alert(1)'`);
+  assert.ok(!run(`readingHTML(data.articles[0])`).includes('href="javascript:'));
+});
+
 test('collection view exposes unfinished coverage and escapes provider errors', () => {
   const run=ui();
   run(`data={articles:[],sources:[],collection:{day:'2026-11-12',next_page:73,last_success:'2026-11-12T10:00:00Z',complete_at:null,last_error:'<script>provider error</script>'}};render()`);

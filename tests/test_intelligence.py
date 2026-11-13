@@ -297,9 +297,48 @@ class IntelligenceTest(unittest.TestCase):
     def test_event_groups_preserve_each_article_evidence(self):
         a={**ANALYZED,'event_id':'event-a','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         b={**a,'article_id':'b','source_url':'https://www.hankyung.com/article/b'}
-        grouped=ai.group_events([a,b])
+        grouped,gates=ai.group_events([a,b],[GATE,GATE])
         self.assertEqual(len(grouped),1);self.assertEqual(len(grouped[0]['articles']),2)
         self.assertEqual(grouped[0]['articles'][1]['evidence'],READING['evidence'])
+
+    def test_event_representative_keeps_its_own_gate_and_original_evidence(self):
+        brief={**ANALYZED,'event_id':'e','article_id':'brief','source_url':ARTICLE['url']+'brief',
+               'published_at':'2026-11-11T01:00:00Z','summary':'공급 계약 재보도','evidence':['한빛에너지는 공급 계약을 맺었다고 간략히 밝혔다.']}
+        detailed={**brief,'article_id':'detailed','source_url':ARTICLE['url']+'detailed','published_at':ARTICLE['published_at'],
+                  'summary':'5000억원 공급 계약 체결','evidence':['한빛에너지는 서부전력과 5000억원 공급 계약을 체결했다.']}
+        gates=[dict(GATE,event_id='e'),dict(GATE,event_id='e',stock_relevance='연결 미확인',reason='구체 조건 확인 필요')]
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=([detailed,brief],gates)),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=[rank_row('E1')]) as rank:
+            result=self.engine.cycle([ARTICLE])
+        self.assertEqual(result['ranking'][0]['event_id'],'e')
+        self.assertEqual(result['events'][0]['article_id'],'detailed')
+        self.assertEqual(result['assessments'][0]['stock_relevance'],'주식 판단 재료')
+        self.assertEqual(rank.call_args.args[0][0]['evidence'],detailed['evidence'])
+
+    def test_future_representative_is_not_ranked_using_an_older_event_origin(self):
+        future={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':'2026-11-11T13:00:00Z'}
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=([future],[dict(GATE,event_id='e')])),patch.object(self.engine.queue,'first_published',return_value={'e':ARTICLE['published_at']}),patch('intelligence.market_snapshot') as market,patch.object(self.engine,'rank') as rank:
+            result=self.engine.cycle([ARTICLE])
+        self.assertEqual(result['ranking'],[])
+        self.assertEqual(result['events'][0]['recency_status'],'future')
+        rank.assert_not_called()
+        market.assert_not_called()
+
+    def test_representative_selection_is_order_independent_and_ignores_old_gates(self):
+        a={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        b={**a,'article_id':'b','published_at':'2026-11-11T01:00:00Z','summary':'짧은 재보도'}
+        qualified=dict(GATE,event_id='e',reason='현재 계약 근거')
+        unknown=dict(GATE,event_id='e',stock_relevance='연결 미확인',reason='원문 근거 부족')
+        for readings,gates in [([a,b],[qualified,unknown]),([b,a],[unknown,qualified])]:
+            grouped,selected=ai.group_events(readings,gates)
+            self.assertEqual(grouped[0]['article_id'],'a')
+            self.assertEqual(selected[0]['reason'],'현재 계약 근거')
+            self.assertEqual({r['id'] for r in grouped[0]['articles']},{'a','b'})
+        grouped,selected=ai.group_events([a,b],[unknown,{**qualified,'screen_policy_version':'old'}])
+        self.assertEqual(grouped[0]['article_id'],'a')
+        self.assertEqual(selected[0]['stock_relevance'],'연결 미확인')
+        grouped,selected=ai.group_events([a,{**b,'published_at':'2026-11-11T13:00:00Z'}],[unknown,qualified])
+        self.assertEqual(grouped[0]['article_id'],'a')
+        self.assertEqual(selected[0]['stock_relevance'],'연결 미확인')
 
     def test_market_comparison_uses_same_trading_date_and_preserves_missing(self):
         samples={'SPY':{'change_percent':1,'traded_at':'2026-11-10T16:00:00-05:00','currency':'USD','source':'test','market_status':'CLOSE'},

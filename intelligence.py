@@ -476,13 +476,14 @@ class Engine:
         compatible=[(r,g) for r,g in zip(readings,gates) if r.get('read_policy_version')==READ_VERSION]
         readings=[r for r,_ in compatible]
         gates=[g for _,g in compatible]
-        grouped = group_events(readings)
-        gates = list({g['event_id']:g for g in gates if g.get('screen_policy_version')==SCREEN_VERSION}.values())
+        grouped, gates = group_events(readings,gates)
         origins = self.queue.first_published([e['event_id'] for e in grouped])
         for event in grouped:
             event['history'] = self.queue.history(event['event_id'])
             event['first_published_at'] = origins.get(event['event_id']) or event.get('published_at')
-            event['recency_status'] = event_recency(event['first_published_at'],analysis_store.epoch(now()))
+            event['recency_status'] = event_recency(event.get('published_at'),analysis_store.epoch(now()))
+            if event['recency_status']=='current':
+                event['recency_status'] = event_recency(event['first_published_at'],analysis_store.epoch(now()))
         eligible = {g['event_id'] for g in gates if g['stock_relevance']=='주식 판단 재료'}
         eligible &= {e['event_id'] for e in grouped if e['recency_status']=='current'}
         candidates = [e for e in grouped if e['event_id'] in eligible][:12]
@@ -560,13 +561,20 @@ def validate_ranking(value, ids):
     return rows
 
 
-def group_events(readings):
-    groups = {}
-    for r in readings:
-        if r['event_id'] not in groups:
-            groups[r['event_id']] = {**r, 'articles': []}
+def group_events(readings, gates):
+    groups, representatives = {}, {}
+    as_of=analysis_store.epoch(now())
+    for r,g in zip(readings,gates):
+        published=analysis_store.epoch(r.get('published_at'))
+        current_gate=g.get('screen_policy_version')==SCREEN_VERSION
+        priority=(0<published<=as_of,current_gate,current_gate and g.get('stock_relevance')=='주식 판단 재료',published,r['article_id'])
+        previous=representatives.get(r['event_id'])
+        if previous is None or priority>previous[0]:
+            articles=groups.get(r['event_id'],{}).get('articles',[])
+            groups[r['event_id']]={**r,'articles':articles}
+            representatives[r['event_id']]=(priority,{**g,'event_id':r['event_id']} if current_gate else None)
         groups[r['event_id']]['articles'].append({'id': r['article_id'], 'url': r['source_url'], 'published_at': r['published_at'], 'summary': r['summary'], 'evidence': r['evidence'],'entity_mentions':r.get('entity_mentions',[]),'article_title':r.get('article_title')})
-    return list(groups.values())
+    return list(groups.values()),[g for _,g in representatives.values() if g is not None]
 
 
 def collector(get_articles):
