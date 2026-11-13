@@ -22,7 +22,7 @@ class AnalysisStoreTest(unittest.TestCase):
     def finish(self, job, event='event-contract'):
         reading={'article_id':job['article_id'],'event_id':event,'event_title':job['title'],
                  'entities':['한빛에너지'],'published_at':job['article'].get('published_at'),
-                 'summary':'계약 체결','evidence':['공개 근거'],'certainty':'확정'}
+                 'summary':'계약 체결','evidence':['공개 근거'],'certainty':'확정','read_policy_version':'read-v1'}
         self.store.complete(job,reading,{'stock_relevance':'주식 판단 재료'})
 
     def test_restart_preserves_all_jobs_and_fair_dispatch(self):
@@ -65,8 +65,8 @@ class AnalysisStoreTest(unittest.TestCase):
         a=self.article(1)
         self.store.enqueue([{'article':a,'body':'보관 본문','body_version':'v1'}])
         old=self.store.claim();self.finish(old)
-        self.store.enqueue_reviews([a],'policy-new')
-        self.store.enqueue_reviews([a],'policy-new')
+        self.store.enqueue_reviews([a],'policy-new','read-v1')
+        self.store.enqueue_reviews([a],'policy-new','read-v1')
         self.store.enqueue([{'article':self.article(i)} for i in range(2,8)])
         normal=[self.store.claim() for _ in range(2)]
         self.assertTrue(all(not j['job_key'].startswith('screen-review:') for j in normal))
@@ -75,9 +75,9 @@ class AnalysisStoreTest(unittest.TestCase):
         self.assertEqual(review['body'],'보관 본문')
         self.assertEqual(review['body_version'],'v1')
         self.assertEqual(self.store.summary()['done'],1)
-        self.store.complete(review,{'event_id':'event-contract','article_id':'1','summary':'계약 체결'},
+        self.store.complete(review,{'event_id':'event-contract','article_id':'1','summary':'계약 체결','read_policy_version':'read-v1'},
                             {'screen_policy_version':'policy-new','stock_relevance':'배경·상품 안내'})
-        self.store.enqueue_reviews([a],'policy-new')
+        self.store.enqueue_reviews([a],'policy-new','read-v1')
         self.assertEqual(self.store.summary()['done'],2)
         self.assertEqual(len(self.store.history('event-contract')),2)
         self.assertEqual(self.store.readings([a])[1][0]['stock_relevance'],'배경·상품 안내')
@@ -87,23 +87,46 @@ class AnalysisStoreTest(unittest.TestCase):
         a=self.article(1,_version_at='2026-11-11T01:00:00Z')
         self.store.enqueue([{'article':a,'body':'old','body_version':'old'}]);self.finish(self.store.claim())
         self.store.enqueue([{'article':{**a,'_version_at':'2026-11-11T02:00:00Z'},'body':'new','body_version':'new'}])
-        self.store.enqueue_reviews([a],'policy-new')
+        self.store.enqueue_reviews([a],'policy-new','read-v1')
         self.assertEqual(self.store.summary()['pending'],1)
         other=Store(self.path,'other-model')
-        other.enqueue_reviews([a],'policy-new')
+        other.enqueue_reviews([a],'policy-new','read-v1')
         self.assertEqual(other.summary()['pending'],0)
 
     def test_failed_review_survives_restart_without_exposing_the_old_decision(self):
         a=self.article(1)
         self.store.enqueue([{'article':a}]);self.finish(self.store.claim())
-        self.store.enqueue_reviews([a],'new')
+        self.store.enqueue_reviews([a],'new','read-v1')
         job=self.store.claim();self.store.retry(job,'temporary failure')
         other=Store(self.path,'test-model-v1')
-        other.enqueue_reviews([a],'new')
+        other.enqueue_reviews([a],'new','read-v1')
         self.assertIsNone(other.claim())
         self.assertEqual(other.readings([a]),([],[]))
         self.assertEqual(other.summary()['done'],1)
         self.assertEqual(other.summary()['retrying'],1)
+
+    def test_reading_only_policy_change_keeps_the_old_result_and_reviews_once(self):
+        a=self.article(1,published_at='1970-01-01T00:15:00Z')
+        old={'event_id':'event','article_id':'1','summary':'이전 요약','published_at':a['published_at'],'read_policy_version':'read-old'}
+        with patch('analysis_store.time.time',return_value=1000):
+            self.store.enqueue([{'article':a}]);self.store.complete(self.store.claim(),old,{'screen_policy_version':'screen-current'})
+        with patch('analysis_store.time.time',return_value=1100):
+            self.store.enqueue_reviews([a],'screen-current','read-new')
+            self.store.enqueue_reviews([a],'screen-current','read-new')
+            self.assertEqual(self.store.summary()['pending'],1)
+            job=self.store.claim()
+            self.store.complete(job,{**old,'summary':'새 요약','read_policy_version':'read-new'},
+                                {'screen_policy_version':'screen-current','assessed_at':'1970-01-01T00:01:00Z'})
+            self.store.enqueue_reviews([a],'screen-current','read-new')
+        self.assertEqual(self.store.summary()['done'],2)
+        self.assertEqual(self.store.summary()['pending'],0)
+        self.assertEqual(self.store.readings([a])[0][0]['read_policy_version'],'read-new')
+        history=self.store.history('event')
+        self.assertEqual([h['summary'] for h in history],['이전 요약','새 요약'])
+        self.assertEqual(history[-1]['reviewed_at'],'1970-01-01T00:18:20+00:00')
+        with self.store.db() as db:
+            db.execute('UPDATE analysis_jobs SET finished_at=NULL WHERE id=?',(job['id'],))
+        self.assertIsNone(self.store.history('event')[-1]['reviewed_at'])
 
     def test_newest_slots_follow_publication_time_instead_of_import_order(self):
         articles=[self.article(1,published_at='2026-11-11T01:00:00Z'),

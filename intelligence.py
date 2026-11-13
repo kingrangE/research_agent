@@ -450,7 +450,7 @@ class Engine:
             return {'status': 'disabled', 'message': 'LLM 미연결 · 로컬 모델과 LLM_ENABLED 설정 필요', 'events': [], 'ranking': [], 'market': {}, 'model': self.model, 'updated_at': None}
         errors = []
         self.queue.enqueue([{'article':article} for article in articles])
-        self.queue.enqueue_reviews([a for a in articles if event_recency(a.get('published_at'),analysis_store.epoch(now()))=='current'],SCREEN_VERSION)
+        self.queue.enqueue_reviews([a for a in articles if event_recency(a.get('published_at'),analysis_store.epoch(now()))=='current'],SCREEN_VERSION,READ_VERSION)
         job = self.queue.claim()
         if job:
             with LOCK:
@@ -473,6 +473,9 @@ class Engine:
                 STATE.update(status='processing',message='분석 대기열 처리 중',model=self.model,
                              queue=self.queue.summary(),daily_call_limit=self.daily_limit,usage=self.usage())
         readings, gates = self.queue.readings(articles)
+        compatible=[(r,g) for r,g in zip(readings,gates) if r.get('read_policy_version')==READ_VERSION]
+        readings=[r for r,_ in compatible]
+        gates=[g for _,g in compatible]
         grouped = group_events(readings)
         gates = list({g['event_id']:g for g in gates if g.get('screen_policy_version')==SCREEN_VERSION}.values())
         origins = self.queue.first_published([e['event_id'] for e in grouped])

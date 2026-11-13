@@ -13,6 +13,7 @@ BODY = '한빛에너지는 미국 고객사와 3000억원 규모의 전력변압
 GATE = {'driver':'기업 실적·수주·경쟁·비용 변화','reason':'실적에 영향을 주는 계약 변화','watch_for':'공시와 실적 전망 확인','stock_relevance':'주식 판단 재료','screen_policy_version':ai.SCREEN_VERSION}
 READING = {'summary':'전력변압기 계약 체결','event_title':'한빛에너지 공급 계약','event_type':'계약','entities':['한빛에너지'],
            'certainty':'확정','amount':'3000억원','timing':'2027~2029년','evidence':[BODY.split('. ')[0]+'.'],'match_event_id':''}
+ANALYZED = {**READING,'read_policy_version':ai.READ_VERSION}
 ARTICLE = {'id':'a','url':'https://www.hankyung.com/article/2026111100001','title':'한빛에너지 계약','published_at':'2026-11-11T00:00:00Z'}
 
 
@@ -168,7 +169,7 @@ class IntelligenceTest(unittest.TestCase):
         for date,state in [('2026-11-11T11:00:00Z','current'),('2026-11-10T10:00:00Z','current'),
                            ('2026-11-10T09:59:00Z','old'),(None,'unknown'),('2026-11-11T12:01:00Z','future')]:
             self.assertEqual(ai.event_recency(date,as_of),state)
-        old={**READING,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],'published_at':'2026-10-01T00:00:00Z'}
+        old={**ANALYZED,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],'published_at':'2026-10-01T00:00:00Z'}
         with patch.object(self.engine,'reading',return_value=old),patch.object(self.engine,'screen',return_value=GATE),patch.object(self.engine,'call') as call,patch('intelligence.market_snapshot') as market:
             result=self.engine.cycle([{**ARTICLE,'published_at':old['published_at']}])
         self.assertEqual(result['ranking'],[])
@@ -254,7 +255,7 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(result['status'],'disabled');reading.assert_not_called();market.assert_not_called()
 
     def test_event_groups_preserve_each_article_evidence(self):
-        a={**READING,'event_id':'event-a','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        a={**ANALYZED,'event_id':'event-a','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         b={**a,'article_id':'b','source_url':'https://www.hankyung.com/article/b'}
         grouped=ai.group_events([a,b])
         self.assertEqual(len(grouped),1);self.assertEqual(len(grouped[0]['articles']),2)
@@ -273,7 +274,7 @@ class IntelligenceTest(unittest.TestCase):
         self.assertNotIn('relative_to_spy_pp',result['observations'][2])
 
     def test_cycle_publishes_only_valid_ranking_and_reuses_it(self):
-        reading={**copy.deepcopy(READING),'event_id':'event-a','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at'],'model':'test','analyzed_at':ai.now()}
+        reading={**copy.deepcopy(ANALYZED),'event_id':'event-a','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at'],'model':'test','analyzed_at':ai.now()}
         with patch.object(self.engine,'screen',return_value=GATE),patch.object(self.engine,'reading',return_value=reading),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1','확정 공급 계약')]}) as call:
             first=self.engine.cycle([ARTICLE]);second=self.engine.cycle([ARTICLE])
         self.assertEqual(first['status'],'ok');self.assertEqual(len(second['ranking']),1);call.assert_called_once()
@@ -285,7 +286,7 @@ class IntelligenceTest(unittest.TestCase):
 
     def test_finished_article_is_published_before_waiting_for_the_next_article(self):
         articles=[ARTICLE,{**ARTICLE,'id':'b','url':ARTICLE['url']+'b'}]
-        reading={**READING,'event_id':'event-a','article_id':ARTICLE['id'],'source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        reading={**ANALYZED,'event_id':'event-a','article_id':ARTICLE['id'],'source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         with patch.object(self.engine,'reading',side_effect=[reading,AssertionError('두 번째 기사 추론 대기')]) as read,patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1','확인한 계약')]}):
             result=self.engine.cycle(articles)
         self.assertEqual(read.call_count,1)
@@ -301,7 +302,7 @@ class IntelligenceTest(unittest.TestCase):
     def test_queue_processes_more_than_thirty_articles_after_they_leave_feed_and_restart(self):
         articles=[{**ARTICLE,'id':str(i),'url':ARTICLE['url']+str(i)} for i in range(40)]
         def reading(article,anchors):
-            return {**READING,'article_id':article['id'],'event_id':'e-'+article['id'],'source_url':article['url'],'published_at':article.get('published_at')}
+            return {**ANALYZED,'article_id':article['id'],'event_id':'e-'+article['id'],'source_url':article['url'],'published_at':article.get('published_at')}
         background={**GATE,'stock_relevance':'배경·상품 안내'}
         with patch.object(self.engine,'reading',side_effect=reading),patch.object(self.engine,'screen',return_value=background):
             self.engine.cycle(articles)
@@ -326,7 +327,7 @@ class IntelligenceTest(unittest.TestCase):
 
     def test_ranking_request_requires_every_candidate_and_restores_original_ids(self):
         articles=[{**ARTICLE,'id':str(i),'url':ARTICLE['url']+str(i)} for i in range(9)]
-        readings=[{**copy.deepcopy(READING),'event_id':'event-'+a['id'],'article_id':a['id'],'source_url':a['url'],'published_at':a['published_at']} for a in articles]
+        readings=[{**copy.deepcopy(ANALYZED),'event_id':'event-'+a['id'],'article_id':a['id'],'source_url':a['url'],'published_at':a['published_at']} for a in articles]
         def provider(task,payload,output_schema):
             rule=output_schema['properties']['ranking']
             self.assertEqual(rule.get('minItems'),len(payload['events']))
@@ -342,7 +343,7 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual([r['event_id'] for r in result['ranking']],['event-'+str(i) for i in reversed(range(9))])
 
     def test_ranking_uses_original_evidence_instead_of_generated_financial_claims(self):
-        reading={**READING,'summary':'순이익 9999억원 증가 확정','event_title':'허구의 이익 증가',
+        reading={**ANALYZED,'summary':'순이익 9999억원 증가 확정','event_title':'허구의 이익 증가',
                  'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call:
             self.engine.cycle([ARTICLE])
@@ -354,7 +355,7 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(event['first_published_at'],ARTICLE['published_at'])
 
     def test_rank_cache_ignores_history_changes_but_tracks_sources_and_market(self):
-        reading={**READING,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine.queue,'history',side_effect=[[],[{'summary':'이력 추가'}]]),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call:
             self.engine.cycle([ARTICLE]);self.engine.cycle([ARTICLE])
         self.assertEqual(call.call_count,1)
@@ -366,7 +367,7 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(call.call_count,2)
 
     def test_failed_reranking_cannot_reuse_reasons_from_different_evidence_or_market(self):
-        reading={**READING,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}):
             self.engine.cycle([ARTICLE])
         for changed in (True,False):
@@ -380,7 +381,7 @@ class IntelligenceTest(unittest.TestCase):
             self.assertTrue(result['ranking_partial'])
 
     def test_final_source_review_can_remove_a_false_positive_without_filling_the_briefing(self):
-        reading={**READING,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         rejected={**rank_row('E1'),'stock_relevance':'배경·상품 안내','reason':'주식 실적 변화 없는 상품 조건 안내'}
         with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rejected]}) as call:
             first=self.engine.cycle([ARTICLE]);second=self.engine.cycle([ARTICLE])
@@ -392,7 +393,7 @@ class IntelligenceTest(unittest.TestCase):
         call.assert_called_once()
 
     def test_product_announcements_are_assessed_but_not_stock_recommendations(self):
-        reading={**copy.deepcopy(READING),'event_id':'bond','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        reading={**copy.deepcopy(ANALYZED),'event_id':'bond','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         row={'event_id':'E1','reason':'국채 상품 안내이며 상장사의 실적 변화 근거 없음','stock_relevance':'배경·상품 안내','watch_for':'발행 조건 변경보다 주식 실적 영향 근거가 필요'}
         with patch.object(self.engine,'screen',return_value={**GATE,'driver':'금융상품 조건·청약·판매 안내','stock_relevance':'배경·상품 안내'}),patch.object(self.engine,'reading',return_value=reading),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call') as call:
             result=self.engine.cycle([ARTICLE])
@@ -403,7 +404,7 @@ class IntelligenceTest(unittest.TestCase):
         call.assert_not_called()
 
     def test_previous_policy_is_not_ranked_while_review_fails(self):
-        old={**READING,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],
+        old={**ANALYZED,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],
              'published_at':ARTICLE['published_at'],'read_policy_version':ai.READ_VERSION}
         self.engine.queue.enqueue([{'article':ARTICLE}])
         self.engine.queue.complete(self.engine.queue.claim(),old,{**GATE,'screen_policy_version':'old-policy'})
@@ -413,8 +414,31 @@ class IntelligenceTest(unittest.TestCase):
         call.assert_not_called()
         self.assertEqual(self.engine.queue.summary()['done'],1)
 
+    def test_reading_policy_alone_triggers_review_and_blocks_old_facts(self):
+        old={**ANALYZED,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],
+             'published_at':ARTICLE['published_at'],'read_policy_version':'old-reader'}
+        self.engine.queue.enqueue([{'article':ARTICLE}])
+        self.engine.queue.complete(self.engine.queue.claim(),old,GATE)
+        with patch.object(self.engine,'reading',side_effect=ValueError('temporary failure')) as read,patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call,patch('intelligence.market_snapshot',return_value={'observations':[]}):
+            result=self.engine.cycle([ARTICLE])
+        read.assert_called_once()
+        call.assert_not_called()
+        self.assertEqual(result['ranking'],[])
+        self.assertEqual(result['events'],[])
+        self.assertEqual(self.engine.queue.summary()['done'],1)
+
+    def test_old_reading_cannot_supply_facts_or_override_a_current_gate_for_the_same_event(self):
+        current={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at'],'summary':'현재 요약'}
+        old={**current,'article_id':'b','summary':'이전 잘못된 요약','read_policy_version':'old-reader'}
+        gates=[dict(GATE,event_id='e'),dict(GATE,event_id='e',stock_relevance='배경·상품 안내')]
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=([current,old],gates)),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}):
+            result=self.engine.cycle([ARTICLE])
+        self.assertEqual(result['events'][0]['summary'],'현재 요약')
+        self.assertEqual(len(result['events'][0]['articles']),1)
+        self.assertEqual(result['ranking'][0]['event_id'],'e')
+
     def test_review_reuses_compatible_reading_and_preserves_both_assessments(self):
-        old={**READING,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],
+        old={**ANALYZED,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],
              'published_at':ARTICLE['published_at'],'read_policy_version':ai.READ_VERSION}
         self.engine.queue.enqueue([{'article':ARTICLE}])
         self.engine.queue.complete(self.engine.queue.claim(),old,{**GATE,'screen_policy_version':'old-policy'})
@@ -431,7 +455,7 @@ class IntelligenceTest(unittest.TestCase):
         screen.assert_not_called()
 
     def test_review_rereads_when_the_saved_reading_policy_is_incompatible(self):
-        old={**READING,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],
+        old={**ANALYZED,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],
              'published_at':ARTICLE['published_at'],'read_policy_version':'old-reading'}
         self.engine.queue.enqueue([{'article':ARTICLE}])
         self.engine.queue.complete(self.engine.queue.claim(),old,{**GATE,'screen_policy_version':'old-policy'})
@@ -441,7 +465,7 @@ class IntelligenceTest(unittest.TestCase):
 
     def test_policy_upgrade_leaves_historical_articles_out_of_the_review_sweep(self):
         a={**ARTICLE,'published_at':'2026-10-01T00:00:00Z'}
-        old={**READING,'event_id':'old','article_id':'a','source_url':a['url'],'published_at':a['published_at']}
+        old={**ANALYZED,'event_id':'old','article_id':'a','source_url':a['url'],'published_at':a['published_at']}
         self.engine.queue.enqueue([{'article':a}])
         self.engine.queue.complete(self.engine.queue.claim(),old,{**GATE,'screen_policy_version':'old-policy'})
         with patch.object(self.engine,'screen') as screen,patch.object(self.engine,'call') as call:

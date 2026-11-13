@@ -141,14 +141,17 @@ class Store:
                 latest[row['article_id']] = (version,row)
         return {key:value[1] for key,value in latest.items()}
 
-    def enqueue_reviews(self, articles, policy):
+    def enqueue_reviews(self, articles, policy, reading_policy):
         latest=self._latest(articles)
         with self.db() as db:
             for article in articles:
                 row=latest.get(article['id'])
-                if row is None or row['status']!='done' or json.loads(row['assessment']).get('screen_policy_version')==policy:
+                if row is None or row['status']!='done':
                     continue
-                key='screen-review:'+sha256(json.dumps([row['job_key'],policy]).encode()).hexdigest()
+                if (json.loads(row['assessment']).get('screen_policy_version')==policy
+                        and json.loads(row['result']).get('read_policy_version')==reading_policy):
+                    continue
+                key='screen-review:'+sha256(json.dumps([row['job_key'],policy,reading_policy]).encode()).hexdigest()
                 db.execute('''INSERT OR IGNORE INTO analysis_jobs
                     (job_key,namespace,article_id,url,title,body_version,article,body,published_epoch,status,enqueued_at,result)
                     VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?)''',
@@ -204,7 +207,7 @@ class Store:
                 ORDER BY id DESC LIMIT ?''',(self.namespace,event_id,self.namespace,event_id,limit)).fetchall()
         return [{'revision':r['id'],'article_id':r['article_id'],'event_id':r['event_id'],
                  'body_version':r['body_version'],'assessment_review':r['job_key'].startswith('screen-review:'),
-                 'reviewed_at':json.loads(r['assessment']).get('assessed_at') if r['job_key'].startswith('screen-review:') else None,
+                 'reviewed_at':datetime.fromtimestamp(r['finished_at'],timezone.utc).isoformat() if r['job_key'].startswith('screen-review:') and r['finished_at'] is not None else None,
                  'stock_relevance':json.loads(r['assessment']).get('stock_relevance'),
                  'assessment_reason':json.loads(r['assessment']).get('reason'),
                  **{k:json.loads(r['result']).get(k) for k in
