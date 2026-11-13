@@ -557,6 +557,13 @@ class Engine:
         market_key = json.dumps(self.last_market,sort_keys=True)
         source_keys = {event_id:sha256((policy+json.dumps(source,sort_keys=True)+market_key).encode()).hexdigest() for event_id,source in sources.items()}
         rank_key = sha256((policy+json.dumps({'labels':labels,'events':events,'market':self.last_market},sort_keys=True)).encode()).hexdigest()
+        rank_due=bool(candidates and (rank_key!=self.rank_key or time.time()-self.ranked_at>=300))
+        failure_key='rank:'+self.rank_namespace+':'+rank_key
+        rank_retry_at=0
+        if rank_due:
+            with self.db() as db:
+                failure=db.execute('SELECT retry_after FROM failures WHERE cache_key=?',(failure_key,)).fetchone()
+            rank_retry_at=failure[0] if failure else 0
         def result(rank_failed=False):
             reviewed_ranking = [r for r in self.last_ranking if r['event_id'] in eligible and r['event_id'] in source_keys
                        and self.ranked_sources.get(r['event_id'])==source_keys[r['event_id']]]
@@ -573,9 +580,13 @@ class Engine:
                     'queue': self.queue.summary(),
                     'usage': self.usage(), 'daily_call_limit': self.daily_limit,
                     'rank_cache_error':self.rank_cache_error,
+                    'rank_retry_at':datetime.fromtimestamp(rank_retry_at,timezone.utc).isoformat() if rank_retry_at>time.time() else None,
                     'error': '분석 일부 실패 · 최신성 목록에서 전체 자료 확인' if errors else None}
         rank_failed = False
-        if candidates and (rank_key != self.rank_key or time.time() - self.ranked_at >= 300):
+        if rank_due and rank_retry_at>time.time():
+            rank_failed=True
+            errors.append('순위 재시도 대기')
+        elif rank_due:
             progress={**result(),'status':'processing','message':'새 본문 분석 반영 · 모델 순위 갱신 중','ranking_partial':True}
             with LOCK:
                 STATE.clear()
@@ -584,8 +595,14 @@ class Engine:
                 ranking = [{**r,'event_id':labels[r['event_id']]} for r in self.rank(events,self.last_market)]
                 self.last_ranking, self.rank_key, self.ranked_at = ranking, rank_key, time.time()
                 self.ranked_sources = source_keys
+                with self.db() as db:
+                    db.execute('DELETE FROM failures WHERE cache_key=?',(failure_key,))
+                rank_retry_at=0
                 self.save_rank()
             except Exception as error:
+                rank_retry_at=time.time()+60
+                with self.db() as db:
+                    db.execute('INSERT OR REPLACE INTO failures VALUES(?,?)',(failure_key,rank_retry_at))
                 rank_failed = True
                 errors.append(type(error).__name__)
         if gates and not candidates:

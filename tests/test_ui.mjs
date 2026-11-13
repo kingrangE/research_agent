@@ -415,6 +415,17 @@ test('assessment reviews show the review time and stay distinct from source revi
   assert.ok(!missing.includes(run(`dateTime('2026-11-11T00:00:00Z')`)));
 });
 
+test('rank retry waits stay visible in operations and disappear after recovery', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{rank_retry_at:'2026-11-13T09:00:00Z'}};render()`);
+  const html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('순위 재시도 대기'));
+  assert.ok(html.includes('본문 분석은 계속'));
+  assert.ok(html.includes('이 재시도 대기를 적용하지 않습니다'));
+  run(`data.intelligence.rank_retry_at=null;render()`);
+  assert.ok(!run(`$('#source-view').innerHTML`).includes('순위 재시도 대기'));
+});
+
 test('latency view separates live analyses and model waits from accumulated work', () => {
   const run=ui();
   run(`data={articles:[],sources:[],intelligence:{queue:{pending:3000,processing:1,retrying:20,done:100,event_count:80,oldest_wait_seconds:72000,recent_p95_seconds:70000,live_analysis:{samples:12,p50_seconds:40,p95_seconds:84,pending:2,oldest_unfinished_seconds:9100}},usage:{timings:[{task:'rank',samples:3,p50_seconds:25,p95_seconds:120,failed:1,response_checked:2,response_failed:1}]}}};render()`);

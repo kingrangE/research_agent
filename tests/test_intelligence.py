@@ -507,6 +507,77 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(result['ranking'],[])
         self.assertEqual(result['assessments'][0]['stock_relevance'],'배경·상품 안내')
 
+    def test_failed_unchanged_rank_waits_while_background_readings_keep_progressing(self):
+        reading,_=self.seed_saved_rank()
+        articles=[ARTICLE,*[{**ARTICLE,'id':i,'url':ARTICLE['url']+i} for i in ('b','c')]]
+        clock=self.engine.ranked_at+301
+        def background(article,anchors):
+            return {**reading,'article_id':article['id'],'event_id':'background-'+article['id'],'source_url':article['url']}
+        with patch('intelligence.time.time',return_value=clock),patch.object(self.engine,'reading',side_effect=background),patch.object(self.engine,'screen',return_value={**GATE,'stock_relevance':'배경·상품 안내'}),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',side_effect=TimeoutError) as rank:
+            first=self.engine.cycle(articles)
+            second=self.engine.cycle(articles)
+        self.assertEqual(rank.call_count,1)
+        self.assertEqual(second['queue']['done'],3)
+        self.assertTrue(second['ranking_partial'])
+        self.assertEqual(second['status'],'partial')
+        self.assertEqual(second['ranking'],[])
+        self.assertIsNotNone(first['rank_retry_at'])
+        self.assertEqual(second['rank_retry_at'],first['rank_retry_at'])
+
+    def test_rank_response_validation_failure_retries_at_deadline_and_keeps_only_valid_results(self):
+        _,first=self.seed_saved_rank()
+        self.engine.rank_key='force-refresh'
+        clock=ai.time.time()
+        with patch('intelligence.time.time',return_value=clock),patch.object(self.engine,'call',return_value={'ranking':[rank_row('unknown')]}) as call:
+            failed=self.engine.cycle([ARTICLE])
+            waiting=self.engine.cycle([ARTICLE])
+        call.assert_called_once()
+        self.assertEqual(waiting['ranking'],first['ranking'])
+        self.assertEqual(waiting['ranked_at'],first['ranked_at'])
+        self.assertFalse(waiting['ranking_stale'])
+        with patch('intelligence.time.time',return_value=clock+59),patch.object(self.engine,'rank') as rank:
+            self.engine.cycle([ARTICLE])
+        rank.assert_not_called()
+        with patch('intelligence.time.time',return_value=clock+60),patch.object(self.engine,'rank',return_value=[rank_row('E1','재검토한 원문 사실')]) as rank:
+            recovered=self.engine.cycle([ARTICLE])
+        rank.assert_called_once()
+        self.assertIsNone(recovered['rank_retry_at'])
+        self.assertFalse(recovered['ranking_partial'])
+        self.assertEqual(recovered['ranking'][0]['reason'],'재검토한 원문 사실')
+        self.assertNotEqual(failed['ranked_at'],recovered['ranked_at'])
+        with self.engine.db() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM failures WHERE cache_key LIKE 'rank:%'").fetchone()[0],0)
+
+    def test_new_source_and_market_inputs_bypass_failed_rank_wait_without_old_reasons(self):
+        reading,_=self.seed_saved_rank()
+        self.engine.rank_key='force-refresh'
+        changed={**ARTICLE,'title':'계약 취소 공시'}
+        new={**reading,'article_title':changed['title'],'summary':'계약 취소','evidence':['한빛에너지는 기존 공급 계약을 취소했다고 공시했다.']}
+        with patch.object(self.engine,'rank',side_effect=TimeoutError) as rank:
+            self.engine.cycle([ARTICLE])
+            with patch.object(self.engine,'reading',return_value=new),patch.object(self.engine,'screen',return_value=GATE):
+                updated=self.engine.cycle([changed])
+            self.engine.last_market={**self.engine.last_market,'observations':[{'code':'SPY','change_percent':-2}]}
+            market_updated=self.engine.cycle([changed])
+        self.assertEqual(rank.call_count,3)
+        self.assertEqual(updated['ranking'],[])
+        self.assertEqual(updated['events'][0]['summary'],'계약 취소')
+        self.assertEqual(market_updated['ranking'],[])
+
+    def test_failed_rank_wait_is_not_shared_with_another_model_or_provider(self):
+        reading,_=self.seed_saved_rank()
+        self.engine.rank_key='force-refresh'
+        with patch.object(self.engine,'rank',side_effect=TimeoutError):
+            self.engine.cycle([ARTICLE])
+        for provider,model in [('ollama','another-model'),('gemini',self.engine.model)]:
+            with patch.dict(os.environ,{'LLM_PROVIDER':provider,'LLM_MODEL':model,'GEMINI_API_KEY':'test-only'}):
+                other=ai.Engine(self.engine.path)
+            other.last_market=copy.deepcopy(self.engine.last_market)
+            with patch.object(other,'reading',return_value=reading),patch.object(other,'screen',return_value=GATE),patch.object(other,'rank',return_value=[rank_row('E1')]) as rank:
+                result=other.cycle([ARTICLE])
+            rank.assert_called_once()
+            self.assertIsNone(result['rank_retry_at'])
+
     def test_rank_cache_write_failure_keeps_current_valid_result_and_empty_inputs_clear_cache(self):
         reading,first=self.seed_saved_rank()
         with patch.object(self.engine,'db',side_effect=sqlite3.OperationalError('busy')):
