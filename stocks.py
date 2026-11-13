@@ -304,8 +304,9 @@ def body_related_stocks(mentions, source_url, as_of=None):
             continue
         if len(name)<=2 and not re.search(r'주가|실적|매출|영업|배당|수주|상장|자사주',evidence):
             continue
+        evidenced_codes = {stock['code'] for stock in related_stocks(evidence,as_of) if stock['relation']=='direct'}
         for stock in related_stocks(name+',',as_of):
-            if stock['relation'] != 'direct' or any(s['code']==stock['code'] for s in result):
+            if stock['relation'] != 'direct' or stock['code'] not in evidenced_codes or any(s['code']==stock['code'] for s in result):
                 continue
             article_source = [{'title':'기사 공개 본문 · '+name,'url':source_url,'published_on':(as_of or '')[:10],
                                'checked_on':datetime.now(timezone.utc).date().isoformat(),'excerpt':evidence}] if source_url else []

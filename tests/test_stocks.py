@@ -69,6 +69,16 @@ class StocksTest(unittest.TestCase):
         self.assertEqual(stocks.body_related_stocks([{'name':'삼성전자','evidence':'주식에 관한 기사'}],None),[])
         self.assertEqual(stocks.body_related_stocks([{'name':'대상','evidence':'지원 대상 기업을 선정했다.'}],None),[])
 
+    def test_body_name_resolution_preserves_full_name_and_attribution_context(self):
+        for name,evidence in [('삼성전자','삼성전자우가 배당을 확대했다.'),
+                              ('한화','한화오션이 신규 수주로 매출 증가를 전망했다.'),
+                              ('케이티','케이티 페리의 공연 소식이다.'),
+                              ('한화','실적 개선 전망-한화')]:
+            with self.subTest(name=name,evidence=evidence):
+                self.assertEqual(stocks.body_related_stocks([{'name':name,'evidence':evidence}],None),[])
+        result=stocks.body_related_stocks([{'name':'한화오션','evidence':'한화오션과 삼성전자가 공급 계약을 발표했다.'}],None)
+        self.assertEqual([s['code'] for s in result],['042660'])
+
     def test_quote_price_change_sign_timestamps_and_malformed_values(self):
         quote = stocks.parse_quote(QUOTE, "003470")
         self.assertEqual((quote["price"], quote["change_percent"]), (3935, 2.88))
