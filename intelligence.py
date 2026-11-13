@@ -568,15 +568,17 @@ class Engine:
             reviewed_ranking = [r for r in self.last_ranking if r['event_id'] in eligible and r['event_id'] in source_keys
                        and self.ranked_sources.get(r['event_id'])==source_keys[r['event_id']]]
             ranking = [r for r in reviewed_ranking if r['stock_relevance']=='주식 판단 재료']
+            unreviewed=len(eligible)-len(reviewed_ranking)
             ranked = {r['event_id']:r for r in reviewed_ranking}
             assessments = [{**gate,**ranked.get(gate['event_id'],{})} for gate in gates]
-            return {'status': 'partial' if errors or not grouped or len(assessments) != len(grouped) else 'ok',
+            return {'status': 'partial' if errors or not grouped or len(assessments) != len(grouped) or unreviewed else 'ok',
                     'message': '모델 참고 순위 · 검수 전' if grouped else '분석 가능한 본문 대기 · 원문 수집 실패 가능',
                     'events': grouped, 'ranking': ranking, 'assessments':assessments, 'rank_policy':RANK_VERSION, 'market': self.last_market, 'model': self.model,
                     'updated_at': now(), 'ranked_at': datetime.fromtimestamp(self.ranked_at, timezone.utc).isoformat() if self.ranked_at else None,
                     'ranking_stale': not assessments or bool(candidates and not reviewed_ranking) or time.time() - self.ranked_at > 600,
-                    'ranking_partial': rank_failed or self.rank_key != rank_key or len(assessments) != len(grouped),
-                    'coverage': {'candidates': len(articles), 'analyzed_articles': len(readings), 'events': len(grouped)},
+                    'ranking_partial': rank_failed or self.rank_key != rank_key or len(assessments) != len(grouped) or bool(unreviewed),
+                    'coverage': {'candidates': len(articles), 'analyzed_articles': len(readings), 'events': len(grouped),
+                                 'eligible_events':len(eligible),'reviewed_events':len(reviewed_ranking),'unreviewed_events':unreviewed},
                     'queue': self.queue.summary(),
                     'usage': self.usage(), 'daily_call_limit': self.daily_limit,
                     'rank_cache_error':self.rank_cache_error,

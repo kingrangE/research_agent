@@ -42,13 +42,29 @@ test('briefing discloses article analysis coverage even when ranking itself succ
   run(`data={articles:[{id:'a',title:'계약',themes:[],source:'test',score:50}],intelligence:{ranking_stale:false,ranking_partial:false,ranked_at:new Date().toISOString(),coverage:{candidates:240,analyzed_articles:42,events:35},events:[{event_id:'e',articles:[{id:'a'}]}],assessments:[{event_id:'e'}],ranking:[{event_id:'e',reason:'계약'}]}};render()`);
   assert.ok(run(`$('#list-caption').textContent`).includes('이번 대상 240건 중 본문 분석 42건'));
   assert.ok(run(`$('#list-caption').textContent`).includes('미분석 기사는 순위에서 제외'));
-  assert.ok(run(`$('#stats').innerHTML`).includes('분석 완료 자료 내 순위'));
+  assert.ok(run(`$('#stats').innerHTML`).includes('최종 검토된 사건 내 순위'));
   assert.equal(run('filteredArticles().length'),1);
   run(`data.intelligence.coverage.analyzed_articles=240;render()`);
   assert.ok(run(`$('#list-caption').textContent`).includes('이번 대상 240건 중 본문 분석 240건'));
   assert.ok(!run(`$('#list-caption').textContent`).includes('미분석 기사는 순위에서 제외'));
   run(`view='saved';render()`);
   assert.ok(!run(`$('#list-caption').textContent`).includes('이번 대상'));
+});
+
+test('briefing separates final event review coverage from article analysis and recommendations', () => {
+  const run=ui();
+  run(`data={articles:[{id:'a',title:'계약',themes:[],source:'test',score:40},{id:'b',title:'계약 취소',themes:[],source:'test',score:50}],intelligence:{ranking_stale:false,ranking_partial:true,ranked_at:new Date().toISOString(),coverage:{candidates:16,analyzed_articles:16,events:16,eligible_events:13,reviewed_events:12,unreviewed_events:1},events:[{event_id:'e',articles:[{id:'a'}]},{event_id:'f',articles:[{id:'b'}]}],assessments:[{event_id:'e'},{event_id:'f'}],ranking:[{event_id:'e',reason:'계약'}]}};render()`);
+  const caption=run(`$('#list-caption').textContent`);
+  assert.ok(caption.includes('일부 사건의 모델 참고 순위'));
+  assert.ok(caption.includes('최종 순위 검토 12/13개 사건 · 미검토 1개'));
+  assert.ok(caption.includes('본문 분석 16건'));
+  assert.ok(!caption.includes('마지막 성공한'));
+  assert.deepEqual(Array.from(run('filteredArticles().map(a=>a.id)')),['a']);
+  assert.ok(run(`$('#source-view').innerHTML`).includes('최대 12개 사건'));
+  assert.ok(run(`$('#source-view').innerHTML`).includes('최종 추천에서 제외한 사건도 포함'));
+  run(`data.intelligence.coverage=undefined;render()`);
+  assert.ok(!run(`$('#list-caption').textContent`).includes('최종 순위 검토'));
+  assert.ok(!run(`$('#source-view').innerHTML`).includes('최종 순위 검토 범위'));
 });
 
 test('failed dashboard refresh keeps a persistent warning until a current request succeeds', async () => {

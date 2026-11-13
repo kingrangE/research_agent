@@ -720,6 +720,29 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(second['ranking'],[])
         call.assert_called_once()
 
+    def test_candidate_limit_cannot_be_reported_as_complete_and_rejections_count_as_reviewed(self):
+        articles=[{**ARTICLE,'id':str(i),'url':ARTICLE['url']+str(i)} for i in range(16)]
+        readings=[{**ANALYZED,'event_id':a['id'],'article_id':a['id'],'source_url':a['url'],'published_at':a['published_at']} for a in articles]
+        gates=[dict(GATE,event_id=a['id']) for a in articles]
+        gates[13]['stock_relevance']='배경·상품 안내'
+        readings[14]['published_at']='2026-11-09T00:00:00Z'
+        readings[15]['published_at']='2026-11-12T00:00:00Z'
+        rows=[rank_row('E'+str(i)) for i in range(1,13)]
+        rows[-1]['stock_relevance']='배경·상품 안내'
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=(readings,gates)),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=rows) as rank:
+            first=self.engine.cycle(articles)
+            second=self.engine.cycle(articles)
+        rank.assert_called_once()
+        self.assertEqual(len(rank.call_args.args[0]),12)
+        for result in (first,second):
+            self.assertTrue(result['ranking_partial'])
+            self.assertEqual(result['status'],'partial')
+            self.assertFalse(result['ranking_stale'])
+            self.assertEqual(result['coverage']['eligible_events'],13)
+            self.assertEqual(result['coverage']['reviewed_events'],12)
+            self.assertEqual(result['coverage']['unreviewed_events'],1)
+            self.assertEqual(len(result['ranking']),11)
+
     def test_inflight_ranking_keeps_only_unchanged_compatible_previous_results(self):
         articles=[ARTICLE,{**ARTICLE,'id':'b','url':ARTICLE['url']+'b'}]
         readings=[{**ANALYZED,'event_id':a['id'],'article_id':a['id'],'source_url':a['url'],'published_at':a['published_at']} for a in articles]
@@ -737,7 +760,11 @@ class IntelligenceTest(unittest.TestCase):
             self.assertEqual([r['event_id'] for r in observed[0]['ranking']],['b'])
             self.assertTrue(observed[0]['ranking_partial'])
             self.assertFalse(observed[0]['ranking_stale'])
+            self.assertEqual(observed[0]['coverage']['reviewed_events'],1)
+            self.assertEqual(observed[0]['coverage']['unreviewed_events'],1)
             self.assertEqual({r['event_id'] for r in final['ranking']},{'a','b'})
+            self.assertEqual(final['coverage']['reviewed_events'],2)
+            self.assertEqual(final['coverage']['unreviewed_events'],0)
 
     def test_product_announcements_are_assessed_but_not_stock_recommendations(self):
         reading={**copy.deepcopy(ANALYZED),'event_id':'bond','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
@@ -748,6 +775,9 @@ class IntelligenceTest(unittest.TestCase):
         self.assertFalse(result['ranking_stale'])
         self.assertEqual(result['ranking'],[])
         self.assertEqual(result['assessments'][0]['stock_relevance'],'배경·상품 안내')
+        self.assertEqual(result['coverage']['eligible_events'],0)
+        self.assertEqual(result['coverage']['reviewed_events'],0)
+        self.assertEqual(result['coverage']['unreviewed_events'],0)
         call.assert_not_called()
 
     def test_previous_policy_is_not_ranked_while_review_fails(self):
