@@ -37,8 +37,10 @@ def schema(properties):
 
 
 TEXT = {'type': 'string'}
+READ_VERSION = 'source-passages-v2-stage'
 READ_SCHEMA = schema({'summary': TEXT, 'event_title': TEXT, 'event_type': TEXT,
-    'entities': {'type': 'array', 'items': TEXT}, 'certainty': {'type': 'string', 'enum': ['확정', '계획', '전망', '부인', '미확인']},
+    'entities': {'type': 'array', 'items': TEXT}, 'certainty': {'type': 'string', 'enum': ['확정', '계획', '전망', '부인', '미확인'],
+        'description':'핵심 경제 사건의 진행 단계. 검토·추진 중인 제도/계약은 계획, 예측은 전망, 이미 체결·시행·발생한 사실은 확정. 발표나 발언이 실제 있었다는 이유로 그 안의 계획을 확정으로 바꾸지 않는다.'},
     'amount': TEXT, 'timing': TEXT, 'evidence': {'type': 'array', 'items': TEXT}, 'match_event_id': TEXT})
 RELEVANCE = ['주식 판단 재료', '배경·상품 안내', '연결 미확인']
 RANK_VERSION = 'equity-catalyst-v3-current'
@@ -78,6 +80,14 @@ summary·금액·시점·당사자·evidence는 반드시 현재 body에서만 �
 관계·상관관계는 수혜·매수 신호가 아니다. 특정 업종에 고정 우대를 주지 않는다.'''
 
 
+def source_passages(body):
+    if not isinstance(body,str) or len(body)<8:
+        raise ValueError('인용 가능한 본문 부족')
+    chunks=[body[i:i+240] for i in range(0,len(body),240)]
+    if len(chunks)>1 and len(chunks[-1])<8:
+        tail=chunks.pop()
+        chunks[-1]+=tail
+    return [{'id':i+1,'text':text} for i,text in enumerate(chunks)]
 
 
 def entity_mentions(body, entities):
@@ -297,8 +307,21 @@ class Engine:
         return text
 
     def reading_key(self, article, body):
-        return sha256((VERSION + self.provider + self.model + article['url'] + article['title'] + body + article.get('_body_version','')).encode()).hexdigest()
+        return sha256((VERSION + READ_VERSION + self.provider + self.model + article['url'] + article['title'] + body + article.get('_body_version','')).encode()).hexdigest()
 
+    def extract_reading(self, body, article, anchors):
+        passages=source_passages(body)
+        source_schema=schema({**READ_SCHEMA['properties'],'evidence':{'type':'array','minItems':1,'maxItems':3,
+            'uniqueItems':True,'items':{'type':'integer','enum':[p['id'] for p in passages]}}})
+        output=self.call('read',{'task':'source_passages는 순서대로 이어지는 현재 기사 원문이다. 사건을 추출하라. evidence에는 근거가 있는 원문 구간의 정수 id를 1~3개 선택한다. 문장을 새로 쓰거나 존재하지 않는 번호를 만들지 않는다. summary·금액·시점·당사자는 현재 원문만 사용하고 없으면 미확인. certainty는 핵심 경제 사건의 진행 단계이며 보도의 사실 확인 정도가 아니다. IR 의무화 방안을 검토·추진한다면 계획이다. 검토 중이라고 발표했다는 사실이 확실해도 제도 시행은 확정이 아니다. 이미 체결된 계약·발생한 실적·실제 시행된 제도는 확정, 향후 예상은 전망, 사실무근이라는 반박은 부인이다. 기존 사건은 동일 사건 비교용이다. 당사자·행동·발생 시점이 같을 때만 match_event_id를 지정하고 신규 계약·취소·부인·정정은 새 사건으로 둔다.',
+            'article':{k:article.get(k) for k in ('id','title','url','published_at')},
+            'source_passages':passages,'existing_events':anchors[-6:]},source_schema)
+        ids=output.get('evidence') if isinstance(output,dict) else None
+        if not isinstance(ids,list) or not 1<=len(ids)<=3 or any(type(i) is not int or not 1<=i<=len(passages) for i in ids) or len(set(ids))!=len(ids):
+            raise ValueError('원문 구간 선택 오류')
+        output={**output,'evidence':[passages[i-1]['text'] for i in ids]}
+        validate_reading(output,body,{a['event_id'] for a in anchors[-6:]})
+        return separate_event_update(output,anchors[-6:])
 
     def cached_reading(self, article):
         with self.db() as db:
@@ -329,15 +352,12 @@ class Engine:
         if failure and time.time() < failure[0]:
             return None
         try:
-            output = self.call('read', {'task': '본문의 사건을 추출하라. evidence는 본문에서 그대로 인용한 짧은 문장 1~3개. 금액·시점은 원문에 없으면 미확인. summary와 event_title은 사실에 한정. 기존 사건과 당사자·사건·발생 시점이 모두 같을 때만 match_event_id를 지정하라. 단순 같은 테마는 다른 사건이다. 새로운 계약·정정·부인은 새 사건으로 둔다. 일치가 없으면 빈 문자열.',
-                                      'article': {k: article.get(k) for k in ('id', 'title', 'url', 'published_at')}, 'body': body, 'existing_events': anchors[-6:]}, READ_SCHEMA)
-            validate_reading(output, body, {a['event_id'] for a in anchors[-6:]})
-            output = separate_event_update(output,anchors[-6:])
+            output = self.extract_reading(body,article,anchors)
         except Exception:
             with self.db() as db:
                 db.execute('INSERT OR REPLACE INTO failures VALUES(?,?)',(key,time.time()+300))
             raise
-        output.update(article_title=article['title'],entity_mentions=entity_mentions(body,output['entities']),article_id=article['id'], source_url=article['url'], published_at=article.get('published_at'),
+        output.update(read_policy_version=READ_VERSION,article_title=article['title'],entity_mentions=entity_mentions(body,output['entities']),article_id=article['id'], source_url=article['url'], published_at=article.get('published_at'),
                       analyzed_at=now(), model=self.model, body_chars=len(body), body_truncated=len(body) == 6000,
                       event_id=output['match_event_id'] or 'event-' + key[:20],
                       body_version=article.get('_body_version') or sha256(body.encode()).hexdigest(),
@@ -374,10 +394,8 @@ class Engine:
             return {'status': 'disabled', 'message': 'LLM 미연결 · 로컬 모델과 LLM_ENABLED 설정 필요', 'events': [], 'ranking': [], 'market': {}, 'model': self.model, 'updated_at': None}
         errors = []
         self.queue.enqueue([{'article':article} for article in articles])
-        for _ in range(6):
-            job = self.queue.claim()
-            if not job:
-                break
+        job = self.queue.claim()
+        if job:
             with LOCK:
                 STATE.update(status='processing',message='분석 대기열 처리 중',model=self.model,
                              queue=self.queue.summary(),daily_call_limit=self.daily_limit,usage=self.usage())
@@ -393,8 +411,6 @@ class Engine:
             except Exception as error:
                 self.queue.retry(job,error)
                 errors.append(type(error).__name__)
-                if not isinstance(error,ValueError) or (self.daily_limit is not None and self.usage()['calls_today'] >= self.daily_limit):
-                    break
             with LOCK:
                 STATE.update(status='processing',message='분석 대기열 처리 중',model=self.model,
                              queue=self.queue.summary(),daily_call_limit=self.daily_limit,usage=self.usage())
@@ -506,7 +522,9 @@ def collector(get_articles):
         except Exception:
             with LOCK:
                 STATE.update(status='error', message='분석 실패 · 최신성 순위 유지', ranking_stale=True)
-        time.sleep(30 if result.get('coverage', {}).get('candidates') else 5)
+        pending=result.get('queue',{}).get('pending',0)>0
+        capped=engine.daily_limit is not None and engine.usage()['calls_today']>=engine.daily_limit
+        time.sleep(1 if pending and not capped else 30 if result.get('coverage',{}).get('candidates') else 5)
 
 
 def snapshot():
