@@ -240,6 +240,9 @@ class Engine:
                 CREATE TABLE IF NOT EXISTS screens (cache_key TEXT PRIMARY KEY, payload TEXT);
                 CREATE TABLE IF NOT EXISTS failures (cache_key TEXT PRIMARY KEY, retry_after REAL);
                 CREATE TABLE IF NOT EXISTS bodies (url TEXT PRIMARY KEY, text TEXT, retry_after REAL);''')
+            db.execute('BEGIN IMMEDIATE')
+            if 'duration_seconds' not in {row[1] for row in db.execute('PRAGMA table_info(attempts)')}:
+                db.execute('ALTER TABLE attempts ADD COLUMN duration_seconds REAL')
         self.queue = analysis_store.Store(self.path, VERSION + ':' + GATE_VERSION + ':' + self.provider + ':' + self.model)
         self.last_market = {}
         self.last_ranking = []
@@ -259,7 +262,10 @@ class Engine:
     def usage(self):
         with self.db() as db:
             row = db.execute('SELECT count(*),coalesce(sum(input_tokens),0),coalesce(sum(output_tokens),0) FROM attempts WHERE day=?', (now()[:10],)).fetchone()
-        return dict(zip(('calls_today', 'input_tokens', 'output_tokens'), row))
+            measured = db.execute('SELECT task,status,duration_seconds FROM attempts WHERE model=? AND duration_seconds IS NOT NULL ORDER BY id DESC LIMIT 100',(self.model,)).fetchall()
+        timings=[{'task':task,**analysis_store.timing_summary(r[2] for r in measured if r[0]==task),
+            'failed':sum(r[0]==task and r[1]=='failed' for r in measured)} for task in sorted({r[0] for r in measured})]
+        return {**dict(zip(('calls_today', 'input_tokens', 'output_tokens'), row)),'timings':timings}
 
     def call(self, task, payload, output_schema):
         if not self.enabled:
@@ -285,11 +291,19 @@ class Engine:
                        'response_format': {'type': 'json_schema', 'json_schema': {'name': task, 'strict': True, 'schema': output_schema}}}
             headers = {'Authorization': f'Bearer {self.key}', 'Content-Type': 'application/json'}
         req = Request(endpoint, data=json.dumps(request).encode(), headers=headers)
-        with urlopen(req, timeout=120) as response:
-            body = response.read(500_001)
-            if len(body) > 500_000:
-                raise ValueError('모델 응답 크기 제한')
-            response = json.loads(body)
+        requested=time.monotonic()
+        request_status='failed'
+        try:
+            with urlopen(req, timeout=120) as response:
+                body = response.read(500_001)
+                if len(body) > 500_000:
+                    raise ValueError('모델 응답 크기 제한')
+                response = json.loads(body)
+            request_status='received'
+        finally:
+            duration=time.monotonic()-requested
+            with self.db() as db:
+                db.execute('UPDATE attempts SET duration_seconds=?,status=? WHERE id=?',(duration,request_status,call_id))
         if self.provider == 'ollama':
             usage = {'prompt_tokens': response.get('prompt_eval_count', 0), 'completion_tokens': response.get('eval_count', 0)}
             complete = response.get('done') and response.get('done_reason') == 'stop'

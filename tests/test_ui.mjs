@@ -311,6 +311,23 @@ test('assessment reviews show the review time and stay distinct from source revi
   assert.ok(!html.includes(run(`dateTime('2026-11-11T00:00:00Z')`)));
 });
 
+test('latency view separates live analyses and model waits from accumulated work', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{queue:{pending:3000,processing:1,retrying:20,done:100,event_count:80,oldest_wait_seconds:72000,recent_p95_seconds:70000,live_analysis:{samples:12,p50_seconds:40,p95_seconds:84,pending:2,oldest_unfinished_seconds:9100}},usage:{timings:[{task:'rank',samples:3,p50_seconds:25,p95_seconds:120,failed:1}]}}};render()`);
+  const html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('실시간 등록 자료'));
+  assert.ok(html.includes('1.4분'));
+  assert.ok(html.includes('2.5시간'));
+  assert.ok(html.includes('순위 검토'));
+  assert.ok(html.includes('전송·응답 오류 1회'));
+  assert.ok(html.includes('최종 추천 공개까지의 시간은 포함하지 않습니다'));
+  run(`data.intelligence.queue.live_analysis={samples:0,pending:0,p50_seconds:null,p95_seconds:null,oldest_unfinished_seconds:null};data.intelligence.usage.timings=[];render()`);
+  const empty=run(`$('#source-view').innerHTML`);
+  assert.ok(empty.includes('집계 대기'));
+  assert.ok(empty.includes('측정 표본을 모으는 중'));
+  assert.ok(!empty.includes('0.0초'));
+});
+
 test('a changed headline cannot inherit the previous version model event or rank', () => {
   const run=ui();
   run(`data={articles:[{id:'a',title:'계약 취소',source:'test',themes:[],score:50}],intelligence:{ranking_stale:false,events:[{event_id:'e',articles:[{id:'a',article_title:'계약 체결'}]}],assessments:[{event_id:'e'}],ranking:[{event_id:'e'}]}}`);

@@ -3,10 +3,13 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from analysis_store import Store
+from analysis_store import Store, timing_summary
 
 
 class AnalysisStoreTest(unittest.TestCase):
+    def test_latency_percentiles_keep_missing_data_distinct_from_zero(self):
+        self.assertEqual(timing_summary([None,-1,*range(1,21)]),{'samples':20,'p50_seconds':10,'p95_seconds':19})
+        self.assertEqual(timing_summary([]),{'samples':0,'p50_seconds':None,'p95_seconds':None})
     def setUp(self):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.path=Path(temp.name)/'analysis.sqlite3'
@@ -30,6 +33,33 @@ class AnalysisStoreTest(unittest.TestCase):
         jobs=[other.claim() for _ in range(4)]
         self.assertEqual([j['article_id'] for j in jobs],['0','39','38','1'])
         self.assertEqual(len({j['id'] for j in jobs}),4)
+
+    def test_live_latency_excludes_imports_reviews_and_missing_dates(self):
+        with patch('analysis_store.time.time',return_value=10000):
+            self.store.enqueue([{'article':self.article(i,published_at='1970-01-01T02:30:00Z')} for i in range(1,5)])
+            jobs=[self.store.claim() for _ in range(4)]
+            for job in jobs:self.finish(job)
+        with self.store.db() as db:
+            db.execute('UPDATE analysis_jobs SET published_epoch=9000,enqueued_at=9010,finished_at=9070 WHERE id=?',(jobs[0]['id'],))
+            db.execute('UPDATE analysis_jobs SET published_epoch=100,enqueued_at=5000,finished_at=9500 WHERE id=?',(jobs[1]['id'],))
+            db.execute('UPDATE analysis_jobs SET job_key=\'screen-review:test\',published_epoch=9000,enqueued_at=9020,finished_at=9300 WHERE id=?',(jobs[2]['id'],))
+            db.execute('UPDATE analysis_jobs SET published_epoch=0 WHERE id=?',(jobs[3]['id'],))
+        with patch('analysis_store.time.time',return_value=10000):
+            result=self.store.summary()
+        self.assertEqual(result['live_analysis']['samples'],1)
+        self.assertEqual(result['live_analysis']['p95_seconds'],70)
+        self.assertEqual(result['done'],4)
+        self.assertIsNotNone(result['recent_p95_seconds'])
+
+    def test_live_pending_keeps_late_jobs_visible_and_empty_latency_is_unknown(self):
+        with patch('analysis_store.time.time',return_value=1000):
+            self.store.enqueue([{'article':self.article(1,published_at='1970-01-01T00:15:00Z')}])
+        with patch('analysis_store.time.time',return_value=10000):
+            result=self.store.summary()['live_analysis']
+        self.assertEqual(result['pending'],1)
+        self.assertEqual(result['oldest_unfinished_seconds'],9100)
+        self.assertEqual(result['samples'],0)
+        self.assertIsNone(result['p95_seconds'])
 
     def test_policy_review_is_idempotent_preserves_history_and_fair_dispatch(self):
         a=self.article(1)

@@ -158,7 +158,32 @@ class IntelligenceTest(unittest.TestCase):
         self.assertIsNone(other.daily_limit)
         with patch('intelligence.urlopen',return_value=response):
             self.assertEqual(other.call('read',{},ai.READ_SCHEMA),READING)
-        self.assertEqual(other.usage(),{'calls_today':3,'input_tokens':80,'output_tokens':40})
+        usage=other.usage()
+        self.assertEqual({k:usage[k] for k in ('calls_today','input_tokens','output_tokens')},{'calls_today':3,'input_tokens':80,'output_tokens':40})
+
+    def test_model_request_timings_include_timeouts_and_survive_restart(self):
+        response=MagicMock()
+        response.__enter__.return_value.read.return_value=json.dumps({'done':True,'done_reason':'stop','message':{'content':'{}'}}).encode()
+        with patch('intelligence.urlopen',return_value=response),patch('intelligence.time.monotonic',side_effect=[100,103.5]):
+            self.engine.call('read',{},ai.READ_SCHEMA)
+        with patch('intelligence.urlopen',side_effect=TimeoutError),patch('intelligence.time.monotonic',side_effect=[200,320]):
+            self.assertRaises(TimeoutError,self.engine.call,'rank',{},ai.RANK_SCHEMA)
+        other=ai.Engine(self.engine.path)
+        timings={r['task']:r for r in other.usage()['timings']}
+        self.assertEqual(timings['read']['p95_seconds'],3.5)
+        self.assertEqual(timings['rank']['p95_seconds'],120)
+        self.assertEqual(timings['rank']['failed'],1)
+        self.assertEqual(other.usage()['calls_today'],2)
+
+    def test_legacy_usage_migration_preserves_counts_without_fabricated_timings(self):
+        with self.engine.db() as db:
+            db.execute('DROP TABLE attempts')
+            db.execute('CREATE TABLE attempts(id INTEGER PRIMARY KEY,day TEXT,task TEXT,model TEXT,input_tokens INTEGER,output_tokens INTEGER,status TEXT)')
+            db.execute('INSERT INTO attempts VALUES(1,?,?,?,?,?,?)',(ai.now()[:10],'read',self.engine.model,40,20,'received'))
+        other=ai.Engine(self.engine.path)
+        self.assertEqual(other.usage()['calls_today'],1)
+        self.assertEqual(other.usage()['input_tokens'],40)
+        self.assertEqual(other.usage()['timings'],[])
 
     def test_cloud_daily_cap_still_counts_failures_after_restart(self):
         with patch.dict(os.environ, {'LLM_PROVIDER':'gemini','GEMINI_API_KEY':'test-only'}):

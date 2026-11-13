@@ -17,6 +17,11 @@ def epoch(value):
         return 0
 
 
+def timing_summary(values):
+    values=sorted(v for v in values if v is not None and v>=0)
+    return {'samples':len(values),**{f'p{p}_seconds':round(values[(len(values)*p+99)//100-1],2) if values else None for p in (50,95)}}
+
+
 class Store:
     def __init__(self, path, namespace):
         self.path = Path(path)
@@ -206,12 +211,24 @@ class Store:
                  ('event_title','summary','certainty','amount','timing','source_url','published_at','analyzed_at','evidence')}} for r in reversed(rows)]
 
     def summary(self):
+        as_of=time.time()
         with self.db() as db:
             counts = dict(db.execute('SELECT status,count(*) FROM analysis_jobs WHERE namespace=? GROUP BY status',(self.namespace,)))
             oldest = db.execute("SELECT min(enqueued_at) FROM analysis_jobs WHERE namespace=? AND status IN ('pending','processing','error')",(self.namespace,)).fetchone()[0]
             elapsed = db.execute("SELECT finished_at-enqueued_at FROM analysis_jobs WHERE namespace=? AND status='done' ORDER BY finished_at DESC LIMIT 100",(self.namespace,)).fetchall()
             events = db.execute("SELECT count(DISTINCT event_id) FROM analysis_jobs WHERE namespace=? AND status='done'",(self.namespace,)).fetchone()[0]
+            live = db.execute('''SELECT finished_at-published_epoch FROM analysis_jobs WHERE namespace=? AND status='done'
+                AND job_key NOT LIKE 'screen-review:%' AND published_epoch>0
+                AND enqueued_at BETWEEN published_epoch AND published_epoch+3600
+                AND finished_at>=enqueued_at AND finished_at BETWEEN ? AND ?
+                ORDER BY finished_at DESC LIMIT 100''',(self.namespace,as_of-3600,as_of)).fetchall()
+            pending = db.execute('''SELECT count(*),min(published_epoch) FROM analysis_jobs
+                WHERE namespace=? AND status IN ('pending','processing','error') AND job_key NOT LIKE 'screen-review:%'
+                AND published_epoch>0 AND published_epoch<=? AND enqueued_at BETWEEN published_epoch AND published_epoch+3600''',
+                (self.namespace,as_of)).fetchone()
         delays = sorted(row[0] for row in elapsed)
         return {'pending':counts.get('pending',0),'processing':counts.get('processing',0),'retrying':counts.get('error',0),
-                'done':counts.get('done',0),'event_count':events,'oldest_wait_seconds':round(max(0,time.time()-oldest)) if oldest else 0,
-                'recent_p95_seconds':round(delays[(len(delays)*95+99)//100-1]) if delays else None}
+                'done':counts.get('done',0),'event_count':events,'oldest_wait_seconds':round(max(0,as_of-oldest)) if oldest else 0,
+                'recent_p95_seconds':round(delays[(len(delays)*95+99)//100-1]) if delays else None,
+                'live_analysis':{**timing_summary(row[0] for row in live),'pending':pending[0],
+                    'oldest_unfinished_seconds':round(max(0,as_of-pending[1])) if pending[1] else None}}
