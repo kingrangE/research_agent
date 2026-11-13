@@ -43,22 +43,32 @@ READ_SCHEMA = schema({'summary': TEXT, 'event_title': TEXT, 'event_type': TEXT,
         'description':'핵심 경제 사건의 진행 단계. 검토·추진 중인 제도/계약은 계획, 예측은 전망, 이미 체결·시행·발생한 사실은 확정. 발표나 발언이 실제 있었다는 이유로 그 안의 계획을 확정으로 바꾸지 않는다.'},
     'amount': TEXT, 'timing': TEXT, 'evidence': {'type': 'array', 'items': TEXT}, 'match_event_id': TEXT})
 RELEVANCE = ['주식 판단 재료', '배경·상품 안내', '연결 미확인']
-RANK_VERSION = 'equity-catalyst-v3-current'
+RANK_VERSION = 'equity-catalyst-v6-factual-reasons'
 GATE_VERSION = 'equity-screen-v3-business-evidence'
 SCREEN_VERSION = 'source-passages-v3-examples'
-RANK_SCHEMA = schema({'ranking': {'type': 'array', 'items': schema({'event_id': TEXT, 'reason': TEXT,
+RANK_SCHEMA = schema({'ranking': {'type': 'array', 'items': schema({'event_id': TEXT, 'reason': {'type':'string','description':'원문에 있는 당사자와 변경 사실만 요약. 매출·거래량·순이익의 추가 추정 금지'},
     'stock_relevance': {'type':'string','enum':RELEVANCE}, 'watch_for': TEXT})}})
 EQUITY_POLICY = '''목표는 일반 금융 뉴스 추천이 아니라 오늘·수일 내 국내·미국 주식 투자 판단에 쓸 새로운 재료 선별이다.
 모든 사건을 비교 순서로 한 번씩 반환하되 stock_relevance로 먼저 적합성을 판정한다.
+이전 단계가 판단 재료로 올린 사건도 원문 근거가 부족하면 배경·상품 안내 또는 연결 미확인으로 낮춘다. 주식 판단 재료로 유지하도록 강제하지 않는다.
 주식 판단 재료: 상장 기업·산업의 매출/이익 전망, 수주, 경쟁, 비용, 규제, 자본조달/희석, 기업가치 또는 수급의 구체적 변화가 원문에 있고 그 전달 경로를 설명할 수 있다. 기회와 손실 위험 모두 포함한다. 부인·계약 취소 등도 중요할 수 있으며 확정 여부를 보존한다.
 배경·상품 안내: 정기 상품 청약/판매, 금융교육, 행사, 수상, 홍보, 반복 보도처럼 주식 판단의 새 근거가 없는 내용이다. 판매사가 상장사라고 승격하지 않는다.
 연결 미확인: 주식 영향의 구체적인 근거가 부족하거나 현재 자료만으로 판단할 수 없다.
 개인투자용국채 청약의 만기 수익률·발행 규모는 상품 조건이다. 증권사 실적 변화 근거가 없다면 배경·상품 안내다. 큰 수익률 숫자를 주가 기대수익으로 바꾸지 않는다.
 반대로 예상 밖 금리 충격, 상장사의 비정상적인 차입 비용·자금조달 문제는 주식 판단 재료가 될 수 있다. 채권/금리라는 단어로 일괄 제외하지 않는다.
-reason에는 구체적인 기업/산업과 무엇이 달라졌는지, 주식에 전달되는 경로를 쓴다. '새로운 투자 기회', '유동성에 기여', '긍정적 신호'만으로 추천하지 않는다.
+reason에는 원문에서 확인된 당사자와 무엇이 달라졌는지만 한 문장으로 요약한다. 원문에 없는 매출·거래량·순이익 증가 가능성이나 2차 효과를 덧붙이지 않는다. 영향의 전달 경로와 가격 반영 여부는 watch_for에서 확인 과제로 다룬다. '새로운 투자 기회', '유동성에 기여', '긍정적 신호'만으로 추천하지 않는다.
+사실 출처는 각 사건의 evidence 원문뿐이다. 발행 시각과 사건 최초 발행 시각을 구분하고 재보도를 새 사실로 만들지 않는다. 계약 체결·검토·부인·취소의 상태도 원문에서 확인한다.
+추산·예상·검토·미확인 표현을 보존한다. 조치 시행이 확정되어도 예상 절감액·예상 매출까지 확정 금액으로 바꾸지 않는다.
+거래 당사자별 매출과 비용을 구분한다. 플랫폼 수수료 감면은 입점 업주의 비용 감소이지만 플랫폼 자체의 순이익 증가를 뜻하지 않는다. 판매량 증가 등 상쇄 근거가 없으면 플랫폼의 순이익 방향은 미확인이다. 차환 실패·상환자금 미확보를 자금 확보 완료로 바꾸지 않는다.
 watch_for에는 다음 확인할 수치·공시·실적 전망·가격 반영 여부 등 판단을 확인하거나 뒤집을 사항을 한 문장으로 쓴다.
 자료에 시장 기대치·노출 비중·가격 반영 여부가 없으면 미확인으로 두고 임의로 서프라이즈·수혜 확정·매수 시점을 만들지 않는다.
-특정 업종에 고정 우대를 주지 않고 이미 급등한 종목만 우대하지 않는다. 시장 관측의 시각을 확인한다. reason과 watch_for는 각 120자 이내.'''
+특정 업종에 고정 우대를 주지 않고 이미 급등한 종목만 우대하지 않는다. 시장 관측의 시각을 확인한다. reason과 watch_for는 각 120자 이내.
+reason·watch_for 대조 예시 (실제 입력 사실이 아님):
+원문이 플랫폼의 수수료 감면과 업주의 부담 감소만 밝힌 경우:
+{"reason":"플랫폼의 수수료 조건 변경과 입점 업주의 수수료 부담 감소 추산이 발표됐다.","watch_for":"플랫폼 수수료 매출과 거래량 변화, 양측 전체 이익 영향 확인"}
+원문이 공급업체의 판매 단가 인상만 밝힌 경우:
+{"reason":"공급업체와 구매 기업 사이의 판매 단가 인상 계약이 확인됐다.","watch_for":"판매량·원가·가격 전가와 양측 이익 전망 확인"}
+수수료 감면만으로 플랫폼 매출 증가 가능성까지 덧붙이거나 단가 인상만으로 공급업체 순이익 증가를 확정하지 않는다.'''
 DRIVERS = ['기업 실적·수주·경쟁·비용 변화', '상장사 자금조달·희석·상환 위험', '규제·인허가·법적 위험 변화',
            '예상 밖 금리·환율·수급·산업 충격', '금융상품 조건·청약·판매 안내', '홍보·행사·수상·반복 정보', '주식 영향 근거 미확인']
 GATE_SCHEMA = schema({'driver': {'type':'string','enum':DRIVERS}, 'impact_evidence':TEXT, 'reason':TEXT, 'watch_for':TEXT})
@@ -233,6 +243,7 @@ class Engine:
         self.queue = analysis_store.Store(self.path, VERSION + ':' + GATE_VERSION + ':' + self.provider + ':' + self.model)
         self.last_market = {}
         self.last_ranking = []
+        self.ranked_sources = {}
         self.ranked_at = 0
         self.rank_key = ''
 
@@ -449,30 +460,39 @@ class Engine:
         candidates = [e for e in grouped if e['event_id'] in eligible][:12]
         if candidates and (not self.last_market or time.time() - self.last_market['fetched_epoch'] >= 300):
             self.last_market = {**market_snapshot(), 'fetched_epoch': time.time()}
-        rank_key = sha256((RANK_VERSION+READ_VERSION+SCREEN_VERSION+json.dumps(candidates, sort_keys=True)).encode()).hexdigest()
+        labels = {f'E{i+1}': e['event_id'] for i,e in enumerate(candidates)}
+        sources = {e['event_id']:{'evidence':e.get('evidence',[]),'published_at':e.get('published_at'),
+            'first_published_at':e.get('first_published_at')} for e in candidates}
+        events = [{'event_id':label,**sources[event_id]} for label,event_id in labels.items()]
+        policy = RANK_VERSION+READ_VERSION+SCREEN_VERSION
+        market_key = json.dumps(self.last_market,sort_keys=True)
+        source_keys = {event_id:sha256((policy+json.dumps(source,sort_keys=True)+market_key).encode()).hexdigest() for event_id,source in sources.items()}
+        rank_key = sha256((policy+json.dumps({'labels':labels,'events':events,'market':self.last_market},sort_keys=True)).encode()).hexdigest()
         rank_failed = False
         if candidates and (rank_key != self.rank_key or time.time() - self.ranked_at >= 300):
             try:
-                labels = {f'E{i+1}': e['event_id'] for i,e in enumerate(candidates)}
-                events = [{**{k:e[k] for k in ('event_title','summary','certainty','amount','timing','entities','published_at')}, 'evidence':e.get('evidence',[]), 'event_id':label} for label,e in zip(labels,candidates)]
-                rank_schema = schema({'ranking': {'type':'array', 'minItems':len(events), 'maxItems':len(events), 'items':schema({**RANK_SCHEMA['properties']['ranking']['items']['properties'],'event_id':{'type':'string','enum':list(labels)},'stock_relevance':{'type':'string','enum':['주식 판단 재료']}})}})
+                rank_schema = schema({'ranking': {'type':'array', 'minItems':len(events), 'maxItems':len(events), 'items':schema({**RANK_SCHEMA['properties']['ranking']['items']['properties'],'event_id':{'type':'string','enum':list(labels)}})}})
                 output = self.call('rank', {'task': EQUITY_POLICY,
                                             'as_of': now(), 'events': events, 'market': self.last_market}, rank_schema)
                 ranking = [{**r,'event_id':labels[r['event_id']]} for r in validate_ranking(output,set(labels))]
                 self.last_ranking, self.rank_key, self.ranked_at = ranking, rank_key, time.time()
+                self.ranked_sources = source_keys
             except Exception as error:
                 rank_failed = True
                 errors.append(type(error).__name__)
         if gates and not candidates:
             self.last_ranking, self.rank_key, self.ranked_at = [],rank_key,time.time()
-        ranking = [r for r in self.last_ranking if r['event_id'] in eligible]
-        ranked = {r['event_id']:r for r in ranking}
+            self.ranked_sources = {}
+        reviewed_ranking = [r for r in self.last_ranking if r['event_id'] in eligible and r['event_id'] in source_keys
+                   and self.ranked_sources.get(r['event_id'])==source_keys[r['event_id']]]
+        ranking = [r for r in reviewed_ranking if r['stock_relevance']=='주식 판단 재료']
+        ranked = {r['event_id']:r for r in reviewed_ranking}
         assessments = [{**gate,**ranked.get(gate['event_id'],{})} for gate in gates]
         return {'status': 'partial' if errors or not grouped or len(assessments) != len(grouped) else 'ok',
                 'message': '모델 참고 순위 · 검수 전' if grouped else '분석 가능한 본문 대기 · 원문 수집 실패 가능',
                 'events': grouped, 'ranking': ranking, 'assessments':assessments, 'rank_policy':RANK_VERSION, 'market': self.last_market, 'model': self.model,
                 'updated_at': now(), 'ranked_at': datetime.fromtimestamp(self.ranked_at, timezone.utc).isoformat() if self.ranked_at else None,
-                'ranking_stale': not assessments or bool(candidates and not ranking) or time.time() - self.ranked_at > 600,
+                'ranking_stale': not assessments or bool(candidates and not reviewed_ranking) or time.time() - self.ranked_at > 600,
                 'ranking_partial': rank_failed or self.rank_key != rank_key or len(assessments) != len(grouped),
                 'coverage': {'candidates': len(articles), 'analyzed_articles': len(readings), 'events': len(grouped)},
                 'queue': self.queue.summary(),

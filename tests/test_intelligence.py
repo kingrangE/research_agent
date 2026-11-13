@@ -277,6 +277,56 @@ class IntelligenceTest(unittest.TestCase):
         self.assertFalse(result['ranking_stale'])
         self.assertEqual([r['event_id'] for r in result['ranking']],['event-'+str(i) for i in reversed(range(9))])
 
+    def test_ranking_uses_original_evidence_instead_of_generated_financial_claims(self):
+        reading={**READING,'summary':'순이익 9999억원 증가 확정','event_title':'허구의 이익 증가',
+                 'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call:
+            self.engine.cycle([ARTICLE])
+        event=call.call_args.args[1]['events'][0]
+        self.assertNotIn('summary',event)
+        self.assertNotIn('event_title',event)
+        self.assertNotIn('amount',event)
+        self.assertEqual(event['evidence'],READING['evidence'])
+        self.assertEqual(event['first_published_at'],ARTICLE['published_at'])
+
+    def test_rank_cache_ignores_history_changes_but_tracks_sources_and_market(self):
+        reading={**READING,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine.queue,'history',side_effect=[[],[{'summary':'이력 추가'}]]),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call:
+            self.engine.cycle([ARTICLE]);self.engine.cycle([ARTICLE])
+        self.assertEqual(call.call_count,1)
+        changed={**reading,'evidence':['공급 계약 금액을 4000억원으로 정정했다.']}
+        with patch.object(self.engine.queue,'readings',return_value=([changed],[dict(GATE,event_id='e')])),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call:
+            self.engine.cycle([ARTICLE])
+            self.engine.last_market={**self.engine.last_market,'observations':[{'code':'SPY','change_percent':-2}]}
+            self.engine.cycle([ARTICLE])
+        self.assertEqual(call.call_count,2)
+
+    def test_failed_reranking_cannot_reuse_reasons_from_different_evidence_or_market(self):
+        reading={**READING,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}):
+            self.engine.cycle([ARTICLE])
+        for changed in (True,False):
+            fact={**reading,'evidence':['계약 금액을 4000억원으로 정정했다.']} if changed else reading
+            if not changed:
+                self.engine.last_market={**self.engine.last_market,'observations':[{'code':'SPY','change_percent':-3}]}
+            with patch.object(self.engine.queue,'readings',return_value=([fact],[dict(GATE,event_id='e')])),patch.object(self.engine,'call',side_effect=ValueError('invalid response')):
+                result=self.engine.cycle([ARTICLE])
+            self.assertEqual(result['ranking'],[])
+            self.assertTrue(result['ranking_stale'])
+            self.assertTrue(result['ranking_partial'])
+
+    def test_final_source_review_can_remove_a_false_positive_without_filling_the_briefing(self):
+        reading={**READING,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        rejected={**rank_row('E1'),'stock_relevance':'배경·상품 안내','reason':'주식 실적 변화 없는 상품 조건 안내'}
+        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rejected]}) as call:
+            first=self.engine.cycle([ARTICLE]);second=self.engine.cycle([ARTICLE])
+        self.assertEqual(first['ranking'],[])
+        self.assertEqual(first['assessments'][0]['stock_relevance'],'배경·상품 안내')
+        self.assertFalse(first['ranking_stale'])
+        self.assertFalse(first['ranking_partial'])
+        self.assertEqual(second['ranking'],[])
+        call.assert_called_once()
+
     def test_product_announcements_are_assessed_but_not_stock_recommendations(self):
         reading={**copy.deepcopy(READING),'event_id':'bond','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         row={'event_id':'E1','reason':'국채 상품 안내이며 상장사의 실적 변화 근거 없음','stock_relevance':'배경·상품 안내','watch_for':'발행 조건 변경보다 주식 실적 영향 근거가 필요'}

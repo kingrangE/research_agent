@@ -33,8 +33,8 @@ def evaluate(engine, dataset):
     for sector in ('energy', 'technology'):
         started = time.monotonic()
         try:
-            events = [{'event_id':'material','summary':'한빛에너지 확정 공급 계약 3000억원, 최근 연매출의 30%, 공시 확인'},
-                      {'event_id':'ceremony','summary':'새봄반도체 사내 친목 행사 개최, 계약·매출 변화 정보 없음'}]
+            events = [{'event_id':'material','evidence':['한빛에너지 확정 공급 계약 3000억원, 최근 연매출의 30%, 공시 확인']},
+                      {'event_id':'ceremony','evidence':['새봄반도체 사내 친목 행사 개최, 계약·매출 변화 정보 없음']}]
             market = {'active_sector': sector, 'note':'가상 시장 맥락이며 실제 시세가 아님. 단순 업종 유행만으로 사건의 실질을 대체하지 말 것.'}
             output = engine.call('rank', {'task':'주식 투자 판단용 사건을 먼저 배치하라. 모든 ID를 한 번씩 나열하고 reason, stock_relevance, watch_for를 채워라. 계약의 기업 실적 영향을 설명하고 행사는 배경·상품 안내로 구분하라.', 'events':events, 'market':market}, RANK_SCHEMA)
             rows=validate_ranking(output, {'material','ceremony'})
