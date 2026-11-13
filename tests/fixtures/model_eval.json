@@ -60,7 +60,9 @@
       "body": "가상거래소는 상장사의 기업설명회를 연 1회 이상 의무화하는 방안을 검토 중이라고 밝혔다. 간담회에서 제도 개선을 신속히 추진하겠다고 설명했으나 규정 개정과 시행일은 아직 확정되지 않았다. 이번 발표는 새로운 의무가 이미 시행됐다는 뜻이 아니다.",
       "expected": {
         "certainty": "계획",
-        "entities": ["가상거래소"],
+        "entities": [
+          "가상거래소"
+        ],
         "amount_contains": "미확인"
       }
     },
@@ -69,7 +71,9 @@
       "body": "가상거래소는 상장사의 기업설명회를 연 1회 이상 의무화하는 개정 규정을 오늘부터 시행했다. 개정안은 지난달 승인을 마쳤으며 오늘 상장기업에 적용이 시작됐다. 추가적인 의무 확대는 검토 중이지만 이번 기사에서 다루는 연 1회 의무는 이미 시행된 상태다.",
       "expected": {
         "certainty": "확정",
-        "entities": ["가상거래소"],
+        "entities": [
+          "가상거래소"
+        ],
         "amount_contains": "미확인"
       }
     },
@@ -80,6 +84,30 @@
         "certainty": "미확인",
         "entities": [],
         "amount_contains": "미확인"
+      }
+    },
+    {
+      "id": "capacity-scale",
+      "title": "한빛에너지, 발전 설비 20GW 가동",
+      "body": "한빛에너지는 11일 총 20GW 규모의 신규 발전 설비를 가동했다고 밝혔다. 투자 금액은 공개하지 않았다. 이번 발표의 핵심은 실제 가동을 시작한 발전 용량이다.",
+      "expected": {
+        "certainty": "확정",
+        "entities": [
+          "한빛에너지"
+        ],
+        "amount_contains": "20GW"
+      }
+    },
+    {
+      "id": "relative-scale",
+      "title": "우리물류, 영업이익 5% 증가",
+      "body": "우리물류는 3분기 영업이익이 전년 동기보다 5% 증가했다고 11일 발표했다. 절대 금액은 공개하지 않았다. 회사가 밝힌 이번 실적의 규모 정보는 전년 대비 5% 증가율이다.",
+      "expected": {
+        "certainty": "확정",
+        "entities": [
+          "우리물류"
+        ],
+        "amount_contains": "5%"
       }
     }
   ],
@@ -96,9 +124,18 @@
     }
   ],
   "ranking_readings": [
-    {"id": "contract", "expected": "주식 판단 재료"},
-    {"id": "earnings", "expected": "주식 판단 재료"},
-    {"id": "denial", "expected": "주식 판단 재료"}
+    {
+      "id": "contract",
+      "expected": "주식 판단 재료"
+    },
+    {
+      "id": "earnings",
+      "expected": "주식 판단 재료"
+    },
+    {
+      "id": "denial",
+      "expected": "주식 판단 재료"
+    }
   ],
   "equity_screening": [
     {

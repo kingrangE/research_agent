@@ -11,28 +11,29 @@ import time
 from intelligence import VERSION, READ_VERSION, RANK_VERSION, GATE_VERSION, SCREEN_VERSION, RELEVANCE, Engine, validate_ranking
 
 
-def evaluate(engine, dataset, clusters_only=False):
+def evaluate(engine, dataset, clusters_only=False, readings_only=False):
     results = []
     anchor = {'event_id': 'event-contract', 'event_title': '한빛에너지 전력변압기 공급 계약', 'entities': ['한빛에너지'], 'published_at': '2026-11-11', 'summary': dataset['readings'][0]['body'] if dataset.get('readings') else ''}
-    for case in (dataset['clusters'] if clusters_only else dataset['readings'] + dataset['clusters']):
+    for case in (dataset['clusters'] if clusters_only else dataset['readings'] if readings_only else dataset['readings'] + dataset['clusters']):
         started = time.monotonic()
         output = None
         try:
-            article={'id':f'article-{len(results)+1}','title':case.get('title','원문 기사')} if clusters_only else {'id':case['id'],'title':case.get('title',case['id'])}
+            article={'id':f'article-{len(results)+1}','title':case.get('title','원문 기사')} if clusters_only or readings_only else {'id':case['id'],'title':case.get('title',case['id'])}
             output = engine.extract_reading(case['body'],article,case.get('anchors',[anchor]))
-            if 'expected_match' in case:
-                checks = {'same_event': output['match_event_id'] == case['expected_match']}
-            else:
+            checks = {'same_event': output['match_event_id'] == case['expected_match']} if 'expected_match' in case else {}
+            if 'expected' in case:
                 expected = case['expected']
-                checks = {'certainty': output['certainty'] == expected['certainty'],
-                          'entities': all(any(e in entity for entity in output['entities']) for e in expected['entities'])}
+                checks.update(certainty=output['certainty'] == expected['certainty'],
+                              entities=all(any(e in entity for entity in output['entities']) for e in expected['entities']))
                 if expected.get('amount_contains'):
                     checks['amount'] = expected['amount_contains'] in output['amount']
+            if not checks:
+                raise ValueError('평가 기대값 없음')
             results.append({'id': case['id'], 'valid': True, 'checks': checks, 'output': output, 'seconds': round(time.monotonic()-started, 2)})
         except Exception as error:
             results.append({'id': case['id'], 'valid': False, 'error': type(error).__name__, 'output': output, 'seconds': round(time.monotonic()-started, 2)})
         print(engine.model, results[-1]['id'], results[-1].get('checks', results[-1].get('error')), flush=True)
-    for sector in (() if clusters_only else ('energy', 'technology')):
+    for sector in (() if clusters_only or readings_only else ('energy', 'technology')):
         started = time.monotonic()
         try:
             events = [{'event_id':'material','evidence':['한빛에너지 확정 공급 계약 3000억원, 최근 연매출의 30%, 공시 확인']},
@@ -103,16 +104,18 @@ if __name__ == '__main__':
     stage.add_argument('--equity-only',action='store_true',help='주식 판단 재료와 상품 안내의 구분만 검증')
     stage.add_argument('--ranking-only',action='store_true',help='운영과 같은 최종 순위 경로의 분류만 격리 검증')
     stage.add_argument('--clusters-only',action='store_true',help='운영 본문 읽기 경로에서 사건 연결만 격리 검증')
+    stage.add_argument('--readings-only',action='store_true',help='운영 본문 추출의 사건 단계·당사자·금액만 격리 검증')
     parser.add_argument('--output',default='.data/model-evaluation.json')
     args=parser.parse_args()
     os.environ['LLM_ENABLED']='1'
     dataset_bytes=Path(args.dataset).read_bytes()
     dataset=json.loads(dataset_bytes)
     report={'prompt_version':VERSION,'read_policy_version':READ_VERSION,'rank_policy_version':RANK_VERSION,'gate_policy_version':GATE_VERSION,'screen_policy_version':SCREEN_VERSION,'dataset_sha256':sha256(dataset_bytes).hexdigest(),'as_of':datetime.now(timezone.utc).isoformat(),'limitations':dataset['note'],'results':[]}
+    report['analysis_source_sha256']=sha256(Path(__file__).with_name('intelligence.py').read_bytes()).hexdigest()
     for model in args.models:
         os.environ['LLM_MODEL']=model
         engine=Engine('.data/evaluation-usage.sqlite3')
-        report['results'].append(evaluate_ranking(engine,dataset) if args.ranking_only else evaluate_equity(engine,dataset) if args.equity_only else evaluate(engine,dataset,args.clusters_only))
+        report['results'].append(evaluate_ranking(engine,dataset) if args.ranking_only else evaluate_equity(engine,dataset) if args.equity_only else evaluate(engine,dataset,args.clusters_only,args.readings_only))
         target=Path(args.output);target.parent.mkdir(parents=True,exist_ok=True)
         target.write_text(json.dumps(report,ensure_ascii=False,indent=2))
     print('Saved',args.output,flush=True)

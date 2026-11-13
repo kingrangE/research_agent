@@ -22,6 +22,31 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def test_cluster_evaluation_checks_facts_and_does_not_pass_unlabelled_cases(self):
+        engine=MagicMock(model='test',provider='ollama')
+        engine.extract_reading.return_value={**READING,'match_event_id':'same'}
+        cases=[{'id':'same-case','body':BODY,'anchors':[{'event_id':'same'}],'expected_match':'same',
+                'expected':{'certainty':'계획','entities':['한빛에너지']}},
+               {'id':'unlabelled','body':BODY}]
+        with patch('builtins.print'):
+            report=evaluate(engine,{'readings':[],'clusters':cases},clusters_only=True)
+        self.assertEqual(report['valid'],1)
+        self.assertEqual(report['all_checks_pass'],0)
+        self.assertTrue(report['cases'][0]['checks']['same_event'])
+        self.assertFalse(report['cases'][0]['checks']['certainty'])
+
+    def test_reading_evaluation_skips_cluster_and_rank_calls_without_label_hints(self):
+        engine=MagicMock(model='test',provider='ollama')
+        engine.extract_reading.return_value=dict(READING)
+        with patch('builtins.print'):
+            report=evaluate(engine,{'readings':[{'id':'confirmed-contract','body':BODY,'expected':{'certainty':'확정','entities':['한빛에너지'],'amount_contains':'3000'}}],
+                                    'clusters':[{'id':'unused'}]},readings_only=True)
+        self.assertEqual(report['total'],1)
+        self.assertEqual(report['all_checks_pass'],1)
+        engine.extract_reading.assert_called_once()
+        self.assertEqual(engine.extract_reading.call_args.args[1],{'id':'article-1','title':'원문 기사'})
+        engine.rank.assert_not_called()
+
     def test_cluster_evaluation_uses_each_cases_anchors_and_skips_ranking(self):
         engine=MagicMock(model='test',provider='ollama')
         engine.extract_reading.side_effect=[{'match_event_id':'same'},{'match_event_id':'wrong'}]

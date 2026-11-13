@@ -18,13 +18,15 @@
       "id": "ir-rule-vs-index-close", "title": "증시 1% 하락 마감",
       "body": "11일 국내 대표 주가지수는 전일 대비 1% 하락 마감했다. 외국인 순매도가 확대됐다. 이날 오전에는 거래소가 기업 IR 의무화 방안을 발표했다.",
       "anchors": [{"event_id":"ir-rule","event_title":"거래소 IR 의무화 방안 발표","event_type":"정책","entities":["거래소","코스닥"],"certainty":"계획","timing":"2026-11-11","published_at":"2026-11-11","summary":"거래소는 코스닥 기업의 연 2회 IR 의무화를 추진한다고 밝혔다."}],
-      "expected_match": ""
+      "expected_match": "",
+      "expected": {"certainty": "확정", "entities": ["외국인"], "amount_contains": "1%"}
     },
     {
       "id": "new-customer-same-amount", "title": "한빛에너지, 동부전력과 공급 계약",
       "body": "한빛에너지는 11일 동부전력과 3000억원 규모의 변압기 공급 계약을 새로 체결했다. 공급 기간은 2027년부터 2029년까지다.",
       "anchors": [{"event_id":"west-contract","event_title":"한빛에너지 서부전력 공급 계약","event_type":"계약","entities":["한빛에너지","서부전력"],"certainty":"확정","amount":"3000억원","timing":"2027~2029년","published_at":"2026-11-11","summary":"한빛에너지는 서부전력과 3000억원 변압기 공급 계약을 체결했다. 공급 기간은 2027~2029년이다."}],
-      "expected_match": ""
+      "expected_match": "",
+      "expected": {"certainty": "확정", "entities": ["동부전력"], "amount_contains": "3000"}
     },
     {
       "id": "contract-paraphrase", "title": "한빛에너지, 서부전력에 변압기 공급",
