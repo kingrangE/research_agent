@@ -265,6 +265,8 @@ class IntelligenceTest(unittest.TestCase):
         samples={'SPY':{'change_percent':1,'traded_at':'2026-11-10T16:00:00-05:00','currency':'USD','source':'test','market_status':'CLOSE'},
                  'XLE':{'change_percent':3,'traded_at':'2026-11-10T16:00:00-05:00','currency':'USD','source':'test','market_status':'CLOSE'},
                  'XLK':{'change_percent':4,'traded_at':'2026-11-09T16:00:00-05:00','currency':'USD','source':'test','market_status':'CLOSE'}}
+        for quote in samples.values():
+            quote.update(delay_label='15분 지연',fetched_at='2026-11-11T00:00:00Z',session='미국 정규장')
         def parse(data,code):
             return samples[code]
         with patch.object(ai,'MARKETS',{'SPY':'市場','XLE':'에너지','XLK':'기술','BAD':'실패'}),patch('intelligence.stocks.fetch',return_value='{}'),patch('intelligence.stocks.parse_quote',side_effect=parse):
@@ -272,6 +274,9 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(result['missing'],['BAD'])
         self.assertEqual(result['observations'][1]['relative_to_spy_pp'],2)
         self.assertNotIn('relative_to_spy_pp',result['observations'][2])
+        self.assertEqual(result['observations'][0]['delay_label'],'15분 지연')
+        self.assertEqual(result['observations'][0]['fetched_at'],'2026-11-11T00:00:00Z')
+        self.assertEqual(result['observations'][0]['session'],'미국 정규장')
 
     def test_cycle_publishes_only_valid_ranking_and_reuses_it(self):
         reading={**copy.deepcopy(ANALYZED),'event_id':'event-a','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at'],'model':'test','analyzed_at':ai.now()}

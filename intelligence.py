@@ -209,7 +209,7 @@ def market_snapshot():
         code, label = item
         url = f'https://api.stock.naver.com/stock/{code}/basic' if not code[0].isdigit() else stocks.QUOTE_URL.format(code=code)
         q = stocks.parse_quote(json.loads(stocks.fetch(url, 200_000)), code)
-        return {'code': code, 'name': label, **{k: q[k] for k in ('change_percent', 'traded_at', 'market_status', 'currency', 'source')}}
+        return {'code': code, 'name': label, **{k: q[k] for k in ('change_percent', 'traded_at', 'fetched_at', 'market_status', 'currency', 'source', 'delay_label', 'session')}}
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [(code, pool.submit(get, (code, label))) for code, label in MARKETS.items()]
         for code, future in futures:
@@ -222,7 +222,7 @@ def market_snapshot():
         if benchmark and q['currency'] == 'USD' and q['traded_at'][:10] == benchmark['traded_at'][:10]:
             q['relative_to_spy_pp'] = round(q['change_percent'] - benchmark['change_percent'], 2)
     return {'as_of': now(), 'observations': result, 'missing': errors,
-            'limitations': 'ETF 가격 변화의 일부 시장 맥락. 미국 정규장·국내 거래 시각 구분. 거래대금·상승 확산도·환율·금리 미포함. 움직임이 약한 신규 사건도 평가할 것.'}
+            'limitations': 'ETF 가격 변화의 일부 시장 맥락. 미국 정규장·국내 거래 시각 구분. 지연 표기는 제공처 값이며 도착 지연을 독립 검증한 것이 아님. 조회 시각과 거래 기준 시각은 다름. 누락된 관측을 보합이나 정상 시장으로 추정하지 말 것. 거래대금·상승 확산도·환율·금리 미포함. 움직임이 약한 신규 사건도 평가할 것.'}
 
 
 class Engine:

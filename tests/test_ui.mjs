@@ -139,6 +139,19 @@ test('failed archive search never substitutes recent feed articles for historica
   assert.ok(run(`$('#archive-page-status').textContent`).includes('조회 실패'));
 });
 
+test('market panel preserves delay disclosure and exposes incomplete market context', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{market:{as_of:'2026-11-13T01:00:00Z',missing:['SPY'],observations:[{code:'069500',name:'KODEX 200',change_percent:1,traded_at:'2026-11-13T09:59:00+09:00',delay_label:'<15분 지연>',market_status:'OPEN'}]}}};render()`);
+  let html=run(`$('#market-snapshot').innerHTML`);
+  assert.ok(html.includes('시장 자료 일부 누락'));
+  assert.ok(html.includes('&lt;15분 지연&gt;'));
+  assert.ok(html.includes('시장 조회'));
+  run(`data.intelligence.market.observations=[];render()`);
+  html=run(`$('#market-snapshot').innerHTML`);
+  assert.ok(html.includes('시장 자료 조회 실패'));
+  assert.ok(!html.includes('+0.00%'));
+});
+
 test('collection view exposes unfinished coverage and escapes provider errors', () => {
   const run=ui();
   run(`data={articles:[],sources:[],collection:{day:'2026-11-12',next_page:73,last_success:'2026-11-12T10:00:00Z',complete_at:null,last_error:'<script>provider error</script>'}};render()`);
