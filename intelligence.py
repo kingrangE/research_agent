@@ -25,7 +25,7 @@ STATE = {'status': 'disabled', 'message': 'LLM 미연결 · 최신성 순위 유
 MARKETS = {'069500': 'KOSPI200 ETF', '229200': 'KOSDAQ150 ETF', 'SPY': 'S&P500 ETF',
            'XLK': '미국 기술', 'XLE': '미국 에너지', 'XLF': '미국 금융', 'XLV': '미국 헬스케어',
            'XLI': '미국 산업재', 'XLY': '미국 경기소비재', 'XLP': '미국 필수소비재',
-           'XLU': '미국 유틸리티', 'XLB': '미국 소재', 'XLRE': '미국 부동산', 'XLC': '미국 통신서비스'}
+           'XLU': '미국 유틸리티', 'XLB': '미국 소재', 'XLRE.K': '미국 부동산', 'XLC': '미국 통신서비스'}
 
 
 def now():

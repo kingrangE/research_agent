@@ -278,6 +278,19 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(result['observations'][0]['fetched_at'],'2026-11-11T00:00:00Z')
         self.assertEqual(result['observations'][0]['session'],'미국 정규장')
 
+    def test_real_estate_market_uses_verified_provider_identity(self):
+        quote={'reutersCode':'XLRE.K','stockName':'State Street Real Estate Select Sector SPDR ETF',
+               'closePrice':'44.36','fluctuationsRatio':'0.50','compareToPreviousPrice':{'code':'2'},
+               'currencyType':{'code':'USD'},'localTradedAt':'2026-11-12T16:00:00-05:00',
+               'marketStatus':'CLOSE','delayTimeName':'실시간'}
+        real_estate={code:label for code,label in ai.MARKETS.items() if label=='미국 부동산'}
+        with patch.object(ai,'MARKETS',real_estate),patch('intelligence.stocks.fetch',return_value=json.dumps(quote)) as fetch:
+            result=ai.market_snapshot()
+        self.assertEqual(result['missing'],[])
+        self.assertEqual(result['observations'][0]['code'],'XLRE.K')
+        self.assertEqual(result['observations'][0]['name'],'미국 부동산')
+        fetch.assert_called_once_with('https://api.stock.naver.com/stock/XLRE.K/basic',200_000)
+
     def test_cycle_publishes_only_valid_ranking_and_reuses_it(self):
         reading={**copy.deepcopy(ANALYZED),'event_id':'event-a','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at'],'model':'test','analyzed_at':ai.now()}
         with patch.object(self.engine,'screen',return_value=GATE),patch.object(self.engine,'reading',return_value=reading),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1','확정 공급 계약')]}) as call:
