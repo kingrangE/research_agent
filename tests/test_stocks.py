@@ -1,4 +1,6 @@
 import unittest
+from concurrent.futures import ThreadPoolExecutor, wait
+import threading
 from unittest.mock import patch
 
 import stocks
@@ -21,7 +23,7 @@ QUOTE = {"itemCode": "003470", "stockName": "유안타증권", "closePrice": "3,
 class StocksTest(unittest.TestCase):
     def setUp(self):
         matcher, names = stocks.compile_names(CATALOGUE)
-        for name, value in [("CATALOGUE", dict(CATALOGUE)), ("NAME_MATCHER", matcher), ("NAME_CODES", names), ("QUOTES", {})]:
+        for name, value in [("CATALOGUE", dict(CATALOGUE)), ("NAME_MATCHER", matcher), ("NAME_CODES", names), ("QUOTES", {}), ("QUOTE_PENDING", {})]:
             patcher = patch.object(stocks, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -57,6 +59,16 @@ class StocksTest(unittest.TestCase):
         self.assertTrue(all(s["relation"] == "value_chain" and s["sources"] for s in related))
         self.assertEqual(stocks.related_stocks("전쟁 우려 속 환율 상승"), [])
 
+    def test_body_names_need_literal_evidence_and_never_expand_their_themes(self):
+        result=stocks.body_related_stocks([{'name':'삼성전자','evidence':'삼성전자가 공급 계약을 발표했다.'},
+                                         {'name':'가짜기업','evidence':'삼성전자가 공급 계약을 발표했다.'}],
+                                        'https://example.com/article','2026-11-11')
+        self.assertEqual([s['code'] for s in result],['005930'])
+        self.assertEqual(result[0]['relation'],'body')
+        self.assertIn('삼성전자가 공급',result[0]['sources'][0]['excerpt'])
+        self.assertEqual(stocks.body_related_stocks([{'name':'삼성전자','evidence':'주식에 관한 기사'}],None),[])
+        self.assertEqual(stocks.body_related_stocks([{'name':'대상','evidence':'지원 대상 기업을 선정했다.'}],None),[])
+
     def test_quote_price_change_sign_timestamps_and_malformed_values(self):
         quote = stocks.parse_quote(QUOTE, "003470")
         self.assertEqual((quote["price"], quote["change_percent"]), (3935, 2.88))
@@ -81,6 +93,26 @@ class StocksTest(unittest.TestCase):
         self.assertEqual(missing["status"], "error")
         self.assertNotIn("price", missing)
         self.assertRaises(ValueError, stocks.get_quotes, ["AAAAAA"])
+
+    def test_slow_provider_returns_pending_and_shares_one_inflight_request(self):
+        release=threading.Event()
+        pool=ThreadPoolExecutor(max_workers=4)
+        def slow(code):
+            release.wait(2)
+            return stocks.parse_quote(QUOTE,code)
+        try:
+            with patch('stocks.QUOTE_POOL',pool),patch('stocks.QUOTE_WAIT_SECONDS',0.01),patch('stocks.collect_quote',side_effect=slow) as collect:
+                first=stocks.get_quotes(['003470'])
+                second=stocks.get_quotes(['003470'])
+                self.assertEqual(first['003470']['status'],'pending')
+                self.assertEqual(second['003470']['status'],'pending')
+                self.assertEqual(collect.call_count,1)
+                release.set();wait(list(stocks.QUOTE_PENDING.values()),timeout=2)
+                ready=stocks.get_quotes(['003470'])
+                self.assertEqual(ready['003470']['price'],3935)
+                self.assertEqual(ready['003470']['status'],'ok')
+        finally:
+            release.set();pool.shutdown(wait=True)
 
     def test_us_listings_exclude_etfs_tests_preferreds_and_keep_verified_tsm_adr(self):
         nasdaq = 'Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\nNVDA|NVIDIA Corporation - Common Stock|Q|N|N|100|N|N\nFUND|Some AI ETF|Q|N|N|100|Y|N\nTEST|Testing Common Stock|Q|Y|N|100|N|N\nPREF|Example Preferred Stock|Q|N|N|100|N|N\n'

@@ -9,6 +9,7 @@ import server
 
 
 class DashboardTest(unittest.TestCase):
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -32,9 +33,21 @@ class DashboardTest(unittest.TestCase):
         first = self.article()
         second = self.article(url="https://example.com/2")
         result = server.deduplicate([first, second, self.article()])
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["copies"], 3)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["copies"], 2)
         self.assertEqual(first["copies"], 1)
+
+    def test_similar_headlines_never_hide_contract_cancellation_or_another_source(self):
+        base='한빛에너지 미국 전력변압기 3000억원 규모 공급 계약 '
+        rows=[self.article(base+'체결'),self.article(base+'취소',url='https://example.com/cancel')]
+        self.assertEqual(len(server.deduplicate(rows)),2)
+        rows=[self.article(published_at='2026-11-11T09:30:00+09:00'),self.article(url='https://example.com/new',published_at='2026-11-11T01:00:00+00:00')]
+        self.assertEqual(server.deduplicate(rows)[0]['url'],'https://example.com/new')
+
+    def test_bad_rss_link_does_not_discard_good_articles(self):
+        xml=b'<rss><channel><item><title>bad</title><link>https://[bad</link></item><item><title>good</title><link>https://example.com/a</link></item></channel></rss>'
+        self.assertEqual(len(server.parse_feed(xml,server.SOURCES[0])),1)
+        self.assertIsNone(server.safe_url('https://:secret@example.com/'))
 
     def test_multitheme_classification_and_age_score(self):
         now = datetime(2026, 11, 11, 0, 0, tzinfo=timezone.utc)
@@ -71,6 +84,19 @@ class DashboardTest(unittest.TestCase):
         report = server.classify(self.article(kind="report"), now)
         self.assertEqual(report["score"], generic["score"])
         self.assertEqual(report["score_parts"], {"freshness": 50})
+
+    def test_body_mentions_are_added_only_to_the_matching_article_version(self):
+        title_stock={'code':'A','relation':'direct'}
+        body_stock={'code':'B','relation':'body'}
+        reading={'article_title':'실적 발표','entity_mentions':[{'name':'회사B','evidence':'회사B 실적'}]}
+        with patch('server.stocks.related_stocks',return_value=[title_stock]), \
+             patch('server.stocks.body_related_stocks',return_value=[title_stock,body_stock]) as body:
+            result=server.classify(self.article('실적 발표'),reading=reading)
+            self.assertEqual(result['related_stocks'],[title_stock,body_stock])
+            body.assert_called_once()
+            result=server.classify(self.article('실적 정정'),reading=reading)
+            self.assertEqual(result['related_stocks'],[title_stock])
+            body.assert_called_once()
 
     def test_polling_interval_accounts_for_collection_duration(self):
         with patch("server.refresh") as refresh, patch("server.time.monotonic", side_effect=[100, 105]), \

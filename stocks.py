@@ -1,6 +1,6 @@
 """Korean/US listed company matching and timestamped public Npay quotes."""
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 import csv
@@ -26,6 +26,9 @@ QUOTES = {}
 LOCK = threading.Lock()
 QUOTE_LOCK = threading.Lock()
 QUOTE_TTL = 10
+QUOTE_WAIT_SECONDS = 5
+QUOTE_POOL = ThreadPoolExecutor(max_workers=4)
+QUOTE_PENDING = {}
 ALIASES = {"000660": ["SK하이닉스", "하이닉스"], "005380": ["현대차"], "005930": ["삼전"],
            "005490": ["포스코홀딩스"], "035420": ["네이버"], "030200": ["KT"]}
 for entity in relations.KNOWLEDGE["entities"]:
@@ -253,21 +256,61 @@ def collect_quote(code):
     return parse_quote(json.loads(fetch(url, 100_000)), code)
 
 
+def finish_quotes():
+    for code,future in list(QUOTE_PENDING.items()):
+        if not future.done():
+            continue
+        try:
+            quote = future.result()
+            age = max(0,(datetime.now(timezone.utc)-datetime.fromisoformat(quote['fetched_at'])).total_seconds())
+            cached_at = time.monotonic()-age
+        except Exception:
+            previous = QUOTES.get(code,(0,{}))[1]
+            quote = {**previous,'code':code,'status':'stale' if previous.get('price') is not None else 'error','error':'시세 조회 실패'}
+            cached_at = time.monotonic()
+        QUOTES[code] = (cached_at,quote)
+        del QUOTE_PENDING[code]
+
+
 def get_quotes(codes):
     with LOCK:
         if any(code not in CATALOGUE for code in codes):
-            raise ValueError("상장 목록에 없는 종목코드")
-    # Serialize refreshes to avoid duplicate provider requests when several browser tabs poll at once.
+            raise ValueError('상장 목록에 없는 종목코드')
     with QUOTE_LOCK:
-        missing = [code for code in codes if code not in QUOTES or time.monotonic() - QUOTES[code][0] >= QUOTE_TTL]
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            futures = {code: pool.submit(collect_quote, code) for code in missing}
-            for code, future in futures.items():
-                try:
-                    quote = future.result()
-                except Exception:
-                    previous = QUOTES.get(code, (0, {}))[1]
-                    quote = {**previous, "code": code, "status": "stale" if previous.get("price") is not None else "error",
-                             "error": "시세 조회 실패"}
-                QUOTES[code] = (time.monotonic(), quote)
-        return {code: dict(QUOTES[code][1]) for code in codes}
+        finish_quotes()
+        for code in codes:
+            if (code not in QUOTES or time.monotonic()-QUOTES[code][0]>=QUOTE_TTL) and code not in QUOTE_PENDING and len(QUOTE_PENDING)<20:
+                QUOTE_PENDING[code] = QUOTE_POOL.submit(collect_quote,code)
+        requested = [QUOTE_PENDING[code] for code in codes if code in QUOTE_PENDING]
+    if requested:
+        wait(requested,timeout=QUOTE_WAIT_SECONDS)
+    with QUOTE_LOCK:
+        finish_quotes()
+        result = {}
+        for code in codes:
+            quote = dict(QUOTES.get(code,(0,{'code':code,'status':'pending'}))[1])
+            if code in QUOTE_PENDING or (code in QUOTES and time.monotonic()-QUOTES[code][0]>=QUOTE_TTL):
+                quote['status'] = 'stale' if quote.get('price') is not None else 'pending'
+            result[code] = quote
+        return result
+
+
+def body_related_stocks(mentions, source_url, as_of=None):
+    """Resolve only literal, evidenced body names; do not expand their themes."""
+    result = []
+    for mention in mentions:
+        name,evidence = mention.get('name',''),mention.get('evidence','')
+        if not name or not relations.contains(evidence,name):
+            continue
+        if len(name)<=2 and not re.search(r'주가|실적|매출|영업|배당|수주|상장|자사주',evidence):
+            continue
+        for stock in related_stocks(name+',',as_of):
+            if stock['relation'] != 'direct' or any(s['code']==stock['code'] for s in result):
+                continue
+            article_source = [{'title':'기사 공개 본문 · '+name,'url':source_url,'published_on':(as_of or '')[:10],
+                               'checked_on':datetime.now(timezone.utc).date().isoformat(),'excerpt':evidence}] if source_url else []
+            result.append({**stock,'relation':'body','reason':f'공개 본문에 ‘{name}’ 언급',
+                           'path':f'공개 본문 → {name} → 상장 종목','mechanism':'본문에 이름이 등장한 근거이며 사건의 수혜·피해를 확정하지 않음',
+                           'sources':article_source+stock.get('sources',[]),
+                           'required_checks':['사건 당사자와 인용·평가한 주체를 구분',*stock.get('required_checks',[])]})
+    return result

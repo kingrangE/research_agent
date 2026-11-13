@@ -3,7 +3,6 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
-from difflib import SequenceMatcher
 from email.utils import parsedate_to_datetime
 from hashlib import sha256
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,6 +20,7 @@ import stocks
 import relations
 import intelligence
 import archive
+from analysis_store import epoch
 
 ROOT = Path(__file__).resolve().parent
 INTERVAL = 30
@@ -46,8 +46,12 @@ def iso_now():
 
 
 def safe_url(value):
-    parsed = urlsplit(value)
-    return value if parsed.scheme in ("https", "http") and parsed.hostname and not parsed.username else None
+    try:
+        parsed = urlsplit(value)
+        parsed.port
+        return value if parsed.scheme in ('https','http') and parsed.hostname and not (parsed.username or parsed.password) else None
+    except (ValueError,TypeError):
+        return None
 
 
 def parse_feed(body, source):
@@ -82,28 +86,17 @@ def collect_source(source):
         return parse_feed(body, source)
 
 
-def normalize_title(title):
-    return re.sub(r"[^가-힣a-z0-9]", "", title.lower())
-
-
 def deduplicate(articles):
-    result = []
-    urls = {}
-    # shortcut: headline similarity only, replace with event extraction when full-text access is available.
-    for article in sorted(articles, key=lambda a: a.get("published_at") or "", reverse=True):
-        key = normalize_title(article["title"])
-        existing = urls.get(article["url"])
-        if existing is None:
-            existing = next((a for a in result if key == normalize_title(a["title"]) or (len(key) >= 16 and SequenceMatcher(None, key, normalize_title(a["title"])).ratio() >= .92)), None)
-        if existing is not None:
-            existing["copies"] += 1
-            continue
-        result.append(dict(article))
-        urls[article["url"]] = result[-1]
-    return result
+    result = {}
+    for article in sorted(articles,key=lambda a: epoch(a.get('published_at')),reverse=True):
+        if article['url'] in result:
+            result[article['url']]['copies'] += 1
+        else:
+            result[article['url']] = dict(article)
+    return list(result.values())
 
 
-def classify(article, now=None):
+def classify(article, now=None, reading=None):
     now = now or datetime.now(timezone.utc)
     matches = []
     for theme in THEMES:
@@ -122,29 +115,41 @@ def classify(article, now=None):
     else:
         reason = "시장 관련 피드에서 수집한 새 자료입니다. 제목에서 주요 관찰 키워드는 확인되지 않았습니다."
         question = "원문에서 투자와 직접 관련된 사실이 있는지 확인해 보세요."
+    related = stocks.related_stocks(article['title'],article.get('published_at'))
+    if reading and reading.get('article_title') == article['title']:
+        body_stocks = stocks.body_related_stocks(reading.get('entity_mentions',[]),article.get('url'),article.get('published_at'))
+        direct = [stock for stock in related if stock['relation']=='direct']
+        codes = {stock['code'] for stock in direct}
+        direct.extend(stock for stock in body_stocks if stock['code'] not in codes)
+        codes = {stock['code'] for stock in direct}
+        related = direct + [stock for stock in related if stock['code'] not in codes][:max(0,8-len(direct))]
     return {**article, "themes": matches, "score": score, "reason": reason, "question": question,
-            "score_parts": {"freshness": score}, "related_stocks": stocks.related_stocks(article["title"], article.get("published_at")),
+            "score_parts": {"freshness": score}, "related_stocks": related,
             "stock_analysis": relations.context(article["title"])}
 
 
 def snapshot():
     with LOCK:
         state = {**STATE, "articles": [dict(a) for a in STATE["articles"]], "sources": [dict(s) for s in STATE["sources"]]}
-    articles = [classify({k:v for k,v in a.items() if k != "feed_xml"}) for a in deduplicate(state["articles"])]
-    articles.sort(key=lambda a: (a["score"], a.get("published_at") or ""), reverse=True)
+    analysis = intelligence.snapshot()
+    readings = {a['id']:a for event in analysis.get('events',[]) for a in event['articles']}
+    articles = [classify({k:v for k,v in a.items() if k != 'feed_xml'},reading=readings.get(a['id'])) for a in deduplicate(state['articles'])]
+    articles.sort(key=lambda a: (a["score"], epoch(a.get("published_at"))), reverse=True)
     themes = [{**{k: t[k] for k in ("id", "name", "question", "links")},
                "count": sum(any(m["id"] == t["id"] for m in a["themes"]) for a in articles)} for t in THEMES]
     with stocks.LOCK:
         stock_status = dict(stocks.CATALOGUE_STATUS)
     return {**state, "articles": articles, "themes": themes, "raw_count": len(state["articles"]), "interval": INTERVAL,
-            "stock_status": stock_status, "quote_interval": stocks.QUOTE_TTL, "intelligence": intelligence.snapshot(), "archive": archive.summary(),
+            "stock_status": stock_status, "quote_interval": stocks.QUOTE_TTL, "intelligence": analysis, "archive": archive.summary(),
             "method": "기본 추천은 주식 적합성을 검토한 사건의 모델 순위. 전체 자료의 최신성 점수는 별도 유지. 국내·미국 종목 연결과 공개 근거를 제공하며 실적·가격 반영 정도는 추가 확인 필요."}
+
+
 
 
 def analysis_articles():
     with LOCK:
         articles = [dict(a) for a in STATE['articles']]
-    return sorted(deduplicate(articles), key=lambda a: a.get('published_at') or '', reverse=True)
+    return sorted(deduplicate(articles), key=lambda a: epoch(a.get('published_at')), reverse=True)
 
 
 def refresh():

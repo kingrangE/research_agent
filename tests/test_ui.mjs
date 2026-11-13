@@ -44,6 +44,9 @@ test('missing quotes never become fabricated zero prices and demo hides real quo
   run(`quotes['003470']={status:'error'}`);
   assert.ok(run(`quoteHTML('003470')`).includes('시세 조회 실패'));
   assert.ok(!run(`quoteHTML('003470')`).includes('0.00%'));
+  run(`quotes['003470']={status:'pending'}`);
+  assert.ok(run(`quoteHTML('003470')`).includes('조회 대기'));
+  assert.ok(!run(`quoteHTML('003470')`).includes('실패'));
   run(`quotes['003470']={price:3935,change_percent:2.88}; mode='demo'`);
   assert.ok(run(`quoteHTML('003470')`).includes('시세 미조회'));
   assert.ok(!run(`quoteHTML('003470')`).includes('3,935'));
