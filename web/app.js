@@ -79,6 +79,7 @@ function ago(value) {
   return `${Math.floor(minutes / 1440)}일 전`;
 }
 let data = null, mode = 'live', view = 'briefing', kind = 'all', theme = '', query = '', sort = 'context', detailId = null, requestId = 0, loading = false;
+let loadFailed=false, lastLoadedAt=null;
 let saved = [], feedback = {};
 try { const stored = JSON.parse(localStorage.getItem('maekrak-saved') || '[]'); if (Array.isArray(stored)) saved = stored.filter(a => a && typeof a.id === 'string' && typeof a.title === 'string').slice(0,200); } catch {}
 try { const stored = JSON.parse(localStorage.getItem('maekrak-feedback') || '{}'); if (stored && !Array.isArray(stored) && typeof stored === 'object') feedback = stored; } catch {}
@@ -196,10 +197,12 @@ function render() {
   $('#mode-button').innerHTML = `${icon(mode === 'demo' ? 'radio' : 'sparkles')}${mode === 'demo' ? '실제 수집으로 돌아가기' : '시나리오 체험'}`;
   const failed = statuses.filter(s=>['error','stale'].includes(s.status));
   const notice = $('#mode-notice');
-  notice.hidden = mode !== 'demo' && !failed.length;
-  notice.classList.toggle('error-notice', mode !== 'demo');
+  notice.hidden = mode !== 'demo' && !failed.length && !loadFailed;
+  notice.classList.toggle('error-notice', mode !== 'demo' || loadFailed);
   notice.textContent = mode === 'demo' ? '가상 시나리오 체험 중입니다. 아래 기사·리포트와 시장 상황은 기능 설명을 위해 만든 예시이며 실제 뉴스가 아닙니다.' : `${failed.map(s=>s.name).join(', ')} 수집에 실패했습니다. 이전 자료가 있는 경우 마지막 성공 자료를 표시합니다. 수집 현황에서 확인해 주세요.`;
+  if (loadFailed) notice.textContent=`화면 갱신 실패 · ${data ? '이전 자료를 표시하고 있으며 새 기사와 추천 변경을 확인할 수 없습니다.' : '서버 응답을 확인할 수 없습니다.'}${mode==='demo' ? ' 가상 시나리오이며 실제 뉴스가 아닙니다.' : ''}`;
   $('#update-time').textContent = mode === 'demo' ? '가상 시나리오 · 실제 시장 정보 아님' : data?.collecting ? '새 자료를 수집하고 있어요' : data?.updated_at ? `수집 확인 ${dateTime(data.updated_at)}` : '첫 자료를 수집하고 있어요';
+  if (loadFailed) $('#update-time').textContent=`화면 갱신 실패 · ${lastLoadedAt ? `마지막 정상 응답 ${quoteTime(lastLoadedAt)}` : '정상 응답 시각 미확인'}`;
   $('#themes').innerHTML = themes.filter(t=>t.count>0).slice(0,5).map(t=>`<button class="theme-row" data-theme="${escape(t.id)}" aria-pressed="${theme === t.id}"><div><span class="theme-name"><span class="theme-dot"></span>${escape(t.name)}</span><span class="theme-count">${t.count}건</span></div><div class="theme-track"><div class="theme-fill"></div></div></button>`).join('') || '<p class="panel-description">자료를 기다리고 있어요.</p>';
   $('#themes').querySelectorAll('.theme-fill').forEach((el,i)=>{el.style.width = `${Math.round(themes.filter(t=>t.count>0)[i].count/(themes[0]?.count || 1)*100)}%`;});
   const market = (ai?.market?.observations || []).filter(q=>['069500','229200','SPY'].includes(q.code));
@@ -251,11 +254,12 @@ async function load() {
     if (!response.ok) throw new Error('응답 오류');
     const next = await response.json();
     if (current !== requestId) return;
-    data = next; render(); paintQuotes(); loadQuotes(); if(view==='feed' && mode==='live') await loadArchive(); return true;
+    data = next; loadFailed=false; lastLoadedAt=new Date().toISOString(); render(); paintQuotes(); loadQuotes(); if(view==='feed' && mode==='live') await loadArchive(); return true;
   } catch {
     if (current !== requestId) return;
-    toast('서버에 연결하지 못했어요. 서버 실행 상태를 확인해 주세요.');
-    if (data) render();
+    loadFailed=true;
+    toast('대시보드를 갱신하지 못했어요. 연결 상태를 확인해 주세요.');
+    render();
     if (!data) { delete $('#articles').renderedHTML; $('#articles').innerHTML = '<div class="empty-state"><h3>서버에 연결할 수 없어요</h3><p>실행 중인 서버를 확인한 뒤 새로고침해 주세요.</p></div>'; $('#articles').setAttribute('aria-busy','false'); }
   } finally { if (current === requestId) { loading = false; $('#refresh').disabled = false; } }
 }
@@ -277,7 +281,7 @@ async function loadArchive(reset=false) {
     if(request===archiveRequest) {archiveLoading=false;render();}
   }
 }
-function toggleMode() { mode = mode === 'live' ? 'demo' : 'live'; archiveData=null;archiveRequested=false;archiveError='';archiveCursor='';archiveCursors=[]; data = null; theme = ''; query = ''; kind = 'all'; $('#search').value = ''; $('#stock-dialog').close(); $('#detail-dialog').close(); detailId = null; loading = true; render(); load(); }
+function toggleMode() { mode = mode === 'live' ? 'demo' : 'live'; loadFailed=false;lastLoadedAt=null;archiveData=null;archiveRequested=false;archiveError='';archiveCursor='';archiveCursors=[]; data = null; theme = ''; query = ''; kind = 'all'; $('#search').value = ''; $('#stock-dialog').close(); $('#detail-dialog').close(); detailId = null; loading = true; render(); load(); }
 document.addEventListener('click', event => {
   const button = event.target.closest('button'); if (!button) return;
   if (button.dataset.view) { view = button.dataset.view; theme = ''; kind = 'all'; query = ''; $('#search').value=''; render(); loadArchive(true); }

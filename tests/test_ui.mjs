@@ -51,6 +51,57 @@ test('briefing discloses article analysis coverage even when ranking itself succ
   assert.ok(!run(`$('#list-caption').textContent`).includes('이번 대상'));
 });
 
+test('failed dashboard refresh keeps a persistent warning until a current request succeeds', async () => {
+  let fail=false;
+  const payload={articles:[],sources:[],updated_at:'2026-11-13T00:00:00Z',intelligence:{events:[],ranking:[]}};
+  const run=ui({setTimeout:()=>1,clearTimeout:()=>{},fetch:async()=>{if(fail) throw new Error('offline');return {ok:true,json:async()=>payload};}});
+  await run('load()');
+  assert.equal(run(`$('#mode-notice').hidden`),true);
+  const received=run('lastLoadedAt');
+  fail=true;
+  await run('load()');
+  run(`$('#toast').hidden=true;render()`);
+  assert.equal(run(`$('#mode-notice').hidden`),false);
+  assert.ok(run(`$('#mode-notice').textContent`).includes('화면 갱신 실패'));
+  assert.ok(run(`$('#mode-notice').textContent`).includes('이전 자료'));
+  assert.ok(run(`$('#update-time').textContent`).includes('마지막 정상 응답'));
+  assert.equal(run('lastLoadedAt'),received);
+  assert.equal(run('data.updated_at'),payload.updated_at);
+  fail=false;
+  await run('load()');
+  assert.equal(run(`$('#mode-notice').hidden`),true);
+  assert.ok(!run(`$('#update-time').textContent`).includes('갱신 실패'));
+});
+
+test('late failed refresh cannot overwrite a newer successful response', async () => {
+  const requests=[];
+  const run=ui({setTimeout:()=>1,clearTimeout:()=>{},fetch:()=>new Promise((resolve,reject)=>requests.push({resolve,reject}))});
+  const old=run('load()');
+  const current=run('load()');
+  requests[1].resolve({ok:true,json:async()=>({articles:[],sources:[],intelligence:{events:[],ranking:[]}})});
+  await current;
+  requests[0].reject(new Error('late timeout'));
+  await old;
+  assert.equal(run('loadFailed'),false);
+  assert.equal(run(`$('#mode-notice').hidden`),true);
+});
+
+test('first response failure stays visible and switching modes resets response state', async () => {
+  const run=ui({setTimeout:()=>1,clearTimeout:()=>{},fetch:async()=>({ok:false})});
+  await run('load()');
+  assert.equal(run(`$('#mode-notice').hidden`),false);
+  assert.ok(run(`$('#mode-notice').textContent`).includes('서버 응답'));
+  assert.ok(!run(`$('#mode-notice').textContent`).includes('이전 자료'));
+  assert.ok(run(`$('#update-time').textContent`).includes('정상 응답 시각 미확인'));
+  run(`lastLoadedAt='2026-11-13T01:00:00Z';toggleMode()`);
+  assert.equal(run('lastLoadedAt'),null);
+  assert.equal(run('loadFailed'),false);
+  assert.ok(run(`$('#mode-notice').textContent`).includes('가상 시나리오'));
+  await run('load()');
+  assert.equal(run('loadFailed'),true);
+  assert.ok(run(`$('#mode-notice').textContent`).includes('실제 뉴스가 아닙니다'));
+});
+
 test('archive feed preserves every stored article and opens historical details', () => {
   const run=ui();
   run(`view='feed';mode='live';sort='context';data={articles:[],intelligence:{ranking_stale:false,events:[],ranking:[]}};
