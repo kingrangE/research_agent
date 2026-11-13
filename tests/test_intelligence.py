@@ -289,26 +289,66 @@ class IntelligenceTest(unittest.TestCase):
         call.assert_not_called()
 
     def test_stock_gate_requires_a_verbatim_economic_evidence_quote(self):
-        base={'driver':ai.DRIVERS[0],'impact_evidence':'','reason':'일반 투자심리 개선 가능','watch_for':'실적 확인'}
+        base={'driver':ai.DRIVERS[0],'impact_evidence':0,'reason':'일반 투자심리 개선 가능','watch_for':'실적 확인'}
         with patch.object(self.engine,'call',return_value=base):
             result=self.engine.screen(READING)
         self.assertEqual(result['stock_relevance'],'연결 미확인')
         with patch.object(self.engine,'call',return_value={**base,'impact_evidence':'원문에 없는 계약 규모 100조원 발표'}):
             with self.assertRaisesRegex(ValueError,'원문 인용'):
                 self.engine.screen({**READING,'summary':'다른 사건'})
-        with patch.object(self.engine,'call',return_value={**base,'impact_evidence':READING['evidence'][0]}):
+        with patch.object(self.engine,'call',return_value={**base,'impact_evidence':1}):
             result=self.engine.screen({**READING,'summary':'확인한 계약'})
         self.assertEqual(result['stock_relevance'],'주식 판단 재료')
+        self.assertEqual(result['impact_evidence'],READING['evidence'][0])
+
+    def test_screen_selects_exact_passages_and_rejects_invalid_ids(self):
+        quotes=['실제 공급 계약을 체결했고 조건을 공시했다. '*20,'고객 주문 취소로 공장 가동을 중단했다.']
+        event={**READING,'evidence':quotes}
+        output={'driver':ai.DRIVERS[0],'impact_evidence':len(ai.source_passages(quotes[0]))+1,'reason':'주문 취소로 공급 중단','watch_for':'정정 공시'}
+        with patch.object(self.engine,'call',return_value=output) as call:
+            result=self.engine.screen(event)
+        self.assertEqual(result['impact_evidence'],quotes[1])
+        payload=call.call_args.args[1]
+        self.assertNotIn('event',payload)
+        self.assertNotIn(READING['summary'],json.dumps(payload,ensure_ascii=False))
+        self.assertEqual(''.join(p['text'] for p in payload['source_passages']),''.join(quotes))
+        self.assertEqual(call.call_args.args[2]['properties']['impact_evidence']['enum'],list(range(output['impact_evidence']+1)))
+        for value in (-1,999,True,'1',None):
+            with patch.object(self.engine,'call',return_value={**output,'impact_evidence':value}):
+                self.assertRaisesRegex(ValueError,'원문 인용',self.engine.screen,{**event,'summary':str(value)})
 
     def test_background_screen_can_abstain_without_inventing_a_followup(self):
-        result={'driver':ai.DRIVERS[-1],'impact_evidence':'','reason':'원문에 경제적 변화 근거 없음','watch_for':''}
+        result={'driver':ai.DRIVERS[-1],'impact_evidence':0,'reason':'원문에 경제적 변화 근거 없음','watch_for':''}
         with patch.object(self.engine,'call',return_value=result):
             answer=self.engine.screen(READING)
         self.assertEqual(answer['stock_relevance'],'연결 미확인')
         self.assertEqual(answer['watch_for'],'')
 
+    def test_screen_abstains_with_no_source_and_rejects_malformed_quotes(self):
+        output={'driver':ai.DRIVERS[0],'impact_evidence':0,'reason':'원문 미확인','watch_for':''}
+        with patch.object(self.engine,'call',return_value=output) as call:
+            result=self.engine.screen({**READING,'evidence':[]})
+        self.assertEqual(result['stock_relevance'],'연결 미확인')
+        self.assertEqual(result['impact_evidence'],'')
+        self.assertEqual(call.call_args.args[2]['properties']['impact_evidence']['enum'],[0])
+        for quotes in (None,False,{},'문자열을 목록으로 사용', [42], ['짧음'], ['가'*501]):
+            with patch.object(self.engine,'call') as call:
+                self.assertRaises(ValueError,self.engine.screen,{**READING,'evidence':quotes})
+                call.assert_not_called()
+
+    def test_screen_policy_change_invalidates_cache_without_resetting_queue(self):
+        output={'driver':ai.DRIVERS[-1],'impact_evidence':0,'reason':'경제적 변화 미확인','watch_for':''}
+        with patch.object(ai,'SCREEN_VERSION','old'),patch.object(self.engine,'call',return_value=output):
+            old=self.engine.screen(READING)
+        self.engine.queue.enqueue([{'article':ARTICLE}])
+        with patch.object(self.engine,'call',return_value=output) as call:
+            fresh=self.engine.screen(READING)
+        call.assert_called_once()
+        self.assertNotEqual(old['screen_policy_version'],fresh['screen_policy_version'])
+        self.assertEqual(self.engine.queue.summary()['pending'],1)
+
     def test_screening_is_per_event_cached_and_separate_from_ranking(self):
-        output={'driver':'금융상품 조건·청약·판매 안내','impact_evidence':'','reason':'국채 발행 조건 안내이며 증권사 이익 변화 미확인','watch_for':'상장사 실적 영향이 있는지 확인'}
+        output={'driver':'금융상품 조건·청약·판매 안내','impact_evidence':0,'reason':'국채 발행 조건 안내이며 증권사 이익 변화 미확인','watch_for':'상장사 실적 영향이 있는지 확인'}
         with patch.object(self.engine,'call',return_value=output) as call:
             first=self.engine.screen(READING)
             second=self.engine.screen(READING)

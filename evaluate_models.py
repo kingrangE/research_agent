@@ -7,7 +7,7 @@ from pathlib import Path
 import time
 
 
-from intelligence import VERSION, READ_VERSION, RANK_VERSION, GATE_VERSION, Engine, RANK_SCHEMA, validate_ranking
+from intelligence import VERSION, READ_VERSION, RANK_VERSION, GATE_VERSION, SCREEN_VERSION, Engine, RANK_SCHEMA, validate_ranking
 
 
 def evaluate(engine, dataset):
@@ -73,7 +73,7 @@ if __name__ == '__main__':
     args=parser.parse_args()
     os.environ['LLM_ENABLED']='1'
     dataset=json.loads(Path(args.dataset).read_text())
-    report={'prompt_version':VERSION,'read_policy_version':READ_VERSION,'rank_policy_version':RANK_VERSION,'gate_policy_version':GATE_VERSION,'as_of':datetime.now(timezone.utc).isoformat(),'limitations':dataset['note'],'results':[]}
+    report={'prompt_version':VERSION,'read_policy_version':READ_VERSION,'rank_policy_version':RANK_VERSION,'gate_policy_version':GATE_VERSION,'screen_policy_version':SCREEN_VERSION,'as_of':datetime.now(timezone.utc).isoformat(),'limitations':dataset['note'],'results':[]}
     for model in args.models:
         os.environ['LLM_MODEL']=model
         engine=Engine('.data/evaluation-usage.sqlite3')
