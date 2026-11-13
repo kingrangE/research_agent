@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import intelligence as ai
-from evaluate_models import evaluate_equity, evaluate_ranking
+from evaluate_models import evaluate, evaluate_equity, evaluate_ranking
 
 BODY = '한빛에너지는 미국 고객사와 3000억원 규모의 전력변압기 공급 계약을 체결했다고 공시했다. 계약 기간은 2027년부터 2029년까지다.'
 GATE = {'driver':'기업 실적·수주·경쟁·비용 변화','reason':'실적에 영향을 주는 계약 변화','watch_for':'공시와 실적 전망 확인','stock_relevance':'주식 판단 재료','screen_policy_version':ai.SCREEN_VERSION}
@@ -22,6 +22,21 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def test_cluster_evaluation_uses_each_cases_anchors_and_skips_ranking(self):
+        engine=MagicMock(model='test',provider='ollama')
+        engine.extract_reading.side_effect=[{'match_event_id':'same'},{'match_event_id':'wrong'}]
+        cases=[{'id':'same-case','title':'재보도','body':'동일 사건의 재보도 본문입니다.','anchors':[{'event_id':'same'}],'expected_match':'same'},
+               {'id':'different-case','body':'다른 행동을 설명하는 본문입니다.','anchors':[{'event_id':'wrong'}],'expected_match':''}]
+        with patch('builtins.print'):
+            report=evaluate(engine,{'readings':[],'clusters':cases},clusters_only=True)
+        self.assertEqual(report['total'],2)
+        self.assertEqual(report['all_checks_pass'],1)
+        self.assertEqual(engine.extract_reading.call_args_list[0].args[1]['title'],'재보도')
+        self.assertEqual(engine.extract_reading.call_args_list[0].args[1]['id'],'article-1')
+        self.assertEqual(engine.extract_reading.call_args_list[1].args[1]['title'],'원문 기사')
+        self.assertEqual(engine.extract_reading.call_args_list[1].args[2],cases[1]['anchors'])
+        engine.rank.assert_not_called()
+
     def test_shared_rank_service_rejects_invalid_ids_before_calling_the_model(self):
         with patch.object(self.engine,'call') as call:
             self.assertEqual(self.engine.rank([],{}),[])
