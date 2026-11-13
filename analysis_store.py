@@ -78,15 +78,26 @@ class Store:
             db.execute("UPDATE analysis_jobs SET status='pending' WHERE namespace=? AND status='processing' AND available_at<=?", (self.namespace,time.time()))
             row = db.execute("SELECT value FROM analysis_cursors WHERE namespace=? AND name='dispatch'", (self.namespace,)).fetchone()
             dispatch = row[0] if row else 0
+            reviewed = db.execute("SELECT value FROM analysis_cursors WHERE namespace=? AND name='review_dispatch'",(self.namespace,)).fetchone()
+            review = None
+            if dispatch and dispatch%3==0 and (not reviewed or reviewed[0]!=dispatch):
+                review = db.execute('''SELECT * FROM analysis_jobs WHERE namespace=? AND status IN ('pending','error')
+                    AND available_at<=? AND job_key LIKE 'screen-review:%' ORDER BY published_epoch DESC,id DESC LIMIT 1''',
+                    (self.namespace,time.time())).fetchone()
             # One oldest job for every two newest jobs prevents backlog starvation.
             order = 'id ASC' if dispatch % 3 == 0 else 'published_epoch DESC,id DESC'
-            job = db.execute(f'''SELECT * FROM analysis_jobs WHERE namespace=? AND status IN ('pending','error')
-                AND available_at<=? ORDER BY {order} LIMIT 1''',(self.namespace,time.time())).fetchone()
+            job = review or db.execute(f'''SELECT * FROM analysis_jobs WHERE namespace=? AND status IN ('pending','error')
+                AND available_at<=? AND job_key NOT LIKE 'screen-review:%' ORDER BY {order} LIMIT 1''',(self.namespace,time.time())).fetchone()
+            if not job:
+                job = db.execute('''SELECT * FROM analysis_jobs WHERE namespace=? AND status IN ('pending','error')
+                    AND available_at<=? AND job_key LIKE 'screen-review:%' ORDER BY published_epoch DESC,id DESC LIMIT 1''',
+                    (self.namespace,time.time())).fetchone()
             if not job:
                 return None
             db.execute("UPDATE analysis_jobs SET status='processing',attempts=attempts+1,started_at=?,available_at=? WHERE id=?",
                        (time.time(),time.time()+300,job['id']))
-            db.execute('INSERT OR REPLACE INTO analysis_cursors VALUES(?,?,?)',(self.namespace,'dispatch',dispatch+1))
+            name,value=('review_dispatch',dispatch) if job['job_key'].startswith('screen-review:') else ('dispatch',dispatch+1)
+            db.execute('INSERT OR REPLACE INTO analysis_cursors VALUES(?,?,?)',(self.namespace,name,value))
         return {**dict(job),'article':json.loads(job['article']),'attempts':job['attempts']+1}
 
     def complete(self, job, reading, assessment):
@@ -103,9 +114,9 @@ class Store:
             db.execute("UPDATE analysis_jobs SET status='error',available_at=?,last_error=? WHERE id=? AND namespace=? AND status='processing' AND attempts=?",
                        (time.time()+delay,str(error)[:300],job['id'],self.namespace,job['attempts']))
 
-    def readings(self, articles, limit=None):
+    def _latest(self, articles):
         if not articles:
-            return [], []
+            return {}
         current = {a['id']:a for a in articles}
         with self.db() as db:
             rows = []
@@ -123,7 +134,26 @@ class Store:
             old = latest.get(row['article_id'])
             if old is None or version > old[0]:
                 latest[row['article_id']] = (version,row)
-        selected = [latest[a['id']][1] for a in articles if a['id'] in latest and latest[a['id']][1]['status']=='done'][:limit]
+        return {key:value[1] for key,value in latest.items()}
+
+    def enqueue_reviews(self, articles, policy):
+        latest=self._latest(articles)
+        with self.db() as db:
+            for article in articles:
+                row=latest.get(article['id'])
+                if row is None or row['status']!='done' or json.loads(row['assessment']).get('screen_policy_version')==policy:
+                    continue
+                key='screen-review:'+sha256(json.dumps([row['job_key'],policy]).encode()).hexdigest()
+                db.execute('''INSERT OR IGNORE INTO analysis_jobs
+                    (job_key,namespace,article_id,url,title,body_version,article,body,published_epoch,status,enqueued_at,result)
+                    VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?)''',
+                    (key,self.namespace,row['article_id'],row['url'],row['title'],row['body_version'],row['article'],
+                     row['body'],row['published_epoch'],time.time(),row['result']))
+                break
+
+    def readings(self, articles, limit=None):
+        latest=self._latest(articles)
+        selected = [latest[a['id']] for a in articles if a['id'] in latest and latest[a['id']]['status']=='done'][:limit]
         return [json.loads(row['result']) for row in selected], [dict(json.loads(row['assessment']),event_id=row['event_id']) for row in selected]
 
     def anchors(self, article, limit=6):
@@ -163,12 +193,16 @@ class Store:
 
     def history(self, event_id, limit=10):
         with self.db() as db:
-            rows = db.execute('''SELECT id,article_id,event_id,body_version,result,finished_at FROM analysis_jobs
+            rows = db.execute('''SELECT id,article_id,event_id,body_version,result,finished_at,assessment,job_key FROM analysis_jobs
                 WHERE namespace=? AND status='done' AND (event_id=? OR article_id IN
                 (SELECT article_id FROM analysis_jobs WHERE namespace=? AND event_id=?))
                 ORDER BY id DESC LIMIT ?''',(self.namespace,event_id,self.namespace,event_id,limit)).fetchall()
         return [{'revision':r['id'],'article_id':r['article_id'],'event_id':r['event_id'],
-                 'body_version':r['body_version'],**{k:json.loads(r['result']).get(k) for k in
+                 'body_version':r['body_version'],'assessment_review':r['job_key'].startswith('screen-review:'),
+                 'reviewed_at':json.loads(r['assessment']).get('assessed_at') if r['job_key'].startswith('screen-review:') else None,
+                 'stock_relevance':json.loads(r['assessment']).get('stock_relevance'),
+                 'assessment_reason':json.loads(r['assessment']).get('reason'),
+                 **{k:json.loads(r['result']).get(k) for k in
                  ('event_title','summary','certainty','amount','timing','source_url','published_at','analyzed_at','evidence')}} for r in reversed(rows)]
 
     def summary(self):

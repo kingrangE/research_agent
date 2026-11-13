@@ -301,6 +301,16 @@ test('persistent event revisions stay inside the optional detail disclosure and 
   assert.ok(source.includes('2분'));
 });
 
+test('assessment reviews show the review time and stay distinct from source revisions', () => {
+  const run=ui();
+  const html=run(`eventHistoryHTML({history:[{event_title:'계약',summary:'원문 유지',assessment_review:true,stock_relevance:'연결 미확인',assessment_reason:'<구체적 변화 없음>',analyzed_at:'2026-11-11T00:00:00Z',reviewed_at:'2026-11-13T02:00:00Z'}]})`);
+  assert.ok(html.includes('영향 판정 재검토'));
+  assert.ok(html.includes('판정: 연결 미확인'));
+  assert.ok(html.includes('&lt;구체적 변화 없음&gt;'));
+  assert.ok(html.includes(run(`dateTime('2026-11-13T02:00:00Z')`)));
+  assert.ok(!html.includes(run(`dateTime('2026-11-11T00:00:00Z')`)));
+});
+
 test('a changed headline cannot inherit the previous version model event or rank', () => {
   const run=ui();
   run(`data={articles:[{id:'a',title:'계약 취소',source:'test',themes:[],score:50}],intelligence:{ranking_stale:false,events:[{event_id:'e',articles:[{id:'a',article_title:'계약 체결'}]}],assessments:[{event_id:'e'}],ranking:[{event_id:'e'}]}}`);

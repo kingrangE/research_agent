@@ -10,7 +10,7 @@ import intelligence as ai
 from evaluate_models import evaluate_equity
 
 BODY = '한빛에너지는 미국 고객사와 3000억원 규모의 전력변압기 공급 계약을 체결했다고 공시했다. 계약 기간은 2027년부터 2029년까지다.'
-GATE = {'driver':'기업 실적·수주·경쟁·비용 변화','reason':'실적에 영향을 주는 계약 변화','watch_for':'공시와 실적 전망 확인','stock_relevance':'주식 판단 재료'}
+GATE = {'driver':'기업 실적·수주·경쟁·비용 변화','reason':'실적에 영향을 주는 계약 변화','watch_for':'공시와 실적 전망 확인','stock_relevance':'주식 판단 재료','screen_policy_version':ai.SCREEN_VERSION}
 READING = {'summary':'전력변압기 계약 체결','event_title':'한빛에너지 공급 계약','event_type':'계약','entities':['한빛에너지'],
            'certainty':'확정','amount':'3000억원','timing':'2027~2029년','evidence':[BODY.split('. ')[0]+'.'],'match_event_id':''}
 ARTICLE = {'id':'a','url':'https://www.hankyung.com/article/2026111100001','title':'한빛에너지 계약','published_at':'2026-11-11T00:00:00Z'}
@@ -287,6 +287,55 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(result['ranking'],[])
         self.assertEqual(result['assessments'][0]['stock_relevance'],'배경·상품 안내')
         call.assert_not_called()
+
+    def test_previous_policy_is_not_ranked_while_review_fails(self):
+        old={**READING,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],
+             'published_at':ARTICLE['published_at'],'read_policy_version':ai.READ_VERSION}
+        self.engine.queue.enqueue([{'article':ARTICLE}])
+        self.engine.queue.complete(self.engine.queue.claim(),old,{**GATE,'screen_policy_version':'old-policy'})
+        with patch.object(self.engine,'reading',return_value=old),patch.object(self.engine,'screen',side_effect=ValueError('temporary failure')),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call,patch('intelligence.market_snapshot',return_value={'observations':[]}):
+            result=self.engine.cycle([ARTICLE])
+        self.assertEqual(result['ranking'],[])
+        call.assert_not_called()
+        self.assertEqual(self.engine.queue.summary()['done'],1)
+
+    def test_review_reuses_compatible_reading_and_preserves_both_assessments(self):
+        old={**READING,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],
+             'published_at':ARTICLE['published_at'],'read_policy_version':ai.READ_VERSION}
+        self.engine.queue.enqueue([{'article':ARTICLE}])
+        self.engine.queue.complete(self.engine.queue.claim(),old,{**GATE,'screen_policy_version':'old-policy'})
+        with patch.object(self.engine,'reading') as read,patch.object(self.engine,'screen',return_value={**GATE,'stock_relevance':'배경·상품 안내'}) as screen,patch.object(self.engine,'call') as call:
+            result=self.engine.cycle([ARTICLE])
+        read.assert_not_called();call.assert_not_called()
+        screen.assert_called_once()
+        self.assertEqual(result['ranking'],[])
+        self.assertEqual(result['assessments'][0]['stock_relevance'],'배경·상품 안내')
+        self.assertEqual(self.engine.queue.summary()['done'],2)
+        self.assertEqual(len(self.engine.queue.history('old')),2)
+        with patch.object(self.engine,'screen') as screen:
+            self.engine.cycle([ARTICLE])
+        screen.assert_not_called()
+
+    def test_review_rereads_when_the_saved_reading_policy_is_incompatible(self):
+        old={**READING,'event_id':'old','article_id':'a','source_url':ARTICLE['url'],
+             'published_at':ARTICLE['published_at'],'read_policy_version':'old-reading'}
+        self.engine.queue.enqueue([{'article':ARTICLE}])
+        self.engine.queue.complete(self.engine.queue.claim(),old,{**GATE,'screen_policy_version':'old-policy'})
+        with patch.object(self.engine,'reading',return_value={**old,'read_policy_version':ai.READ_VERSION}) as read,patch.object(self.engine,'screen',return_value={**GATE,'stock_relevance':'배경·상품 안내'}):
+            self.engine.cycle([ARTICLE])
+        read.assert_called_once()
+
+    def test_policy_upgrade_leaves_historical_articles_out_of_the_review_sweep(self):
+        a={**ARTICLE,'published_at':'2026-10-01T00:00:00Z'}
+        old={**READING,'event_id':'old','article_id':'a','source_url':a['url'],'published_at':a['published_at']}
+        self.engine.queue.enqueue([{'article':a}])
+        self.engine.queue.complete(self.engine.queue.claim(),old,{**GATE,'screen_policy_version':'old-policy'})
+        with patch.object(self.engine,'screen') as screen,patch.object(self.engine,'call') as call:
+            result=self.engine.cycle([a])
+        screen.assert_not_called();call.assert_not_called()
+        self.assertEqual(result['ranking'],[])
+        self.assertEqual(self.engine.queue.summary()['pending'],0)
+        self.assertEqual(self.engine.queue.summary()['done'],1)
 
     def test_stock_gate_requires_a_verbatim_economic_evidence_quote(self):
         base={'driver':ai.DRIVERS[0],'impact_evidence':0,'reason':'일반 투자심리 개선 가능','watch_for':'실적 확인'}

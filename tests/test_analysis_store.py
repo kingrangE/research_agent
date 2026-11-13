@@ -31,6 +31,50 @@ class AnalysisStoreTest(unittest.TestCase):
         self.assertEqual([j['article_id'] for j in jobs],['0','39','38','1'])
         self.assertEqual(len({j['id'] for j in jobs}),4)
 
+    def test_policy_review_is_idempotent_preserves_history_and_fair_dispatch(self):
+        a=self.article(1)
+        self.store.enqueue([{'article':a,'body':'보관 본문','body_version':'v1'}])
+        old=self.store.claim();self.finish(old)
+        self.store.enqueue_reviews([a],'policy-new')
+        self.store.enqueue_reviews([a],'policy-new')
+        self.store.enqueue([{'article':self.article(i)} for i in range(2,8)])
+        normal=[self.store.claim() for _ in range(2)]
+        self.assertTrue(all(not j['job_key'].startswith('screen-review:') for j in normal))
+        review=self.store.claim()
+        self.assertTrue(review['job_key'].startswith('screen-review:'))
+        self.assertEqual(review['body'],'보관 본문')
+        self.assertEqual(review['body_version'],'v1')
+        self.assertEqual(self.store.summary()['done'],1)
+        self.store.complete(review,{'event_id':'event-contract','article_id':'1','summary':'계약 체결'},
+                            {'screen_policy_version':'policy-new','stock_relevance':'배경·상품 안내'})
+        self.store.enqueue_reviews([a],'policy-new')
+        self.assertEqual(self.store.summary()['done'],2)
+        self.assertEqual(len(self.store.history('event-contract')),2)
+        self.assertEqual(self.store.readings([a])[1][0]['stock_relevance'],'배경·상품 안내')
+        self.assertEqual(self.store.first_published(['event-contract'])['event-contract'],a['published_at'])
+
+    def test_review_does_not_bypass_newer_body_or_cross_model_namespace(self):
+        a=self.article(1,_version_at='2026-11-11T01:00:00Z')
+        self.store.enqueue([{'article':a,'body':'old','body_version':'old'}]);self.finish(self.store.claim())
+        self.store.enqueue([{'article':{**a,'_version_at':'2026-11-11T02:00:00Z'},'body':'new','body_version':'new'}])
+        self.store.enqueue_reviews([a],'policy-new')
+        self.assertEqual(self.store.summary()['pending'],1)
+        other=Store(self.path,'other-model')
+        other.enqueue_reviews([a],'policy-new')
+        self.assertEqual(other.summary()['pending'],0)
+
+    def test_failed_review_survives_restart_without_exposing_the_old_decision(self):
+        a=self.article(1)
+        self.store.enqueue([{'article':a}]);self.finish(self.store.claim())
+        self.store.enqueue_reviews([a],'new')
+        job=self.store.claim();self.store.retry(job,'temporary failure')
+        other=Store(self.path,'test-model-v1')
+        other.enqueue_reviews([a],'new')
+        self.assertIsNone(other.claim())
+        self.assertEqual(other.readings([a]),([],[]))
+        self.assertEqual(other.summary()['done'],1)
+        self.assertEqual(other.summary()['retrying'],1)
+
     def test_newest_slots_follow_publication_time_instead_of_import_order(self):
         articles=[self.article(1,published_at='2026-11-11T01:00:00Z'),
                   self.article(2,published_at='2026-11-11T03:00:00Z'),

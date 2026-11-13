@@ -414,6 +414,7 @@ class Engine:
             return {'status': 'disabled', 'message': 'LLM 미연결 · 로컬 모델과 LLM_ENABLED 설정 필요', 'events': [], 'ranking': [], 'market': {}, 'model': self.model, 'updated_at': None}
         errors = []
         self.queue.enqueue([{'article':article} for article in articles])
+        self.queue.enqueue_reviews([a for a in articles if event_recency(a.get('published_at'),analysis_store.epoch(now()))=='current'],SCREEN_VERSION)
         job = self.queue.claim()
         if job:
             with LOCK:
@@ -423,7 +424,8 @@ class Engine:
             if job['body'] is not None:
                 article = {**article,'_analysis_body':job['body'],'_body_version':job['body_version']}
             try:
-                reading = self.reading(article,self.queue.anchors(article))
+                previous=json.loads(job['result']) if job['job_key'].startswith('screen-review:') and job['result'] else None
+                reading = previous if previous and previous.get('read_policy_version')==READ_VERSION else self.reading(article,self.queue.anchors(article))
                 if not reading:
                     raise ValueError('공개 본문 또는 재시도 대기')
                 assessment = self.screen(reading)
@@ -436,7 +438,7 @@ class Engine:
                              queue=self.queue.summary(),daily_call_limit=self.daily_limit,usage=self.usage())
         readings, gates = self.queue.readings(articles)
         grouped = group_events(readings)
-        gates = list({g['event_id']:g for g in gates}.values())
+        gates = list({g['event_id']:g for g in gates if g.get('screen_policy_version')==SCREEN_VERSION}.values())
         origins = self.queue.first_published([e['event_id'] for e in grouped])
         for event in grouped:
             event['history'] = self.queue.history(event['event_id'])
@@ -447,7 +449,7 @@ class Engine:
         candidates = [e for e in grouped if e['event_id'] in eligible][:12]
         if candidates and (not self.last_market or time.time() - self.last_market['fetched_epoch'] >= 300):
             self.last_market = {**market_snapshot(), 'fetched_epoch': time.time()}
-        rank_key = sha256((RANK_VERSION+json.dumps(candidates, sort_keys=True)).encode()).hexdigest()
+        rank_key = sha256((RANK_VERSION+READ_VERSION+SCREEN_VERSION+json.dumps(candidates, sort_keys=True)).encode()).hexdigest()
         rank_failed = False
         if candidates and (rank_key != self.rank_key or time.time() - self.ranked_at >= 300):
             try:
