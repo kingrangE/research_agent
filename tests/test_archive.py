@@ -8,6 +8,23 @@ import intelligence
 
 
 class ArchiveTest(unittest.TestCase):
+    def test_archive_paging_preserves_ties_and_background_articles_and_searches_all_pages(self):
+        rows=[self.item(f'배경 안내 {i}',f'https://example.com/{i:02}',source='신문A',kind='news') for i in range(35)]
+        archive.store(rows)
+        first=archive.browse(limit=30)
+        second=archive.browse(limit=30,before=first['next'])
+        self.assertEqual(first['total'],35)
+        self.assertEqual(len(first['articles']),30)
+        self.assertEqual(len(second['articles']),5)
+        self.assertEqual(len({a['url'] for a in first['articles']+second['articles']}),35)
+        self.assertIsNone(second['next'])
+        self.assertEqual(archive.browse(query='배경 안내 0')['total'],1)
+        self.assertEqual(archive.browse(source='신문A',since='2026-11-11',until='2026-11-11')['total'],35)
+        self.assertEqual(archive.browse(since='2026-11-12')['total'],0)
+        archive.store([{**rows[0],'title':'계약 취소'}])
+        self.assertEqual(archive.browse(query='계약 취소')['total'],1)
+        self.assertEqual(archive.browse()['total'],35)
+
     def setUp(self):
         temp=tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -56,6 +73,39 @@ class ArchiveTest(unittest.TestCase):
         self.assertIsNone(archive.pending())
         archive.store([self.item('정정 제목')])
         self.assertEqual(archive.pending(),item['url'])
+
+    def test_analysis_replay_keeps_articles_outside_latest_feed_and_full_body_versions(self):
+        first=self.item('첫 기사')
+        archive.store([first,self.item('이전 피드','https://www.hankyung.com/article/2')])
+        full='원문 '*2000
+        archive.save_body(first['url'],full)
+        archive.save_body(first['url'],full+' 뒤쪽 정정')
+        archive.save_body(first['url'],full)
+        archive.save_body(first['url'],full)
+        archive.store([self.item('새 피드','https://www.hankyung.com/article/3')])
+        records,cursors=archive.analysis_batch({},limit=1)
+        self.assertEqual(len(records),2)
+        self.assertEqual(len(records[1]['body']),6000)
+        more,next_cursors=archive.analysis_batch(cursors,limit=100)
+        bodies=[r for r in records+more if r.get('body_version')]
+        self.assertEqual(len(bodies),3)
+        self.assertNotEqual(bodies[0]['body_version'],bodies[1]['body_version'])
+        self.assertEqual(bodies[0]['body'],bodies[1]['body'])
+        self.assertNotEqual(bodies[0]['body_version'],bodies[2]['body_version'])
+        self.assertIn('이전 피드',[r['article']['title'] for r in more])
+        self.assertEqual(archive.analysis_batch({**cursors,**next_cursors})[0],[])
+
+    def test_existing_archive_migration_preserves_last_observed_reverted_body(self):
+        import sqlite3
+        from contextlib import closing
+        with closing(sqlite3.connect(archive.PATH)) as db, db:
+            db.execute('CREATE TABLE bodies (url TEXT,fingerprint TEXT,text TEXT,fetched_at TEXT,last_seen TEXT,PRIMARY KEY(url,fingerprint))')
+            db.executemany('INSERT INTO bodies VALUES(?,?,?,?,?)',[
+                ('https://example.com/1','a','처음','2026-11-11T01:00:00Z','2026-11-11T03:00:00Z'),
+                ('https://example.com/1','b','변경','2026-11-11T02:00:00Z','2026-11-11T02:00:00Z')])
+        with archive.db() as db:
+            self.assertEqual([r[0] for r in db.execute('SELECT fingerprint FROM body_versions ORDER BY id')],['a','b','a'])
+        self.assertEqual(archive.get_body('https://example.com/1'),'처음')
 
     def test_model_reuses_archive_but_only_limits_its_own_input(self):
         item=self.item();full='본문 원본 '*2000
