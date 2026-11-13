@@ -6,7 +6,7 @@ import test from 'node:test';
 function ui(extra={}) {
   const elements = new Map();
   const context = vm.createContext({
-    document: { querySelectorAll: () => [], querySelector: selector => { if (!elements.has(selector)) elements.set(selector, {firstChild:{},classList:{toggle(){}},querySelectorAll(){return [];},setAttribute(){},showModal(){this.open=true;},close(){this.open=false;}}); return elements.get(selector); }, hidden: true },
+    document: { querySelectorAll: () => [], querySelector: selector => { if (!elements.has(selector)) elements.set(selector, {firstChild:{},classList:{toggle(){}},querySelectorAll(){return [];},setAttribute(){},focus(options){this.focused=options;},showModal(){this.open=true;},close(){this.open=false;}}); return elements.get(selector); }, hidden: true },
     localStorage: { getItem: () => null }, URL, URLSearchParams, AbortSignal, Date, ...extra,
   });
   const script = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
@@ -65,6 +65,29 @@ test('briefing separates final event review coverage from article analysis and r
   run(`data.intelligence.coverage=undefined;render()`);
   assert.ok(!run(`$('#list-caption').textContent`).includes('최종 순위 검토'));
   assert.ok(!run(`$('#source-view').innerHTML`).includes('최종 순위 검토 범위'));
+});
+
+test('briefing expands the same reviewed order without navigating into all news', () => {
+  const run=ui();
+  run(`data={articles:Array.from({length:13},(_,i)=>({id:'a'+i,title:'기업'+i,source:'test',themes:[],score:50-i})),sources:[],intelligence:{ranking_stale:false,events:Array.from({length:12},(_,i)=>({event_id:'e'+i,articles:[{id:'a'+i}]})),assessments:Array.from({length:12},(_,i)=>({event_id:'e'+i})),ranking:Array.from({length:12},(_,i)=>({event_id:'e'+(11-i),reason:'검토한 사실'}))}};render()`);
+  assert.equal(run(`$('#result-count').textContent`),'8 / 12');
+  assert.ok(run(`$('#articles').innerHTML`).includes('검토한 자료 12건 모두 보기'));
+  assert.ok(!run(`$('#articles').innerHTML`).includes('data-view="feed"'));
+  assert.ok(!run(`$('#articles').innerHTML`).includes('data-detail="a3"'));
+  run('toggleBriefing();render()');
+  assert.equal(run('view'),'briefing');
+  assert.equal(run(`$('#result-count').textContent`),12);
+  const html=run(`$('#articles').innerHTML`);
+  assert.ok(html.indexOf('data-detail="a11"')<html.indexOf('data-detail="a0"'));
+  assert.ok(html.includes('data-detail="a0"'));
+  assert.ok(!html.includes('data-detail="a12"'));
+  assert.ok(html.includes('8개만 보기'));
+  assert.ok(html.includes('aria-expanded="true"'));
+  assert.equal(run(`$('[data-toggle-briefing]').focused.preventScroll`),true);
+  run('toggleBriefing()');
+  assert.equal(run(`$('#result-count').textContent`),'8 / 12');
+  run('toggleBriefing();data.intelligence.ranking_stale=true;render()');
+  assert.ok(!run(`$('#articles').innerHTML`).includes('article-card'));
 });
 
 test('failed dashboard refresh keeps a persistent warning until a current request succeeds', async () => {

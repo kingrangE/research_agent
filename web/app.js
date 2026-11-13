@@ -79,6 +79,7 @@ function ago(value) {
   return `${Math.floor(minutes / 1440)}일 전`;
 }
 let data = null, mode = 'live', view = 'briefing', kind = 'all', theme = '', query = '', sort = 'context', detailId = null, requestId = 0, loading = false;
+let briefingExpanded = false;
 let loadFailed=false, lastLoadedAt=null;
 let saved = [], feedback = {};
 try { const stored = JSON.parse(localStorage.getItem('maekrak-saved') || '[]'); if (Array.isArray(stored)) saved = stored.filter(a => a && typeof a.id === 'string' && typeof a.title === 'string').slice(0,200); } catch {}
@@ -141,17 +142,18 @@ function articleHTML(a, index) {
   const assessment = data?.intelligence?.assessments?.find(r=>r.event_id === e?.event_id);
   return `<article class="article-card ${ranked ? 'ranked' : ''}"><div class="article-body"><div class="article-topline"><div class="article-meta">${ranked ? `<span class="article-rank" aria-label="읽기 순위 ${index+1}">${String(index+1).padStart(2,'0')}</span>` : `<span class="kind-badge">${a.kind === 'report' ? '리포트' : '뉴스'}</span>`}<span>${escape(a.source)}</span><span class="meta-dot">·</span><time title="${escape(dateTime(a.published_at))}">${escape(ago(a.published_at))}</time>${e?.certainty ? `<span class="certainty-badge" title="원문 사건 상태 · 모델 추출">사건 ${escape(e.certainty)}</span>` : ''}</div><button class="bookmark-button" data-save="${escape(a.id)}" aria-label="${isSaved(a.id) ? '저장 해제' : '자료 저장'}: ${escape(a.title)}" aria-pressed="${isSaved(a.id)}">${icon('bookmark')}</button></div>${stocksHTML(a)}<button class="article-title" data-detail="${escape(a.id)}">${escape(a.title)}</button>${ranked ? `<dl class="decision-notes"><div><dt>왜 지금</dt><dd>${escape(ranked.reason)}</dd></div><div><dt>다음 확인</dt><dd>${escape(ranked.watch_for || assessment?.watch_for || '원문의 새 사실과 관련 기업에 미칠 영향을 확인하세요.')}</dd></div></dl>` : `<p class="article-reason">${e?.summary ? escape(e.summary) : '원문과 관련 종목의 연결 근거를 확인해 보세요.'}</p><span class="assessment-label">${escape(recencyLabel(e) || assessment?.stock_relevance || '주식 영향 검토 전')}</span>`}<div class="article-footer"><div class="article-tags">${a.themes.slice(0,3).map(t=>`<button class="tag" data-theme="${escape(t.id)}">${escape(t.name)}</button>`).join('')}${e?.articles.length > 1 ? `<span class="event-count">동일 사건 ${e.articles.length}건</span>` : a.copies > 1 ? `<span class="event-count">동일 링크 ${a.copies}건</span>` : ''}</div><button class="read-button" data-detail="${escape(a.id)}">기사·근거 보기 <span aria-hidden="true">↗</span></button></div></div></article>`;
 }
+function toggleBriefing() { briefingExpanded=!briefingExpanded; renderList(); document.querySelector('[data-toggle-briefing]')?.focus({preventScroll:true}); }
 function renderList() {
   const articles = filteredArticles();
-  const visible = view === 'briefing' ? articles.slice(0,8) : articles;
-  $('#result-count').textContent = view === 'briefing' && articles.length > 8 ? `8 / ${articles.length}` : articles.length;
+  const visible = view === 'briefing' && !briefingExpanded ? articles.slice(0,8) : articles;
+  $('#result-count').textContent = visible.length<articles.length ? `${visible.length} / ${articles.length}` : articles.length;
   $('#articles').setAttribute('aria-busy', String(!data && loading));
   if (!data && loading) { delete $('#articles').renderedHTML; $('#articles').innerHTML = '<div class="loading-state"><span class="loader"></span><h3>자료를 불러오고 있어요</h3><p>선택한 모드의 자료를 확인합니다.</p></div>'; return; }
   $('#theme-active').hidden = !theme;
   $('#theme-active').innerHTML = theme ? `<button data-clear-theme>주제: ${escape(data?.themes.find(t=>t.id === theme)?.name || theme)} ×</button>` : '';
   const firstPending = view!=='feed' && hasContextRanking() ? visible.findIndex(a=>!data.intelligence.ranking.some(r=>r.event_id === eventFor(a)?.event_id)) : -1;
   let html;
-  if (articles.length) html = visible.map((a,i)=>(i === firstPending ? '<div class="ranking-divider">아직 모델 순위가 없는 자료 · 최신성순</div>' : '')+articleHTML(a,i)).join('') + (view === 'briefing' && articles.length > 8 ? `<button class="full-list-button" data-view="feed">전체 자료 ${articles.length}건 살펴보기 ↗</button>` : '');
+  if (articles.length) html = visible.map((a,i)=>(i === firstPending ? '<div class="ranking-divider">아직 모델 순위가 없는 자료 · 최신성순</div>' : '')+articleHTML(a,i)).join('') + (view === 'briefing' && articles.length > 8 ? `<button class="full-list-button" data-toggle-briefing aria-expanded="${briefingExpanded}">${briefingExpanded ? '8개만 보기' : `${hasContextRanking() ? '검토한 자료' : '현재 목록'} ${articles.length}건 모두 보기`}</button>` : '');
   else {
     const isReport = kind === 'report' && mode === 'live';
     const contextEmpty = sort === 'context' && view === 'briefing' && !query && !theme && kind === 'all' && data?.articles.length;
@@ -294,10 +296,11 @@ async function loadArchive(reset=false) {
     if(request===archiveRequest) {archiveLoading=false;render();}
   }
 }
-function toggleMode() { mode = mode === 'live' ? 'demo' : 'live'; loadFailed=false;lastLoadedAt=null;archiveData=null;archiveRequested=false;archiveError='';archiveCursor='';archiveCursors=[]; data = null; theme = ''; query = ''; kind = 'all'; $('#search').value = ''; $('#stock-dialog').close(); $('#detail-dialog').close(); detailId = null; loading = true; render(); load(); }
+function toggleMode() { mode = mode === 'live' ? 'demo' : 'live'; briefingExpanded=false;loadFailed=false;lastLoadedAt=null;archiveData=null;archiveRequested=false;archiveError='';archiveCursor='';archiveCursors=[]; data = null; theme = ''; query = ''; kind = 'all'; $('#search').value = ''; $('#stock-dialog').close(); $('#detail-dialog').close(); detailId = null; loading = true; render(); load(); }
 document.addEventListener('click', event => {
   const button = event.target.closest('button'); if (!button) return;
-  if (button.dataset.view) { view = button.dataset.view; theme = ''; kind = 'all'; query = ''; $('#search').value=''; render(); loadArchive(true); }
+  if (button.dataset.view) { view = button.dataset.view; briefingExpanded=false;theme = ''; kind = 'all'; query = ''; $('#search').value=''; render(); loadArchive(true); }
+  if (button.hasAttribute('data-toggle-briefing')) toggleBriefing();
   if (button.dataset.kind) { kind = button.dataset.kind; render(); loadArchive(true); }
   if (button.dataset.theme) { chooseTheme(button.dataset.theme); loadArchive(true); }
   if (button.hasAttribute('data-clear-theme')) { theme = ''; render(); loadArchive(true); }
@@ -316,7 +319,7 @@ $('#refresh').addEventListener('click', async()=>{if (await load()) toast('최�
 $('#show-sources').addEventListener('click',()=>{view='sources'; render(); window.scrollTo({top:0,behavior:'smooth'});});
 $('#search').addEventListener('input',event=>{query=event.target.value; renderList();clearTimeout(archiveSearchTimer);archiveSearchTimer=setTimeout(()=>loadArchive(true),300);});
 for (const [selector,update] of [['#archive-source',v=>archiveSource=v],['#archive-since',v=>archiveSince=v],['#archive-until',v=>archiveUntil=v]]) $(selector).addEventListener('change',event=>{update(event.target.value);loadArchive(true);});
-$('#sort').addEventListener('change',event=>{sort=event.target.value; render();});
+$('#sort').addEventListener('change',event=>{sort=event.target.value; briefingExpanded=false;render();});
 $('#detail-dialog').addEventListener('click',event=>{if (event.target === $('#detail-dialog')) { const rect=event.target.getBoundingClientRect(); if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom) {event.target.close();detailId=null;} }});
 $('#stock-dialog').addEventListener('click',event=>{if (event.target === $('#stock-dialog')) {const r=event.target.getBoundingClientRect(); if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) event.target.close();}});
 $('#detail-dialog').addEventListener('close',()=>{detailId=null;});
