@@ -3,11 +3,11 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import test from 'node:test';
 
-function ui() {
+function ui(extra={}) {
   const elements = new Map();
   const context = vm.createContext({
     document: { querySelectorAll: () => [], querySelector: selector => { if (!elements.has(selector)) elements.set(selector, {firstChild:{},classList:{toggle(){}},querySelectorAll(){return [];},setAttribute(){},showModal(){this.open=true;},close(){this.open=false;}}); return elements.get(selector); }, hidden: true },
-    localStorage: { getItem: () => null }, URL, Date,
+    localStorage: { getItem: () => null }, URL, URLSearchParams, AbortSignal, Date, ...extra,
   });
   const script = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
   vm.runInContext(script.slice(0, script.indexOf("document.addEventListener('click'")), context);
@@ -22,6 +22,67 @@ test('stock card escapes names and reasons and distinguishes inferred candidates
   assert.ok(html.includes('사업 연관 후보'));
   assert.ok(!html.includes('<script>'));
   assert.ok(html.includes('/003470'));
+});
+
+
+test('archive feed preserves every stored article and opens historical details', () => {
+  const run=ui();
+  run(`view='feed';mode='live';sort='context';data={articles:[],intelligence:{ranking_stale:false,events:[],ranking:[]}};
+    archiveData={articles:[{id:'old',title:'과거 상품 안내',source:'test',themes:[],score:0},{id:'same-event',title:'같은 사건의 다른 원문',source:'test',themes:[],score:0}],total:100,next_cursor:'next'};`);
+  assert.equal(run('filteredArticles().length'),2);
+  assert.equal(run(`findArticle('old').title`),'과거 상품 안내');
+  run('render()');
+  assert.ok(run(`$('#list-caption').textContent`).includes('누적 보관'));
+  assert.ok(!run(`$('#archive-tools').hidden`));
+  assert.ok(!run(`$('#archive-next').disabled`));
+  assert.ok(run(`$('#articles').innerHTML`).includes('과거 상품 안내'));
+});
+
+test('archive requests encode filters and late responses cannot replace newer search results', async () => {
+  const requests=[];
+  const run=ui({fetch:url=>new Promise(resolve=>requests.push({url,resolve}))});
+  run(`view='feed';mode='live';data={articles:[],sources:[]};query='수주 & 취소';archiveSince='2026-11-11';`);
+  const old=run('loadArchive(true)');
+  run(`query='새 검색'`);
+  const latest=run('loadArchive(true)');
+  assert.equal(new URL(requests[0].url,'http://localhost').searchParams.get('q'),'수주 & 취소');
+  requests[1].resolve({ok:true,json:async()=>({articles:[],sources:[],total:2,next_cursor:null})});
+  await latest;
+  requests[0].resolve({ok:true,json:async()=>({articles:[],sources:[],total:999,next_cursor:null})});
+  await old;
+  assert.equal(run('archiveData.total'),2);
+  assert.equal(run('archiveLoading'),false);
+});
+
+test('failed archive search never substitutes recent feed articles for historical results', async () => {
+  const run=ui({fetch:async()=>({ok:false})});
+  run(`view='feed';mode='live';data={articles:[{id:'recent',title:'최근 피드 기사',source:'test',themes:[],score:50}],sources:[]};`);
+  await run('loadArchive(true)');
+  assert.equal(run('allArticles().length'),0);
+  assert.ok(run(`$('#archive-page-status').textContent`).includes('조회 실패'));
+});
+
+test('collection view exposes unfinished coverage and escapes provider errors', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],collection:{day:'2026-11-12',next_page:73,last_success:'2026-11-12T10:00:00Z',complete_at:null,last_error:'<script>provider error</script>'}};render()`);
+  const html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('날짜별 대조'));
+  assert.ok(html.includes('73페이지'));
+  assert.ok(html.includes('진행 중'));
+  assert.ok(html.includes('&lt;script&gt;'));
+  assert.ok(!html.includes('<script>'));
+});
+
+test('unchanged polling preserves article buttons and changed news is rendered', () => {
+  const run=ui();
+  run(`view='feed';data={articles:[{id:'a',title:'계약 발표',source:'test',themes:[],score:50}],intelligence:{}};
+    let writes=0;let content='';
+    Object.defineProperty($('#articles'),'innerHTML',{get(){return content},set(v){content=v;writes++}});
+    renderList();renderList();`);
+  assert.equal(run('writes'),1);
+  run(`data.articles[0].title='계약 취소';renderList();`);
+  assert.equal(run('writes'),2);
+  assert.ok(run(`$('#articles').innerHTML`).includes('계약 취소'));
 });
 
 test('quote renders signed daily change, provider timestamp and stale state', () => {
@@ -117,7 +178,7 @@ test('context briefing groups events and leaves unanalysed articles in the full 
   run(`data={articles:[{id:'a',title:'A',source:'test',themes:[],score:50},{id:'b',title:'B',source:'test',themes:[],score:49},{id:'c',title:'C',source:'test',themes:[],score:48},{id:'d',title:'D',source:'test',themes:[],score:47}],intelligence:{ranking_stale:false,events:[{event_id:'e1',articles:[{id:'a'},{id:'b'}]},{event_id:'e2',articles:[{id:'c'}]}],ranking:[{event_id:'e2',reason:'확정 계약'},{event_id:'e1',reason:'계획'}]}};data.intelligence.assessments=data.intelligence.ranking;sort='context'`);
   assert.equal(run(`filteredArticles().map(a=>a.id).join(',')`),'c,a');
   run(`view='feed'`);
-  assert.equal(run(`filteredArticles().map(a=>a.id).join(',')`),'c,a,d');
+  assert.equal(run(`filteredArticles().map(a=>a.id).join(',')`),'a,b,c,d');
   run(`data.intelligence.ranking_stale=true`);
   assert.equal(run(`filteredArticles().map(a=>a.id).join(',')`),'a,b,c,d');
 });
@@ -154,4 +215,87 @@ test('stock decision briefing does not fill remaining slots with background or u
   assert.equal(run(`filteredArticles().length`),0);
   run(`render()`);
   assert.ok(run(`$('#articles').innerHTML`).includes('주식 판단 재료'));
+});
+
+test('decision card puts compact stocks before the event and exposes why and next check safely', () => {
+  const run=ui();
+  run(`data={articles:[{id:'a',title:'공급 계약',source:'공개 피드',themes:[],related_stocks:[{code:'005930',name:'삼성전자'}]}],intelligence:{ranking_stale:false,events:[{event_id:'e',certainty:'계획',articles:[{id:'a'}]}],assessments:[{event_id:'e',watch_for:'계약 공시 확인'}],ranking:[{event_id:'e',reason:'<수주>가 이익에 미칠 영향'}]}}`);
+  const html=run(`articleHTML(data.articles[0],0)`);
+  assert.ok(html.indexOf('stock-chip')<html.indexOf('class="article-title"'));
+  assert.ok(html.includes('<dt>왜 지금</dt>'));
+  assert.ok(html.includes('<dt>다음 확인</dt><dd>계약 공시 확인</dd>'));
+  assert.ok(html.includes('&lt;수주&gt;'));
+  assert.ok(html.includes('계획'));
+  assert.ok(html.includes('기사·근거 보기'));
+  run(`data.intelligence.ranking_stale=true`);
+  const stale=run(`articleHTML(data.articles[0],0)`);
+  assert.ok(!stale.includes('왜 지금'));
+  assert.ok(!stale.includes('읽기 순위'));
+});
+
+test('market context shows only representative ETF observations with timestamps, not invented live prices', () => {
+  const run=ui();
+  run(`data={articles:[],intelligence:{ranking_stale:true,market:{observations:[{code:'SPY',name:'S&P500 ETF',change_percent:-1.25,traded_at:'2026-11-10T16:00:00-05:00'},{code:'069500',name:'KOSPI200 ETF',change_percent:0.5,traded_at:'2026-11-11T15:30:00+09:00'},{code:'XLE',name:'에너지',change_percent:3}]}}};render()`);
+  const html=run(`$('#market-snapshot').innerHTML`);
+  assert.ok(html.includes('-1.25%'));
+  assert.ok(html.includes('+0.50%'));
+  assert.ok(!html.includes('에너지'));
+  assert.ok(html.includes('11. 11.'));
+  assert.ok(!html.includes('실시간'));
+  run(`data.intelligence.daily_call_limit=null;render()`);
+  assert.ok(run(`$('#source-view').innerHTML`).includes('일일 제한 없음'));
+  run(`data.intelligence.daily_call_limit=200;render()`);
+  assert.ok(run(`$('#source-view').innerHTML`).includes('일일 한도 200회'));
+});
+
+test('article detail shows structured facts and keeps evidence and scoring behind one disclosure', () => {
+  const run=ui();
+  run(`data={articles:[{id:'a',title:'신규 계약',source:'공개 피드',themes:[],score_parts:{freshness:40},reason:'제목 설명',related_stocks:[{code:'005930',name:'삼성전자'}]}],intelligence:{events:[{event_id:'e',summary:'새 공급 계약을 발표했다.',certainty:'확정',event_type:'수주',amount:'100억원',timing:'2026년',model:'test-model',articles:[{id:'a',evidence:['<검증된 원문>'],url:'javascript:bad'}]}],assessments:[{event_id:'e',reason:'매출 변화 확인',watch_for:'공시 확인',stock_relevance:'주식 판단 재료'}]}};renderDetail('a')`);
+  const html=run(`$('#detail').innerHTML`);
+  const [visible,more]=html.split('<details class="detail-more">');
+  assert.ok(visible.includes('핵심 사건'));
+  assert.ok(visible.includes('<dt>규모</dt><dd>100억원</dd>'));
+  assert.ok(visible.includes('<dt>사건 상태</dt><dd>확정</dd>'));
+  assert.ok(visible.includes('매출 변화 확인'));
+  assert.ok(visible.includes('공시 확인'));
+  assert.ok(visible.includes('stock-chip'));
+  assert.ok(!visible.includes('blockquote'));
+  assert.ok(!visible.includes('최신성 40점'));
+  assert.ok(more.includes('&lt;검증된 원문&gt;'));
+  assert.ok(more.includes('최신성 40점'));
+  assert.ok(more.includes('test-model'));
+  assert.ok(!html.includes('javascript:'));
+  assert.ok(!html.includes('<details class="detail-more" open'));
+  run(`data.intelligence.events=[]`);
+  const pending=run(`readingHTML(data.articles[0])`);
+  assert.ok(pending.includes('본문 분석 대기'));
+  assert.ok(!pending.includes('100억원'));
+});
+
+test('persistent event revisions stay inside the optional detail disclosure and escape sources', () => {
+  const run=ui();
+  run(`data={articles:[{id:'a',title:'계약 정정',source:'test',themes:[],score_parts:{freshness:40}}],intelligence:{events:[{event_id:'e',summary:'정정',articles:[{id:'a'}],history:[{event_title:'<취소>',summary:'<원문>',certainty:'부인',amount:'미확인',source_url:'javascript:bad'}]}]}};renderDetail('a')`);
+  const html=run(`$('#detail').innerHTML`);
+  const [visible,more]=html.split('<details class="detail-more">');
+  assert.ok(!visible.includes('기사·사건 이력'));
+  assert.ok(more.includes('기사·사건 이력 1건'));
+  assert.ok(more.includes('&lt;취소&gt;'));
+  assert.ok(more.includes('부인'));
+  assert.ok(!more.includes('javascript:'));
+  run(`data.intelligence.queue={pending:40,processing:1,retrying:2,done:6,event_count:5,oldest_wait_seconds:120,recent_p95_seconds:90};render()`);
+  const source=run(`$('#source-view').innerHTML`);
+  assert.ok(source.includes('분석 대기열'));
+  assert.ok(source.includes('40건'));
+  assert.ok(source.includes('2분'));
+});
+
+test('a changed headline cannot inherit the previous version model event or rank', () => {
+  const run=ui();
+  run(`data={articles:[{id:'a',title:'계약 취소',source:'test',themes:[],score:50}],intelligence:{ranking_stale:false,events:[{event_id:'e',articles:[{id:'a',article_title:'계약 체결'}]}],assessments:[{event_id:'e'}],ranking:[{event_id:'e'}]}}`);
+  assert.equal(run(`eventFor(data.articles[0])`),undefined);
+  assert.equal(run(`hasContextRanking()`),false);
+  assert.equal(run(`filteredArticles().length`),0);
+  run(`view='feed'`);
+  assert.equal(run(`filteredArticles().length`),1);
+  assert.equal(run(`safeLink('https://:secret@example.com')`),null);
 });
