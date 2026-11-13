@@ -180,11 +180,14 @@ function render() {
   $('#archive-source').value=archiveSource;
   $('#list-heading').firstChild.textContent = view === 'saved' ? '저장한 자료 ' : view === 'feed' ? '전체 자료 ' : sort === 'context' ? (hasContextRanking() ? '지금 확인할 주식 판단 재료 ' : '주식 판단 재료 분석 중 ') : '지금 읽어볼 자료 ';
   const ai=data?.intelligence;
+  const coverage=ai?.coverage;
+  const coverageText=coverage?.candidates>0 && Number.isInteger(coverage.analyzed_articles) ? `이번 대상 ${coverage.candidates}건 중 본문 분석 ${coverage.analyzed_articles}건${coverage.analyzed_articles<coverage.candidates ? ' · 미분석 기사는 순위에서 제외' : ''}` : '';
   const rankingReady = !rankingExpired() && ai?.assessments?.length > 0;
   $('#list-caption').textContent = view === 'saved' ? '마지막으로 저장했을 때의 내용입니다.' : sort === 'context' ? (hasContextRanking() ? `${ai.ranking_partial ? '마지막 성공한 모델 순위 · 일부 분석' : '주식 영향 경로를 확인한 모델 참고 순위'} · 기준 ${dateTime(ai.ranked_at)} · 상품 안내·배경 기사는 전체 자료에서 확인` : `${rankingExpired() && ai?.ranked_at ? '모델 순위 갱신 지연' : ai?.message || '모델 분석 대기'} · 주식 추천 미적용: 전체 자료에서 최신 기사를 확인하세요.`) : '최신성만으로 정렬해요. 주제는 점수에 반영하지 않아요.';
   if (archiveView) $('#list-caption').textContent='누적 보관 기사 · 최신순 · 미분석·추천 제외 자료와 같은 사건의 원문도 각각 표시합니다.';
+  if (view==='briefing' && sort==='context' && coverageText) $('#list-caption').textContent+=` · ${coverageText}`;
   const stats = [
-    ['filter','주식 판단 재료',rankingReady ? ai.ranking.length : '—','건',rankingReady ? '모델 참고 순위 · 검수 전' : '분석 대기 · 추천 미적용'],
+    ['filter','주식 판단 재료',rankingReady ? ai.ranking.length : '—','건',rankingReady ? '분석 완료 자료 내 순위 · 검수 전' : '분석 대기 · 추천 미적용'],
     ['document','수집한 자료',mode==='live' ? data?.archive?.articles ?? data?.raw_count ?? '—' : data?.raw_count ?? '—','건',mode === 'demo' ? '가상 시나리오' : '배경·상품 기사도 모두 수집'],
     ['clock','분석 기준',ai?.ranked_at ? dateTime(ai.ranked_at).split('일 ')[1] || dateTime(ai.ranked_at) : '대기 중','',rankingExpired() ? '갱신 지연 · 이전 분석' : '기사 시각과 별도 확인'],
   ];

@@ -37,6 +37,20 @@ test('cached ranking expires on the client even when the next server request fai
   assert.ok(run(`$('#list-caption').textContent`).includes('갱신 지연'));
 });
 
+test('briefing discloses article analysis coverage even when ranking itself succeeded', () => {
+  const run=ui();
+  run(`data={articles:[{id:'a',title:'계약',themes:[],source:'test',score:50}],intelligence:{ranking_stale:false,ranking_partial:false,ranked_at:new Date().toISOString(),coverage:{candidates:240,analyzed_articles:42,events:35},events:[{event_id:'e',articles:[{id:'a'}]}],assessments:[{event_id:'e'}],ranking:[{event_id:'e',reason:'계약'}]}};render()`);
+  assert.ok(run(`$('#list-caption').textContent`).includes('이번 대상 240건 중 본문 분석 42건'));
+  assert.ok(run(`$('#list-caption').textContent`).includes('미분석 기사는 순위에서 제외'));
+  assert.ok(run(`$('#stats').innerHTML`).includes('분석 완료 자료 내 순위'));
+  assert.equal(run('filteredArticles().length'),1);
+  run(`data.intelligence.coverage.analyzed_articles=240;render()`);
+  assert.ok(run(`$('#list-caption').textContent`).includes('이번 대상 240건 중 본문 분석 240건'));
+  assert.ok(!run(`$('#list-caption').textContent`).includes('미분석 기사는 순위에서 제외'));
+  run(`view='saved';render()`);
+  assert.ok(!run(`$('#list-caption').textContent`).includes('이번 대상'));
+});
+
 test('archive feed preserves every stored article and opens historical details', () => {
   const run=ui();
   run(`view='feed';mode='live';sort='context';data={articles:[],intelligence:{ranking_stale:false,events:[],ranking:[]}};
