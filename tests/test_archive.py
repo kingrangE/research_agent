@@ -74,6 +74,41 @@ class ArchiveTest(unittest.TestCase):
         archive.store([self.item('정정 제목')])
         self.assertEqual(archive.pending(),item['url'])
 
+    def test_latest_body_turn_prioritizes_publication_and_respects_retry_and_unknown_dates(self):
+        old=self.item(url='https://example.com/a',published_at='2026-11-10T00:00:00Z')
+        latest=self.item(url='https://example.com/z',published_at='2026-11-11T09:00:00+09:00')
+        archive.store([old,latest,self.item(url='https://example.com/0',published_at='2099-01-01T00:00:00Z'),
+                       self.item(url='https://example.com/1',published_at=None)])
+        with patch('archive.time.time',return_value=1794398400):
+            self.assertEqual(archive.pending(), 'https://example.com/0')
+            self.assertEqual(archive.pending(newest=True),latest['url'])
+            archive.save_body(latest['url'],error='temporary')
+            self.assertEqual(archive.pending(newest=True),old['url'])
+            archive.save_body(old['url'],'보관 본문')
+            self.assertIn(archive.pending(newest=True),('https://example.com/0','https://example.com/1'))
+        self.assertEqual(archive.summary()['articles'],4)
+
+    def test_body_worker_alternates_existing_order_and_latest_without_dropping_work(self):
+        class StopWorker(BaseException): pass
+        with patch('archive.pending',side_effect=['a','b','c','d',StopWorker]) as pending,patch('intelligence.read_article',return_value='public body'),patch('archive.save_body') as saved,patch('archive.time.sleep'):
+            self.assertRaises(StopWorker,archive.body_collector)
+        self.assertEqual([c.kwargs['newest'] for c in pending.call_args_list],[False,True,True,False,True])
+        self.assertEqual([c.args[0] for c in saved.call_args_list],['a','b','c','d'])
+
+    def test_new_arrivals_do_not_starve_existing_body_work(self):
+        old=[self.item(url=f'https://example.com/a{i}',published_at='2026-11-10T00:00:00Z') for i in range(3)]
+        archive.store(old)
+        chosen=[]
+        with patch('archive.time.time',return_value=1794398400):
+            for turn in range(6):
+                archive.store([self.item(url=f'https://example.com/z{turn}',published_at=f'2026-11-11T00:00:0{turn}Z')])
+                url=archive.pending(newest=turn%3!=0)
+                chosen.append(url)
+                archive.save_body(url,'수집한 본문')
+        self.assertEqual(chosen,[old[0]['url'],'https://example.com/z1','https://example.com/z2',old[1]['url'],'https://example.com/z4','https://example.com/z5'])
+        self.assertEqual(archive.summary()['articles'],9)
+        self.assertEqual(archive.summary()['bodies'],6)
+
     def test_analysis_replay_keeps_articles_outside_latest_feed_and_full_body_versions(self):
         first=self.item('첫 기사')
         archive.store([first,self.item('이전 피드','https://www.hankyung.com/article/2')])

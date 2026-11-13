@@ -22,6 +22,7 @@ def db():
                     source_id TEXT, url TEXT, fingerprint TEXT, payload TEXT,
                     first_seen TEXT, last_seen TEXT, PRIMARY KEY(source_id,url,fingerprint));
                 CREATE INDEX IF NOT EXISTS items_seen ON items(source_id,last_seen);
+                CREATE INDEX IF NOT EXISTS items_url ON items(url);
                 CREATE TABLE IF NOT EXISTS bodies (
                     url TEXT, fingerprint TEXT, text TEXT, fetched_at TEXT, last_seen TEXT, PRIMARY KEY(url,fingerprint));
                 CREATE TABLE IF NOT EXISTS body_versions (
@@ -120,9 +121,17 @@ def body_snapshot(url):
             'title':json.loads(metadata[0])['title'] if metadata else None} if row else None
 
 
-def pending():
+def pending(newest=False):
     with db() as connection:
-        row = connection.execute("SELECT url FROM body_fetches WHERE status!='ok' AND retry_after<=? ORDER BY retry_after,url LIMIT 1", (time.time(),)).fetchone()
+        as_of=time.time()
+        if newest:
+            row=connection.execute('''SELECT f.url FROM body_fetches f LEFT JOIN items i ON i.url=f.url
+                WHERE f.status!='ok' AND f.retry_after<=? GROUP BY f.url
+                ORDER BY coalesce(max(CASE WHEN cast(strftime('%s',json_extract(i.payload,'$.published_at')) AS integer)<=?
+                    THEN cast(strftime('%s',json_extract(i.payload,'$.published_at')) AS integer) END),0) DESC,
+                    f.retry_after,f.url LIMIT 1''',(as_of,as_of)).fetchone()
+        else:
+            row = connection.execute("SELECT url FROM body_fetches WHERE status!='ok' AND retry_after<=? ORDER BY retry_after,url LIMIT 1", (as_of,)).fetchone()
     return row[0] if row else None
 
 
@@ -157,10 +166,13 @@ def summary():
 
 def body_collector():
     import intelligence
+    dispatched=0
     while True:
         try:
-            url = pending()
+            # Keep one existing-order turn per two latest-first turns so backfill still progresses.
+            url = pending(newest=dispatched%3!=0)
             if url:
+                dispatched+=1
                 try:
                     save_body(url, intelligence.read_article(url))
                 except Exception as error:
