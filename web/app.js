@@ -99,8 +99,12 @@ function eventFor(article) {
   return data?.intelligence?.events?.find(e=>e.articles.some(a=>a.id === article.id && (!a.article_title || a.article_title === article.title)));
 }
 function hasContextRanking() {
-  if (sort !== 'context' || view === 'saved' || data?.intelligence?.ranking_stale) return false;
+  if (sort !== 'context' || view === 'saved' || rankingExpired()) return false;
   return Boolean(data?.intelligence?.assessments?.some(r=>data.articles.some(a=>eventFor(a)?.event_id === r.event_id)));
+}
+function rankingExpired() {
+  const ai=data?.intelligence, at=Date.parse(ai?.ranked_at);
+  return Boolean(ai?.ranking_stale || (ai?.ranked_at && (!Number.isFinite(at) || Date.now()-at>600000)));
 }
 function filteredArticles() {
   if (view==='feed' && mode==='live' && archiveData) return archiveData.articles;
@@ -121,7 +125,7 @@ function readingHTML(article) {
   const assessment = (data?.intelligence?.assessments || data?.intelligence?.ranking)?.find(r=>r.event_id === e?.event_id);
   if (!e) return `<section class="detail-overview"><h3>본문 분석 대기</h3><p>아직 본문에서 확인한 사건 정보가 없습니다.</p><div class="detail-question">확인할 것 · ${escape(article.question || '원문에서 사건 당사자와 새 사실을 확인하세요.')}</div></section>`;
   const excluded = assessment?.stock_relevance && assessment.stock_relevance !== '주식 판단 재료';
-  return `<section class="detail-overview"><div class="overview-heading"><h3>핵심 사건</h3><span class="certainty-badge">모델 요약 · 검수 전</span></div><p class="event-summary">${escape(e.summary)}</p><dl class="event-facts">${[['사건 상태',e.certainty],['유형',e.event_type],['규모',e.amount],['시점',e.timing]].map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value || '미확인')}</dd></div>`).join('')}</dl></section><div class="detail-decision-grid"><section class="decision-tile"><h3>${excluded ? '추천 제외 이유' : '주식에 미칠 영향'}</h3><p>${escape(assessment?.reason || '아직 주식 영향 검토를 완료하지 않았습니다.')}</p><span class="assessment-label">${escape(recencyLabel(e) || assessment?.stock_relevance || '판단 대기')}${data?.intelligence?.ranking_stale ? ' · 갱신 지연' : ''}</span></section><section class="decision-tile next-check"><h3>다음 확인</h3><p>${escape(excluded ? '전체 자료로 보관 중입니다. 주식에 전달되는 구체적인 새 사실이 있는지 확인하세요.' : assessment?.watch_for || '원문의 새 사실과 관련 기업의 실적·가격 반영 여부를 확인하세요.')}</p></section></div>`;
+  return `<section class="detail-overview"><div class="overview-heading"><h3>핵심 사건</h3><span class="certainty-badge">모델 요약 · 검수 전</span></div><p class="event-summary">${escape(e.summary)}</p><dl class="event-facts">${[['사건 상태',e.certainty],['유형',e.event_type],['규모',e.amount],['시점',e.timing]].map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value || '미확인')}</dd></div>`).join('')}</dl></section><div class="detail-decision-grid"><section class="decision-tile"><h3>${excluded ? '추천 제외 이유' : '주식에 미칠 영향'}</h3><p>${escape(assessment?.reason || '아직 주식 영향 검토를 완료하지 않았습니다.')}</p><span class="assessment-label">${escape(recencyLabel(e) || assessment?.stock_relevance || '판단 대기')}${rankingExpired() ? ' · 갱신 지연' : ''}</span></section><section class="decision-tile next-check"><h3>다음 확인</h3><p>${escape(excluded ? '전체 자료로 보관 중입니다. 주식에 전달되는 구체적인 새 사실이 있는지 확인하세요.' : assessment?.watch_for || '원문의 새 사실과 관련 기업의 실적·가격 반영 여부를 확인하세요.')}</p></section></div>`;
 }
 
 function articleHTML(a, index) {
@@ -175,13 +179,13 @@ function render() {
   $('#archive-source').value=archiveSource;
   $('#list-heading').firstChild.textContent = view === 'saved' ? '저장한 자료 ' : view === 'feed' ? '전체 자료 ' : sort === 'context' ? (hasContextRanking() ? '지금 확인할 주식 판단 재료 ' : '주식 판단 재료 분석 중 ') : '지금 읽어볼 자료 ';
   const ai=data?.intelligence;
-  const rankingReady = !ai?.ranking_stale && ai?.assessments?.length > 0;
-  $('#list-caption').textContent = view === 'saved' ? '마지막으로 저장했을 때의 내용입니다.' : sort === 'context' ? (hasContextRanking() ? `${ai.ranking_partial ? '마지막 성공한 모델 순위 · 일부 분석' : '주식 영향 경로를 확인한 모델 참고 순위'} · 기준 ${dateTime(ai.ranked_at)} · 상품 안내·배경 기사는 전체 자료에서 확인` : `${ai?.ranking_stale && ai?.ranked_at ? '모델 순위 갱신 지연' : ai?.message || '모델 분석 대기'} · 주식 추천 미적용: 전체 자료에서 최신 기사를 확인하세요.`) : '최신성만으로 정렬해요. 주제는 점수에 반영하지 않아요.';
+  const rankingReady = !rankingExpired() && ai?.assessments?.length > 0;
+  $('#list-caption').textContent = view === 'saved' ? '마지막으로 저장했을 때의 내용입니다.' : sort === 'context' ? (hasContextRanking() ? `${ai.ranking_partial ? '마지막 성공한 모델 순위 · 일부 분석' : '주식 영향 경로를 확인한 모델 참고 순위'} · 기준 ${dateTime(ai.ranked_at)} · 상품 안내·배경 기사는 전체 자료에서 확인` : `${rankingExpired() && ai?.ranked_at ? '모델 순위 갱신 지연' : ai?.message || '모델 분석 대기'} · 주식 추천 미적용: 전체 자료에서 최신 기사를 확인하세요.`) : '최신성만으로 정렬해요. 주제는 점수에 반영하지 않아요.';
   if (archiveView) $('#list-caption').textContent='누적 보관 기사 · 최신순 · 미분석·추천 제외 자료와 같은 사건의 원문도 각각 표시합니다.';
   const stats = [
     ['filter','주식 판단 재료',rankingReady ? ai.ranking.length : '—','건',rankingReady ? '모델 참고 순위 · 검수 전' : '분석 대기 · 추천 미적용'],
     ['document','수집한 자료',mode==='live' ? data?.archive?.articles ?? data?.raw_count ?? '—' : data?.raw_count ?? '—','건',mode === 'demo' ? '가상 시나리오' : '배경·상품 기사도 모두 수집'],
-    ['clock','분석 기준',ai?.ranked_at ? dateTime(ai.ranked_at).split('일 ')[1] || dateTime(ai.ranked_at) : '대기 중','',ai?.ranking_stale ? '갱신 지연 · 이전 분석' : '기사 시각과 별도 확인'],
+    ['clock','분석 기준',ai?.ranked_at ? dateTime(ai.ranked_at).split('일 ')[1] || dateTime(ai.ranked_at) : '대기 중','',rankingExpired() ? '갱신 지연 · 이전 분석' : '기사 시각과 별도 확인'],
   ];
   $('#stats').innerHTML = stats.map(([i,label,value,unit,caption])=>`<div class="stat"><div class="stat-label">${icon(i)}${label}</div><div class="stat-value">${escape(value)}<small>${unit}</small></div><div class="stat-caption">${caption}</div></div>`).join('');
   $('#mode-label').textContent = mode === 'demo' ? '가상 시나리오' : '실시간 투자 브리핑';
@@ -235,7 +239,7 @@ async function load() {
   const current = ++requestId;
   loading = true; $('#refresh').disabled = true;
   try {
-    const response = await fetch(mode === 'demo' ? '/api/demo' : '/api/dashboard');
+    const response = await fetch(mode === 'demo' ? '/api/demo' : '/api/dashboard', {signal:AbortSignal.timeout(15000)});
     if (!response.ok) throw new Error('응답 오류');
     const next = await response.json();
     if (current !== requestId) return;
@@ -243,6 +247,7 @@ async function load() {
   } catch {
     if (current !== requestId) return;
     toast('서버에 연결하지 못했어요. 서버 실행 상태를 확인해 주세요.');
+    if (data) render();
     if (!data) { delete $('#articles').renderedHTML; $('#articles').innerHTML = '<div class="empty-state"><h3>서버에 연결할 수 없어요</h3><p>실행 중인 서버를 확인한 뒤 새로고침해 주세요.</p></div>'; $('#articles').setAttribute('aria-busy','false'); }
   } finally { if (current === requestId) { loading = false; $('#refresh').disabled = false; } }
 }
@@ -253,7 +258,7 @@ async function loadArchive(reset=false) {
   archiveRequested=true;archiveError='';archiveLoading=true;render();
   try {
     const params=new URLSearchParams({q:query,source:archiveSource,since:archiveSince,until:archiveUntil,theme,kind,cursor:archiveCursor});
-    const response=await fetch('/api/articles?'+params);
+    const response=await fetch('/api/articles?'+params,{signal:AbortSignal.timeout(15000)});
     if(!response.ok) throw new Error('기사 조회 실패');
     const next=await response.json();
     if(request!==archiveRequest || view!=='feed' || mode!=='live') return;

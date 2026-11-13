@@ -24,6 +24,18 @@ test('stock card escapes names and reasons and distinguishes inferred candidates
   assert.ok(html.includes('/003470'));
 });
 
+test('cached ranking expires on the client even when the next server request fails', async () => {
+  const run=ui({setTimeout:()=>1,clearTimeout:()=>{},fetch:async(url,options)=>{
+    assert.ok(options.signal instanceof AbortSignal);
+    throw new Error('timeout');
+  }});
+  run(`data={articles:[{id:'a',title:'계약',themes:[],source:'test',score:50}],intelligence:{ranking_stale:false,ranked_at:new Date(Date.now()-601000).toISOString(),events:[{event_id:'e',articles:[{id:'a'}]}],assessments:[{event_id:'e'}],ranking:[{event_id:'e',reason:'계약'}]}}`);
+  assert.equal(run('hasContextRanking()'),false);
+  await run('load()');
+  assert.equal(run('loading'),false);
+  assert.equal(run(`$('#refresh').disabled`),false);
+  assert.ok(run(`$('#list-caption').textContent`).includes('갱신 지연'));
+});
 
 test('archive feed preserves every stored article and opens historical details', () => {
   const run=ui();
