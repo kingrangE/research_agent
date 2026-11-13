@@ -496,8 +496,28 @@ class Engine:
         market_key = json.dumps(self.last_market,sort_keys=True)
         source_keys = {event_id:sha256((policy+json.dumps(source,sort_keys=True)+market_key).encode()).hexdigest() for event_id,source in sources.items()}
         rank_key = sha256((policy+json.dumps({'labels':labels,'events':events,'market':self.last_market},sort_keys=True)).encode()).hexdigest()
+        def result(rank_failed=False):
+            reviewed_ranking = [r for r in self.last_ranking if r['event_id'] in eligible and r['event_id'] in source_keys
+                       and self.ranked_sources.get(r['event_id'])==source_keys[r['event_id']]]
+            ranking = [r for r in reviewed_ranking if r['stock_relevance']=='주식 판단 재료']
+            ranked = {r['event_id']:r for r in reviewed_ranking}
+            assessments = [{**gate,**ranked.get(gate['event_id'],{})} for gate in gates]
+            return {'status': 'partial' if errors or not grouped or len(assessments) != len(grouped) else 'ok',
+                    'message': '모델 참고 순위 · 검수 전' if grouped else '분석 가능한 본문 대기 · 원문 수집 실패 가능',
+                    'events': grouped, 'ranking': ranking, 'assessments':assessments, 'rank_policy':RANK_VERSION, 'market': self.last_market, 'model': self.model,
+                    'updated_at': now(), 'ranked_at': datetime.fromtimestamp(self.ranked_at, timezone.utc).isoformat() if self.ranked_at else None,
+                    'ranking_stale': not assessments or bool(candidates and not reviewed_ranking) or time.time() - self.ranked_at > 600,
+                    'ranking_partial': rank_failed or self.rank_key != rank_key or len(assessments) != len(grouped),
+                    'coverage': {'candidates': len(articles), 'analyzed_articles': len(readings), 'events': len(grouped)},
+                    'queue': self.queue.summary(),
+                    'usage': self.usage(), 'daily_call_limit': self.daily_limit,
+                    'error': '분석 일부 실패 · 최신성 목록에서 전체 자료 확인' if errors else None}
         rank_failed = False
         if candidates and (rank_key != self.rank_key or time.time() - self.ranked_at >= 300):
+            progress={**result(),'status':'processing','message':'새 본문 분석 반영 · 모델 순위 갱신 중','ranking_partial':True}
+            with LOCK:
+                STATE.clear()
+                STATE.update(progress)
             try:
                 ranking = [{**r,'event_id':labels[r['event_id']]} for r in self.rank(events,self.last_market)]
                 self.last_ranking, self.rank_key, self.ranked_at = ranking, rank_key, time.time()
@@ -508,21 +528,7 @@ class Engine:
         if gates and not candidates:
             self.last_ranking, self.rank_key, self.ranked_at = [],rank_key,time.time()
             self.ranked_sources = {}
-        reviewed_ranking = [r for r in self.last_ranking if r['event_id'] in eligible and r['event_id'] in source_keys
-                   and self.ranked_sources.get(r['event_id'])==source_keys[r['event_id']]]
-        ranking = [r for r in reviewed_ranking if r['stock_relevance']=='주식 판단 재료']
-        ranked = {r['event_id']:r for r in reviewed_ranking}
-        assessments = [{**gate,**ranked.get(gate['event_id'],{})} for gate in gates]
-        return {'status': 'partial' if errors or not grouped or len(assessments) != len(grouped) else 'ok',
-                'message': '모델 참고 순위 · 검수 전' if grouped else '분석 가능한 본문 대기 · 원문 수집 실패 가능',
-                'events': grouped, 'ranking': ranking, 'assessments':assessments, 'rank_policy':RANK_VERSION, 'market': self.last_market, 'model': self.model,
-                'updated_at': now(), 'ranked_at': datetime.fromtimestamp(self.ranked_at, timezone.utc).isoformat() if self.ranked_at else None,
-                'ranking_stale': not assessments or bool(candidates and not reviewed_ranking) or time.time() - self.ranked_at > 600,
-                'ranking_partial': rank_failed or self.rank_key != rank_key or len(assessments) != len(grouped),
-                'coverage': {'candidates': len(articles), 'analyzed_articles': len(readings), 'events': len(grouped)},
-                'queue': self.queue.summary(),
-                'usage': self.usage(), 'daily_call_limit': self.daily_limit,
-                'error': '분석 일부 실패 · 최신성 목록에서 전체 자료 확인' if errors else None}
+        return result(rank_failed)
 
 
 def validate_reading(value, body, anchor_ids):

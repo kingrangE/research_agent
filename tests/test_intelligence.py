@@ -380,6 +380,30 @@ class IntelligenceTest(unittest.TestCase):
             self.assertTrue(result['ranking_stale'])
             self.assertTrue(result['ranking_partial'])
 
+    def test_changed_facts_replace_previous_state_before_slow_ranking_finishes(self):
+        old={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        with patch.object(ai,'STATE',{}),patch.object(self.engine,'reading',return_value=old),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1','이전 계약 근거')]}):
+            initial=self.engine.cycle([ARTICLE])
+            ai.STATE.update(initial)
+            changed={**ARTICLE,'title':'한빛에너지 계약 변경'}
+            new={**old,'article_title':changed['title'],'summary':'새 변경 사실','evidence':['계약의 공급 조건이 변경됐다고 회사가 밝혔다.']}
+            observed=[]
+            def rerank(*args):
+                observed.append(ai.snapshot())
+                raise TimeoutError('slow ranking')
+            with patch.object(self.engine,'reading',return_value=new),patch.object(self.engine,'rank',side_effect=rerank) as rank:
+                result=self.engine.cycle([changed])
+            rank.assert_called_once()
+            progress=observed[0]
+            self.assertEqual(progress['events'][0]['summary'],'새 변경 사실')
+            self.assertEqual(progress['ranking'],[])
+            self.assertTrue(progress['ranking_stale'])
+            self.assertTrue(progress['ranking_partial'])
+            self.assertEqual(progress['ranked_at'],initial['ranked_at'])
+            self.assertEqual(progress['status'],'processing')
+            self.assertEqual(result['events'][0]['summary'],'새 변경 사실')
+            self.assertEqual(result['ranking'],[])
+
     def test_final_source_review_can_remove_a_false_positive_without_filling_the_briefing(self):
         reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         rejected={**rank_row('E1'),'stock_relevance':'배경·상품 안내','reason':'주식 실적 변화 없는 상품 조건 안내'}
@@ -391,6 +415,25 @@ class IntelligenceTest(unittest.TestCase):
         self.assertFalse(first['ranking_partial'])
         self.assertEqual(second['ranking'],[])
         call.assert_called_once()
+
+    def test_inflight_ranking_keeps_only_unchanged_compatible_previous_results(self):
+        articles=[ARTICLE,{**ARTICLE,'id':'b','url':ARTICLE['url']+'b'}]
+        readings=[{**ANALYZED,'event_id':a['id'],'article_id':a['id'],'source_url':a['url'],'published_at':a['published_at']} for a in articles]
+        gates=[dict(GATE,event_id=a['id']) for a in articles]
+        with patch.object(ai,'STATE',{}),patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=(readings,gates)),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=[rank_row('E1'),rank_row('E2')]):
+            initial=self.engine.cycle(articles)
+            ai.STATE.update(initial)
+            readings[0]={**readings[0],'evidence':['계약의 공급 조건이 변경됐다고 회사가 밝혔다.']}
+            observed=[]
+            def rerank(*args):
+                observed.append(ai.snapshot())
+                return [rank_row('E1'),rank_row('E2')]
+            with patch.object(self.engine,'rank',side_effect=rerank):
+                final=self.engine.cycle(articles)
+            self.assertEqual([r['event_id'] for r in observed[0]['ranking']],['b'])
+            self.assertTrue(observed[0]['ranking_partial'])
+            self.assertFalse(observed[0]['ranking_stale'])
+            self.assertEqual({r['event_id'] for r in final['ranking']},{'a','b'})
 
     def test_product_announcements_are_assessed_but_not_stock_recommendations(self):
         reading={**copy.deepcopy(ANALYZED),'event_id':'bond','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
