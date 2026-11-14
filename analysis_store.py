@@ -8,6 +8,8 @@ import re
 import sqlite3
 import time
 
+CURRENT_EVENT_SECONDS = 26*3600
+
 
 def epoch(value):
     try:
@@ -79,27 +81,33 @@ class Store:
 
     def claim(self):
         as_of=time.time()
+        age_params=(as_of-CURRENT_EVENT_SECONDS,as_of)
         newest_order='CASE WHEN published_epoch>0 AND published_epoch<=? THEN published_epoch ELSE 0 END DESC,id DESC'
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute("UPDATE analysis_jobs SET status='pending' WHERE namespace=? AND status='processing' AND available_at<=?", (self.namespace,time.time()))
+            current=db.execute('''SELECT 1 FROM analysis_jobs WHERE namespace=? AND status IN ('pending','error')
+                AND available_at<=? AND published_epoch>0 AND published_epoch BETWEEN ? AND ? LIMIT 1''',
+                (self.namespace,as_of,*age_params)).fetchone()
+            age_filter=' AND published_epoch>0 AND published_epoch BETWEEN ? AND ?' if current else ''
+            ready_params=(self.namespace,as_of,*age_params) if current else (self.namespace,as_of)
             row = db.execute("SELECT value FROM analysis_cursors WHERE namespace=? AND name='dispatch'", (self.namespace,)).fetchone()
             dispatch = row[0] if row else 0
             reviewed = db.execute("SELECT value FROM analysis_cursors WHERE namespace=? AND name='review_dispatch'",(self.namespace,)).fetchone()
             review = None
             if dispatch and dispatch%3==0 and (not reviewed or reviewed[0]!=dispatch):
                 review = db.execute(f'''SELECT * FROM analysis_jobs WHERE namespace=? AND status IN ('pending','error')
-                    AND available_at<=? AND job_key LIKE 'screen-review:%' ORDER BY {newest_order} LIMIT 1''',
-                    (self.namespace,as_of,as_of)).fetchone()
-            # One oldest job for every two newest jobs prevents backlog starvation.
+                    AND available_at<=? AND job_key LIKE 'screen-review:%'{age_filter} ORDER BY {newest_order} LIMIT 1''',
+                    (*ready_params,as_of)).fetchone()
+            # Prefer current work; rotate oldest/newest within the selected age group.
             order = 'id ASC' if dispatch % 3 == 0 else newest_order
             job = review or db.execute(f'''SELECT * FROM analysis_jobs WHERE namespace=? AND status IN ('pending','error')
-                AND available_at<=? AND job_key NOT LIKE 'screen-review:%' ORDER BY {order} LIMIT 1''',
-                (self.namespace,as_of,*([as_of] if dispatch%3 else []))).fetchone()
+                AND available_at<=? AND job_key NOT LIKE 'screen-review:%'{age_filter} ORDER BY {order} LIMIT 1''',
+                (*ready_params,*([as_of] if dispatch%3 else []))).fetchone()
             if not job:
                 job = db.execute(f'''SELECT * FROM analysis_jobs WHERE namespace=? AND status IN ('pending','error')
-                    AND available_at<=? AND job_key LIKE 'screen-review:%' ORDER BY {newest_order} LIMIT 1''',
-                    (self.namespace,as_of,as_of)).fetchone()
+                    AND available_at<=? AND job_key LIKE 'screen-review:%'{age_filter} ORDER BY {newest_order} LIMIT 1''',
+                    (*ready_params,as_of)).fetchone()
             if not job:
                 return None
             db.execute("UPDATE analysis_jobs SET status='processing',attempts=attempts+1,started_at=?,available_at=? WHERE id=?",

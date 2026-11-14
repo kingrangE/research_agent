@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from analysis_store import Store, timing_summary
+from analysis_store import Store, timing_summary, CURRENT_EVENT_SECONDS
 
 
 class AnalysisStoreTest(unittest.TestCase):
@@ -135,6 +135,53 @@ class AnalysisStoreTest(unittest.TestCase):
                   self.article(3,published_at='2026-11-11T02:00:00Z')]
         self.store.enqueue([{'article':a} for a in articles])
         self.assertEqual([self.store.claim()['article_id'] for _ in range(3)],['1','2','3'])
+
+    def test_current_age_work_precedes_backfill_but_keeps_all_records_and_retry_deadlines(self):
+        from datetime import datetime, timezone
+        as_of=200000
+        stamp=lambda t:datetime.fromtimestamp(t,timezone.utc).isoformat()
+        dates=[as_of-CURRENT_EVENT_SECONDS-1,as_of-CURRENT_EVENT_SECONDS,as_of-1,as_of,as_of+1]
+        with patch('analysis_store.time.time',return_value=as_of):
+            self.store.enqueue([{'article':self.article(i,published_at=stamp(t))} for i,t in enumerate(dates)])
+            with self.store.db() as db:
+                db.execute("UPDATE analysis_jobs SET status='error',available_at=? WHERE article_id='3'",(as_of+100,))
+            self.assertEqual([self.store.claim()['article_id'] for _ in range(4)],['1','2','0','4'])
+            self.assertIsNone(self.store.claim())
+            with self.store.db() as db:
+                self.assertEqual(db.execute('SELECT count(*) FROM analysis_jobs').fetchone()[0],5)
+        with patch('analysis_store.time.time',return_value=as_of+100):
+            self.assertEqual(Store(self.path,'test-model-v1').claim()['article_id'],'3')
+
+    def test_oldest_slot_is_fair_within_current_work_and_falls_back_when_it_expires(self):
+        from datetime import datetime, timezone
+        as_of=200000
+        with patch('analysis_store.time.time',return_value=as_of):
+            dates=[as_of-CURRENT_EVENT_SECONDS-1,as_of-10,as_of-1,as_of-5]
+            self.store.enqueue([{'article':self.article(i,published_at=datetime.fromtimestamp(t,timezone.utc).isoformat())} for i,t in enumerate(dates)])
+            self.assertEqual([self.store.claim()['article_id'] for _ in range(3)],['1','2','3'])
+        with patch('analysis_store.time.time',return_value=as_of+CURRENT_EVENT_SECONDS+1):
+            self.assertEqual(self.store.claim()['article_id'],'0')
+
+    def test_expired_review_cannot_preempt_current_work_and_current_review_precedes_backfill(self):
+        from datetime import datetime, timezone
+        as_of=200000
+        with patch('analysis_store.time.time',return_value=as_of):
+            dates=[as_of-CURRENT_EVENT_SECONDS-1,as_of-10,as_of-5]
+            self.store.enqueue([{'article':self.article(i,published_at=datetime.fromtimestamp(t,timezone.utc).isoformat())} for i,t in enumerate(dates)])
+            with self.store.db() as db:
+                db.execute("UPDATE analysis_jobs SET job_key='screen-review:'||id WHERE article_id IN ('0','2')")
+                db.execute("INSERT OR REPLACE INTO analysis_cursors VALUES('test-model-v1','dispatch',3)")
+            self.assertEqual([self.store.claim()['article_id'] for _ in range(3)],['2','1','0'])
+
+    def test_old_review_slot_does_not_jump_a_ready_current_regular_job(self):
+        with patch('analysis_store.time.time',return_value=200000):
+            self.store.enqueue([{'article':self.article(0,published_at='1970-01-02T03:46:40Z')},
+                                {'article':self.article(1,published_at='1970-01-03T07:33:19Z')}])
+            with self.store.db() as db:
+                db.execute("UPDATE analysis_jobs SET job_key='screen-review:'||id WHERE article_id='0'")
+                db.execute("INSERT OR REPLACE INTO analysis_cursors VALUES('test-model-v1','dispatch',3)")
+            self.assertEqual(self.store.claim()['article_id'],'1')
+            self.assertEqual(self.store.claim()['article_id'],'0')
 
     def test_future_and_unknown_dates_do_not_displace_current_jobs_or_bypass_retry(self):
         dates=['1970-01-01T00:00:10Z','1970-01-01T00:16:41Z',None,

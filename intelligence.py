@@ -124,7 +124,7 @@ def event_recency(published_at, as_of):
     if not published:
         return 'unknown'
     age = as_of-published
-    return 'future' if age<0 else 'current' if age<=26*3600 else 'old'
+    return 'future' if age<0 else 'current' if age<=analysis_store.CURRENT_EVENT_SECONDS else 'old'
 
 
 def separate_event_update(output, anchors):
