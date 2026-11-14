@@ -8,7 +8,58 @@ from pathlib import Path
 import time
 
 
-from intelligence import VERSION, READ_VERSION, RANK_VERSION, GATE_VERSION, SCREEN_VERSION, RELEVANCE, Engine, validate_ranking
+from intelligence import VERSION, READ_VERSION, RANK_VERSION, GATE_VERSION, SCREEN_VERSION, RELEVANCE, Engine, validate_ranking, schema
+
+
+PAIR_POLICY = '''주식 판단 자료 두 개 중 지금 먼저 읽어야 할 자료 하나를 고른다. 적합성 분류나 매수·매도 추천을 하지 않는다.
+각 evidence 원문에서 기업 대비 노출과 변화 규모, 사업·지급 능력의 연속성, 실행 단계와 의사결정 시급성을 비교한다.
+기회와 손실 위험에 같은 기준을 적용하며 긍정·부정 방향, 업종, 절대 금액이나 입력 위치만으로 우대하지 않는다.
+시장 기대·가격 반영·원문에 없는 노출을 추정하지 않는다. 우열을 판단할 근거가 부족하면 동순위로 둔다.
+winner는 먼저 읽을 자료의 id 또는 동순위다. reason은 원문 근거로 비교 이유를 120자 이내로 쓴다.'''
+
+
+def evaluate_pairwise(engine,dataset):
+    cases={c['id']:c for c in ranking_cases(dataset)}
+    pairs=dataset.get('priority_pairs')
+    if (not isinstance(pairs,list) or not pairs
+            or any(not isinstance(p,list) or len(p)!=2 or any(not isinstance(i,str) or i not in cases or cases[i]['expected']!='주식 판단 재료' for i in p) or p[0]==p[1] for p in pairs)
+            or len({frozenset(p) for p in pairs})!=len(pairs)):
+        raise ValueError('유효한 판단 재료 비교 쌍 필요')
+    output_schema=schema({'winner':{'type':'string','enum':['E1','E2','동순위']},'reason':{'type':'string','minLength':1,'maxLength':120}})
+    as_of=datetime.now(timezone.utc).isoformat()
+    checks=[];before=engine.usage();started=time.monotonic()
+    for higher,lower in pairs:
+        runs=[]
+        for ids in ([higher,lower],[lower,higher]):
+            labels={f'E{i+1}':case_id for i,case_id in enumerate(ids)}
+            events=[{'event_id':label,'evidence':[cases[case_id]['body']],'published_at':as_of,'first_published_at':as_of} for label,case_id in labels.items()]
+            row={'labels':labels,'inputs':events,'valid':False,'actual':None,'output':None}
+            try:
+                output=engine.call('rank',{'task':PAIR_POLICY,'as_of':as_of,'events':events,'market':{'observations':[]}},output_schema)
+                row['output']=output
+                if (not isinstance(output,dict) or set(output)!={'winner','reason'} or output['winner'] not in ('E1','E2','동순위')
+                        or not isinstance(output['reason'],str) or not 1<=len(output['reason'])<=120):
+                    raise ValueError('비교 응답 오류')
+                row.update(valid=True,actual=labels.get(output['winner'],'동순위'))
+            except Exception as error:
+                row['error']=type(error).__name__
+            runs.append(row)
+        valid=all(r['valid'] for r in runs)
+        consistent=runs[0]['actual']==runs[1]['actual'] if valid else None
+        check={'higher':higher,'lower':lower,'runs':runs,'valid':valid,'consistent':consistent,
+               'pass':valid and consistent and runs[0]['actual']==higher}
+        checks.append(check)
+        print(engine.model,{k:v for k,v in check.items() if k!='runs'},flush=True)
+    after=engine.usage()
+    return {'model':engine.model,'provider':engine.provider,'checks':checks,'total':len(checks),
+            'passed':sum(c['pass'] for c in checks),'valid':sum(c['valid'] for c in checks),
+            'consistent':sum(c['consistent'] is True for c in checks),'pair_policy':PAIR_POLICY,
+            'pair_policy_sha256':sha256(PAIR_POLICY.encode()).hexdigest(),
+            'call_delta':after.get('calls_today',0)-before.get('calls_today',0),
+            'input_tokens_delta':after.get('input_tokens',0)-before.get('input_tokens',0),
+            'output_tokens_delta':after.get('output_tokens',0)-before.get('output_tokens',0),
+            'seconds':round(time.monotonic()-started,2),
+            'limitations':'개발자가 판단 재료로 정한 쌍의 상대 비교만 격리. 각 쌍 첫 항목이 기대 우선 자료이며 정답·사례 ID는 모델 입력에서 제외. 수집·추출·적합성·전체 순위·추이성·투자 성과나 독립 전문가 정확도 검증 아님.'}
 
 
 def evaluate(engine, dataset, clusters_only=False, readings_only=False):
@@ -162,6 +213,7 @@ if __name__ == '__main__':
     stage.add_argument('--equity-only',action='store_true',help='주식 판단 재료와 상품 안내의 구분만 검증')
     stage.add_argument('--ranking-only',action='store_true',help='운영과 같은 최종 순위 경로의 분류만 격리 검증')
     stage.add_argument('--window-ranking-only',action='store_true',help='12개 초과 후보의 겹치는 묶음 비교와 입력 순서 편향을 실험')
+    stage.add_argument('--pairwise-only',action='store_true',help='판단 재료 쌍의 상대 우선순위와 위치 교환 일관성만 격리 검증')
     stage.add_argument('--clusters-only',action='store_true',help='운영 본문 읽기 경로에서 사건 연결만 격리 검증')
     stage.add_argument('--readings-only',action='store_true',help='운영 본문 추출의 사건 단계·당사자·금액만 격리 검증')
     parser.add_argument('--output',default='.data/model-evaluation.json')
@@ -175,7 +227,7 @@ if __name__ == '__main__':
     for model in args.models:
         os.environ['LLM_MODEL']=model
         engine=Engine('.data/evaluation-usage.sqlite3')
-        report['results'].append(evaluate_window_ranking(engine,dataset) if args.window_ranking_only else evaluate_ranking(engine,dataset) if args.ranking_only else evaluate_equity(engine,dataset) if args.equity_only else evaluate(engine,dataset,args.clusters_only,args.readings_only))
+        report['results'].append(evaluate_pairwise(engine,dataset) if args.pairwise_only else evaluate_window_ranking(engine,dataset) if args.window_ranking_only else evaluate_ranking(engine,dataset) if args.ranking_only else evaluate_equity(engine,dataset) if args.equity_only else evaluate(engine,dataset,args.clusters_only,args.readings_only))
         target=Path(args.output);target.parent.mkdir(parents=True,exist_ok=True)
         target.write_text(json.dumps(report,ensure_ascii=False,indent=2))
     print('Saved',args.output,flush=True)

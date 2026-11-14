@@ -2,6 +2,12 @@
   "note": "개발자가 작성한 가상 상장사 자료 24개. 실제 기사·투자 성과·전문가 정답이 아니다. 계약 취소와 상환 불이행을 첫 12개 밖에 두고 기회·자본 정책 자료를 늘려 상위 8개 회수와 입력 순서 편향을 검증한다. 기대 분류나 사례 ID는 모델에 전달하지 않는다.",
   "readings": [],
   "priority_checks": ["large-contract-cancelled", "payment-default"],
+  "priority_pairs": [
+    ["payment-default", "small-buyback-cancellation"],
+    ["large-contract-cancelled", "small-order"],
+    ["signed-orders", "small-order"],
+    ["earnings-growth", "modest-guidance"]
+  ],
   "equity_screening": [
     {"id":"bond-subscription","summary":"솔빛증권이 개인투자용국채 20년물 청약 일정을 안내했다. 만기 수익률 160%라는 상품 조건이며 증권사 수익·비용·계약 변화는 공개하지 않았다.","expected":"배경·상품 안내"},
     {"id":"brand-award","summary":"상장사 새봄유통이 브랜드 만족도 대상을 받았다. 수상 사실 외에 매출·이익·고객 계약의 변화는 공개하지 않았다.","expected":"배경·상품 안내"},

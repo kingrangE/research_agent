@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import intelligence as ai
-from evaluate_models import evaluate, evaluate_equity, evaluate_ranking, evaluate_window_ranking
+from evaluate_models import evaluate, evaluate_equity, evaluate_ranking, evaluate_window_ranking, evaluate_pairwise
 
 BODY = '한빛에너지는 미국 고객사와 3000억원 규모의 전력변압기 공급 계약을 체결했다고 공시했다. 계약 기간은 2027년부터 2029년까지다.'
 GATE = {'driver':'기업 실적·수주·경쟁·비용 변화','reason':'실적에 영향을 주는 계약 변화','watch_for':'공시와 실적 전망 확인','stock_relevance':'주식 판단 재료','screen_policy_version':ai.SCREEN_VERSION}
@@ -23,6 +23,60 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def pair_oracle(self,dataset):
+        bodies={c['id']:c['summary'] for c in dataset['equity_screening']}
+        higher={frozenset((bodies[a],bodies[b])):bodies[a] for a,b in dataset['priority_pairs']}
+        def compare(task,payload,output_schema):
+            events=payload['events']
+            winner=higher[frozenset(e['evidence'][0] for e in events)]
+            return {'winner':next(e['event_id'] for e in events if e['evidence'][0]==winner),'reason':'원문에서 더 큰 경제적 변화가 확인된다.'}
+        return compare
+
+    def test_pairwise_comparison_reverses_positions_without_leaking_expected_ids(self):
+        dataset=self.coverage_fixture();engine=MagicMock(model='mock',provider='ollama')
+        engine.usage.return_value={};engine.call.side_effect=self.pair_oracle(dataset)
+        with patch('builtins.print'):report=evaluate_pairwise(engine,dataset)
+        self.assertEqual((report['passed'],report['valid'],report['consistent'],report['total']),(4,4,4,4))
+        self.assertEqual(engine.call.call_count,8);engine.rank.assert_not_called()
+        for check in report['checks']:
+            left,right=check['runs']
+            self.assertEqual(left['labels']['E1'],right['labels']['E2'])
+            self.assertEqual(left['actual'],check['higher']);self.assertEqual(right['actual'],check['higher'])
+        for call in engine.call.call_args_list:
+            payload=call.args[1]
+            self.assertEqual({e['event_id'] for e in payload['events']},{'E1','E2'})
+            for higher,lower in dataset['priority_pairs']:
+                self.assertNotIn(higher,json.dumps(payload));self.assertNotIn(lower,json.dumps(payload))
+        self.assertIn('격리',report['limitations'])
+
+    def test_pairwise_position_bias_and_ties_cannot_pass(self):
+        dataset=self.coverage_fixture()
+        for winner,consistent in [('E1',0),('동순위',4)]:
+            engine=MagicMock(model='mock',provider='ollama');engine.usage.return_value={}
+            engine.call.return_value={'winner':winner,'reason':'비교 결과'}
+            with patch('builtins.print'):report=evaluate_pairwise(engine,dataset)
+            self.assertEqual((report['passed'],report['valid'],report['consistent']),(0,4,consistent))
+
+    def test_pairwise_invalid_second_response_is_not_a_consistent_pass(self):
+        dataset=self.coverage_fixture();engine=MagicMock(model='mock',provider='ollama');engine.usage.return_value={}
+        oracle=self.pair_oracle(dataset);calls=[]
+        def compare(*args):
+            calls.append(args)
+            return {'winner':'invented','reason':'허구 번호'} if len(calls)==2 else oracle(*args)
+        engine.call.side_effect=compare
+        with patch('builtins.print'):report=evaluate_pairwise(engine,dataset)
+        self.assertEqual((report['passed'],report['valid'],report['consistent']),(3,3,3))
+        self.assertIsNone(report['checks'][0]['consistent'])
+        self.assertEqual(report['checks'][0]['runs'][1]['error'],'ValueError')
+        self.assertIsNone(report['checks'][0]['runs'][1]['actual'])
+
+    def test_pairwise_bad_expectations_fail_before_model_calls(self):
+        for pairs in (None,[],[['missing','small-order']],[['signed-orders','signed-orders']],
+                      [['signed-orders','bond-subscription']],[['signed-orders','small-order'],['small-order','signed-orders']],[[True,'small-order']]):
+            dataset={**self.coverage_fixture(),'priority_pairs':pairs};engine=MagicMock()
+            self.assertRaises(ValueError,evaluate_pairwise,engine,dataset)
+            engine.call.assert_not_called();engine.usage.assert_not_called()
+
     def coverage_fixture(self):
         return json.loads((Path(__file__).parent/'fixtures/ranking_coverage_eval.json').read_text())
 
