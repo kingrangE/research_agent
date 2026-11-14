@@ -992,6 +992,7 @@ class IntelligenceTest(unittest.TestCase):
         with patch.object(self.engine,'call',return_value=base):
             result=self.engine.screen(READING)
         self.assertEqual(result['stock_relevance'],'연결 미확인')
+        with self.engine.db() as db:db.execute('DELETE FROM screens')
         with patch.object(self.engine,'call',return_value={**base,'impact_evidence':'원문에 없는 계약 규모 100조원 발표'}):
             with self.assertRaisesRegex(ValueError,'원문 인용'):
                 self.engine.screen({**READING,'summary':'다른 사건'})
@@ -1012,6 +1013,7 @@ class IntelligenceTest(unittest.TestCase):
         self.assertNotIn(READING['summary'],json.dumps(payload,ensure_ascii=False))
         self.assertEqual(''.join(p['text'] for p in payload['source_passages']),''.join(quotes))
         self.assertEqual(call.call_args.args[2]['properties']['impact_evidence']['enum'],list(range(output['impact_evidence']+1)))
+        with self.engine.db() as db:db.execute('DELETE FROM screens')
         for value in (-1,999,True,'1',None):
             with patch.object(self.engine,'call',return_value={**output,'impact_evidence':value}):
                 self.assertRaisesRegex(ValueError,'원문 인용',self.engine.screen,{**event,'summary':str(value)})
@@ -1056,6 +1058,34 @@ class IntelligenceTest(unittest.TestCase):
         other=ai.Engine(self.engine.path)
         with patch.object(other,'call') as call:
             self.assertEqual(other.screen(READING),first);call.assert_not_called()
+
+    def test_screen_cache_uses_only_actual_source_input_and_keeps_original_assessment_time(self):
+        output={'driver':ai.DRIVERS[0],'impact_evidence':1,'reason':'원문에서 계약 체결 확인','watch_for':'이행 확인'}
+        changed={**READING,'summary':'다른 생성 요약','event_title':'다른 제목','amount':'다른 규모',
+                 'entities':['다른 생성 당사자'],'certainty':'계획','timing':'다른 시점','published_at':'2026-11-12T00:00:00Z'}
+        with patch.object(self.engine,'call',return_value=output) as call,patch('intelligence.now',return_value='2026-11-11T01:00:00Z'):
+            first=self.engine.screen(READING)
+        expected_payload=call.call_args.args[1]
+        with patch.object(ai.Engine,'call',return_value=output) as call,patch('intelligence.now',return_value='2026-11-12T01:00:00Z'):
+            second=ai.Engine(self.engine.path).screen(changed)
+            call.assert_not_called()
+        self.assertEqual(first,second)
+        self.assertEqual(second['assessed_at'],'2026-11-11T01:00:00Z')
+        with patch.object(self.engine,'call',return_value=output) as call:
+            self.engine.screen({**changed,'evidence':['계약 금액이 4000억원으로 정정됐다고 공시했다.']})
+        call.assert_called_once()
+        self.assertNotEqual(call.call_args.args[1],expected_payload)
+
+    def test_screen_cache_isolates_model_provider_and_policy_text(self):
+        output={'driver':ai.DRIVERS[-1],'impact_evidence':0,'reason':'경제적 변화 미확인','watch_for':''}
+        with patch.object(self.engine,'call',return_value=output):self.engine.screen(READING)
+        for field,value in [('model','other-model'),('provider','other-provider')]:
+            with patch.object(self.engine,field,value),patch.object(self.engine,'call',return_value=output) as call:
+                self.engine.screen(READING)
+                call.assert_called_once()
+        with patch.object(ai,'GATE_POLICY',ai.GATE_POLICY+' 추가 지침'),patch.object(self.engine,'call',return_value=output) as call:
+            self.engine.screen(READING)
+            call.assert_called_once()
 
 
 if __name__=='__main__':unittest.main()

@@ -460,22 +460,22 @@ class Engine:
         return output
 
     def screen(self, event):
-        fact = {k:event.get(k) for k in ('event_title','summary','entities','certainty','amount','timing','evidence','published_at')}
-        key = sha256((GATE_VERSION+SCREEN_VERSION+self.provider+self.model+json.dumps(fact,sort_keys=True)).encode()).hexdigest()
-        with self.db() as db:
-            row = db.execute('SELECT payload FROM screens WHERE cache_key=?',(key,)).fetchone()
-        if row:
-            return json.loads(row[0])
-        quotes=fact.get('evidence',[])
+        quotes=event.get('evidence',[])
         if not isinstance(quotes,list) or any(not isinstance(q,str) or not 8<=len(q)<=500 for q in quotes):
             raise ValueError('주식 영향 원문 인용 입력 오류')
         passages=[p for quote in quotes for p in source_passages(quote)]
         passages=[{'id':i+1,'text':p['text']} for i,p in enumerate(passages)]
+        payload={'task':GATE_POLICY,'source_passages':passages}
+        key = sha256(json.dumps([GATE_VERSION,SCREEN_VERSION,self.provider,self.model,payload],sort_keys=True).encode()).hexdigest()
+        with self.db() as db:
+            row = db.execute('SELECT payload FROM screens WHERE cache_key=?',(key,)).fetchone()
+        if row:
+            return json.loads(row[0])
         source_schema=schema({'impact_evidence':{'type':'integer',
             'enum':list(range(len(passages)+1)),'description':'경제적 변화를 보여주는 원문 구간 id, 근거 없으면 0'},
             **{k:v for k,v in GATE_SCHEMA['properties'].items() if k!='impact_evidence'}})
         # Generated summaries must not become factual evidence in the next model call.
-        result = self.call('screen',{'task':GATE_POLICY,'source_passages':passages},source_schema)
+        result = self.call('screen',payload,source_schema)
         if not isinstance(result,dict) or set(result)!=set(GATE_SCHEMA['properties']) or result.get('driver') not in DRIVERS or not isinstance(result.get('reason'),str) or not 1<=len(result['reason'])<=800 or not isinstance(result.get('watch_for'),str) or len(result['watch_for'])>800:
             raise ValueError('주식 적합성 판정 오류')
         result = dict(result)
