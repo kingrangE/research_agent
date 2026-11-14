@@ -19,16 +19,20 @@ const $ = selector => document.querySelector(selector);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const safeLink = value => { try { const u = new URL(value); return ['https:','http:'].includes(u.protocol) && !u.username && !u.password ? u.href : null; } catch { return null; } };
 const dateTime = value => value ? new Date(value).toLocaleString('ko-KR', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', timeZone:'Asia/Seoul'}) : '발행 시각 미제공';
-const quoteTime = value => value ? new Date(value).toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Seoul'}) : '미제공';
+const quoteTime = value => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:'Asia/Seoul'}) : '미제공';
 const latencyText = value => !Number.isFinite(value) || value<0 ? '집계 대기' : value>=3600 ? `${(value/3600).toFixed(1)}시간` : value>=60 ? `${(value/60).toFixed(1)}분` : `${value.toFixed(1)}초`;
 const quotes = {};
 let quoteInFlight = false;
+function quoteAge(quote) {
+  const age=Date.now()-Date.parse(quote?.fetched_at);
+  return Number.isFinite(age) && age>=0 ? age : Infinity;
+}
 function quoteHTML(code) {
   if (mode === 'demo') return '<span class="quote-unavailable">가상 자료 · 시세 미조회</span>';
   const q = quotes[code];
   if (!q || q.status === 'pending') return '<span class="quote-unavailable">시세 조회 대기</span>';
   if (!Number.isFinite(q.price) || !Number.isFinite(q.change_percent)) return '<span class="quote-unavailable">시세 조회 실패 · 원문에서 확인</span>';
-  const stale = q.status !== 'ok' || Date.now() - new Date(q.fetched_at).getTime() > 30000;
+  const stale = q.status !== 'ok' || quoteAge(q) > 30000;
   const direction = q.change_percent > 0 ? 'up' : q.change_percent < 0 ? 'down' : 'flat';
   const price = q.currency === 'USD' ? `$${q.price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}` : `${q.price.toLocaleString('ko-KR')}<small>원</small>`;
   return `<span class="stock-values"><strong>${price}</strong><span class="stock-change ${direction}">${q.change_percent > 0 ? '+' : ''}${q.change_percent.toFixed(2)}%<small>전일 대비</small></span></span><span class="quote-time ${stale ? 'stale' : ''}">${stale ? '이전 조회 · ' : ''}시세 기준 ${escape(quoteTime(q.traded_at))} · ${escape(q.delay_label)}${q.market_status === 'CLOSE' ? ' · 장마감' : ''}<span>출처 ${escape(q.source)} · ${q.currency === 'USD' ? '미국 정규장 · ' : ''}조회 ${escape(quoteTime(q.fetched_at))} (한국시간)</span></span>`;
@@ -37,7 +41,7 @@ function changeHTML(code) {
   if (mode === 'demo') return '<span class="quote-unavailable">—</span>';
   const q = quotes[code];
   if (!Number.isFinite(q?.change_percent)) return `<span class="quote-unavailable" title="${!q || q.status === 'pending' ? '시세 조회 대기' : '시세 조회 실패'}">—</span>`;
-  const stale = q.status !== 'ok' || Date.now() - new Date(q.fetched_at).getTime() > 30000;
+  const stale = q.status !== 'ok' || quoteAge(q) > 30000;
   const direction = q.change_percent > 0 ? 'up' : q.change_percent < 0 ? 'down' : 'flat';
   return `<span class="stock-change ${direction}${stale ? ' stale' : ''}" title="${stale ? '이전 조회 · ' : ''}${escape(q.delay_label || '')} · 시세 기준 ${escape(quoteTime(q.traded_at))}"${stale ? ' aria-label="이전 조회 등락률"' : ''}>${q.change_percent > 0 ? '+' : ''}${q.change_percent.toFixed(2)}%${stale ? '<span aria-hidden="true">*</span>' : ''}</span>`;
 }
@@ -60,7 +64,7 @@ async function loadQuotes() {
   if (mode !== 'live' || quoteInFlight || document.hidden) return;
   const container = $('#stock-dialog').open ? $('#stock-detail') : $('#detail-dialog').open ? $('#detail') : $('#articles');
   const codes = [...new Set([...container.querySelectorAll('[data-stock-code]')].filter(el=>{const r=el.getBoundingClientRect(); return r.width>0 && r.height>0 && r.bottom>0 && r.top<window.innerHeight;}).map(el=>el.dataset.stockCode))]
-    .filter(code=>!quotes[code] || Date.now()-new Date(quotes[code].fetched_at || 0).getTime()>=10000).slice(0,20);
+    .filter(code=>quoteAge(quotes[code])>=10000).slice(0,20);
   if (!codes.length) return;
   quoteInFlight = true;
   try {

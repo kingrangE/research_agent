@@ -265,6 +265,36 @@ test('missing quotes never become fabricated zero prices and demo hides real quo
   assert.ok(!run(`quoteHTML('003470')`).includes('3,935'));
 });
 
+test('invalid missing and future quote fetch times are previous values in both views', () => {
+  const run=ui();
+  for (const fetched_at of [undefined,null,'not-a-date',new Date(Date.now()+3600000).toISOString()]) {
+    run(`quotes['003470']=${JSON.stringify({price:3935,change_percent:2.88,status:'ok',fetched_at,traded_at:'2026-11-11T15:00:00+09:00'})}`);
+    assert.ok(run(`quoteHTML('003470')`).includes('이전 조회'));
+    assert.ok(run(`changeHTML('003470')`).includes('이전 조회'));
+    assert.ok(run(`quoteHTML('003470')`).includes('3,935'));
+  }
+  assert.equal(run(`quoteTime('not-a-date')`),'미제공');
+});
+
+test('untrusted quote times still retry and a valid response restores freshness', async () => {
+  for (const fetched_at of [undefined,'not-a-date',new Date(Date.now()+3600000).toISOString()]) {
+    let calls=0;
+    const run=ui({window:{innerHeight:1000},fetch:async()=>{
+      calls++;
+      return {ok:true,json:async()=>({quotes:{'003470':{price:4000,change_percent:3.1,status:'ok',fetched_at:new Date().toISOString(),traded_at:'2026-11-11T15:00:00+09:00'}}})};
+    }});
+    run(`document.hidden=false;$('#articles').querySelectorAll=()=>[{dataset:{stockCode:'003470'},getBoundingClientRect:()=>({width:10,height:10,bottom:10,top:0})}];
+      quotes['003470']=${JSON.stringify({price:3935,change_percent:2.88,status:'ok',fetched_at})}`);
+    await run('loadQuotes()');
+    assert.equal(calls,1);
+    assert.ok(run(`quoteHTML('003470')`).includes('4,000'));
+    assert.ok(!run(`quoteHTML('003470')`).includes('이전 조회'));
+    assert.ok(!run(`changeHTML('003470')`).includes('이전 조회'));
+    await run('loadQuotes()');
+    assert.equal(calls,1);
+  }
+});
+
 test('US price stays in dollars and quotes identify the regular session', () => {
   const run = ui();
   run(`quotes['NVDA.O']={price:168.89,change_percent:-5.47,currency:'USD',status:'ok',fetched_at:new Date().toISOString(),traded_at:'2026-11-10T16:00:00-05:00',delay_label:'실시간',source:'Npay 증권'}`);
