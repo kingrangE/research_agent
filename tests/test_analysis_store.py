@@ -136,6 +136,31 @@ class AnalysisStoreTest(unittest.TestCase):
         self.store.enqueue([{'article':a} for a in articles])
         self.assertEqual([self.store.claim()['article_id'] for _ in range(3)],['1','2','3'])
 
+    def test_future_and_unknown_dates_do_not_displace_current_jobs_or_bypass_retry(self):
+        dates=['1970-01-01T00:00:10Z','1970-01-01T00:16:41Z',None,
+               'invalid','1970-01-01T00:16:39Z','1970-01-01T00:16:40Z',
+               '1970-01-01T00:16:39.500Z']
+        with patch('analysis_store.time.time',return_value=1000):
+            self.store.enqueue([{'article':self.article(i,published_at=date)} for i,date in enumerate(dates)])
+            with self.store.db() as db:
+                db.execute("UPDATE analysis_jobs SET available_at=1100,status='error' WHERE article_id='6'")
+            selected=[self.store.claim()['article_id'] for _ in range(6)]
+            self.assertEqual(selected,['0','5','4','1','3','2'])
+            self.assertIsNone(self.store.claim())
+            self.assertEqual(self.store.summary()['retrying'],1)
+        with patch('analysis_store.time.time',return_value=1100):
+            self.assertEqual(self.store.claim()['article_id'],'6')
+
+    def test_review_latest_selection_also_rejects_future_priority(self):
+        with patch('analysis_store.time.time',return_value=1000):
+            self.store.enqueue([{'article':self.article(i,published_at=date)} for i,date in enumerate(
+                ['1970-01-01T00:16:40Z','1970-01-01T00:16:41Z',None])])
+            with self.store.db() as db:
+                db.execute("UPDATE analysis_jobs SET job_key='screen-review:'||id")
+            self.assertEqual(self.store.claim()['article_id'],'0')
+            self.assertEqual(self.store.claim()['article_id'],'2')
+            self.assertEqual(self.store.claim()['article_id'],'1')
+
     def test_future_body_revision_is_not_used_as_earlier_event_context(self):
         a=self.article(1,_version_at='2026-11-11T02:00:00Z')
         self.store.enqueue([{'article':a,'body':'수정 본문','body_version':'v2'}])
