@@ -23,6 +23,24 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def test_reading_evaluation_compares_measure_tokens_not_numeric_substrings(self):
+        cases=[('3000','30000억원',False),('3000','13000억원',False),('3000','3000.5억원',False),
+               ('3000','3,000억원',True),('3000','3000억원',True),('1%','11%',False),
+               ('20GW','120GW',False),('20GW','20 GWh',False),('20GW','20 GW',True),
+               ('26.6','126.6%',False),('26.6','26.6%',True),('5%','5%포인트',False),
+               ('5%','5 %p',False),('5%','5%.',True),('20GW','20GW. 확정',True),
+               ('3000억원','3000만원',False),('3000억원','3000원',False),
+               ('3000억원','3000달러',False),('3000억원','3,000 억원',True)]
+        for expected,actual,matches in cases:
+            engine=MagicMock(model='mock',provider='ollama');engine.usage.return_value={}
+            engine.extract_reading.return_value={'certainty':'확정','entities':['한빛에너지'],'amount':actual}
+            dataset={'readings':[{'id':'measure','body':'한빛에너지가 공개한 규모를 확인한다.',
+                                 'expected':{'certainty':'확정','entities':['한빛에너지'],'amount_contains':expected}}]}
+            with self.subTest(expected=expected,actual=actual),patch('builtins.print'):
+                result=evaluate(engine,dataset,readings_only=True)
+                self.assertTrue(result['cases'][0]['valid'])
+                self.assertEqual(result['cases'][0]['checks']['amount'],matches)
+
     def pair_oracle(self,dataset):
         bodies={c['id']:c['summary'] for c in dataset['equity_screening']}
         higher={frozenset((bodies[a],bodies[b])):bodies[a] for a,b in dataset['priority_pairs']}

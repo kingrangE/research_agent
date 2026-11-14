@@ -9,7 +9,7 @@
         "entities": [
           "한빛에너지"
         ],
-        "amount_contains": "3000"
+        "amount_contains": "3000억원"
       }
     },
     {
@@ -41,7 +41,7 @@
         "entities": [
           "우리물류"
         ],
-        "amount_contains": "120"
+        "amount_contains": "120억원"
       }
     },
     {

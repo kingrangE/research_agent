@@ -5,6 +5,7 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
+import re
 import time
 
 
@@ -16,6 +17,21 @@ PAIR_POLICY = '''주식 판단 자료 두 개 중 지금 먼저 읽어야 할 �
 기회와 손실 위험에 같은 기준을 적용하며 긍정·부정 방향, 업종, 절대 금액이나 입력 위치만으로 우대하지 않는다.
 시장 기대·가격 반영·원문에 없는 노출을 추정하지 않는다. 우열을 판단할 근거가 부족하면 동순위로 둔다.
 winner는 먼저 읽을 자료의 id 또는 동순위다. reason은 원문 근거로 비교 이유를 120자 이내로 쓴다.'''
+
+
+def contains_measure(value,expected):
+    if not isinstance(value,str) or not isinstance(expected,str) or not expected.strip():
+        return False
+    def normalize(text):
+        text=re.sub(r'\s+','',text)
+        return re.sub(r'(?<![\d,])\d{1,3}(?:,\d{3})+(?![\d,])',lambda m:m[0].replace(',',''),text)
+    expected=normalize(expected)
+    suffix=r'(?!\d|\.\d)'
+    if expected[-1].isascii() and expected[-1].isalpha():
+        suffix+=r'(?![A-Za-z])'
+    elif expected.endswith('%'):
+        suffix+=r'(?![A-Za-z%]|포인트)'
+    return re.search(r'(?<![\d.])'+re.escape(expected)+suffix,normalize(value)) is not None
 
 
 def evaluate_pairwise(engine,dataset):
@@ -77,7 +93,7 @@ def evaluate(engine, dataset, clusters_only=False, readings_only=False):
                 checks.update(certainty=output['certainty'] == expected['certainty'],
                               entities=all(any(e in entity for entity in output['entities']) for e in expected['entities']))
                 if expected.get('amount_contains'):
-                    checks['amount'] = expected['amount_contains'] in output['amount']
+                    checks['amount'] = contains_measure(output['amount'],expected['amount_contains'])
             if not checks:
                 raise ValueError('평가 기대값 없음')
             results.append({'id': case['id'], 'valid': True, 'checks': checks, 'output': output, 'seconds': round(time.monotonic()-started, 2)})

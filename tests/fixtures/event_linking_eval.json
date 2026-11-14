@@ -26,7 +26,7 @@
       "body": "한빛에너지는 11일 동부전력과 3000억원 규모의 변압기 공급 계약을 새로 체결했다. 공급 기간은 2027년부터 2029년까지다.",
       "anchors": [{"event_id":"west-contract","event_title":"한빛에너지 서부전력 공급 계약","event_type":"계약","entities":["한빛에너지","서부전력"],"certainty":"확정","amount":"3000억원","timing":"2027~2029년","published_at":"2026-11-11","summary":"한빛에너지는 서부전력과 3000억원 변압기 공급 계약을 체결했다. 공급 기간은 2027~2029년이다."}],
       "expected_match": "",
-      "expected": {"certainty": "확정", "entities": ["동부전력"], "amount_contains": "3000"}
+      "expected": {"certainty": "확정", "entities": ["동부전력"], "amount_contains": "3000억원"}
     },
     {
       "id": "contract-paraphrase", "title": "한빛에너지, 서부전력에 변압기 공급",
