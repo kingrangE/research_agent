@@ -62,6 +62,26 @@ class AnalysisStoreTest(unittest.TestCase):
         self.assertEqual(result['samples'],0)
         self.assertIsNone(result['p95_seconds'])
 
+    def test_priority_window_distinguishes_ready_waiting_and_processing_without_hiding_other_work(self):
+        from datetime import datetime, timezone
+        t=200000
+        with patch('analysis_store.time.time',return_value=t):
+            dates=[t,t-CURRENT_EVENT_SECONDS,t-CURRENT_EVENT_SECONDS-1,None,t+1,t-1,t]
+            self.store.enqueue([{'article':self.article(i,published_at=datetime.fromtimestamp(date,timezone.utc).isoformat() if date else None)} for i,date in enumerate(dates)])
+            with self.store.db() as db:
+                db.execute("UPDATE analysis_jobs SET status='error',available_at=? WHERE article_id IN ('1','3')",(t+100,))
+                db.execute("UPDATE analysis_jobs SET status='processing',available_at=? WHERE article_id='5'",(t+300,))
+                db.execute("UPDATE analysis_jobs SET status='superseded' WHERE article_id='6'")
+            window=self.store.summary()['priority_window']
+        self.assertEqual(window,{'window_seconds':CURRENT_EVENT_SECONDS,'current_unfinished':3,'current_ready':1,'other_unfinished':3,'oldest_current_age_seconds':CURRENT_EVENT_SECONDS})
+        with patch('analysis_store.time.time',return_value=t+1):
+            window=self.store.summary()['priority_window']
+            self.assertEqual((window['current_unfinished'],window['current_ready'],window['other_unfinished'],window['oldest_current_age_seconds']),(3,2,3,2))
+        with patch('analysis_store.time.time',return_value=t+301):
+            self.assertEqual(self.store.summary()['priority_window']['current_ready'],3)
+        self.assertEqual(Store(self.path,'other-model').summary()['priority_window'],
+                         {'window_seconds':CURRENT_EVENT_SECONDS,'current_unfinished':0,'current_ready':0,'other_unfinished':0,'oldest_current_age_seconds':None})
+
     def test_policy_review_is_idempotent_preserves_history_and_fair_dispatch(self):
         a=self.article(1)
         self.store.enqueue([{'article':a,'body':'보관 본문','body_version':'v1'}])

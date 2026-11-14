@@ -51,6 +51,22 @@ test('briefing discloses article analysis coverage even when ranking itself succ
   assert.ok(!run(`$('#list-caption').textContent`).includes('이번 대상'));
 });
 
+test('operations separates current unfinished work from ready work and preserves older payload uncertainty', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{queue:{pending:3000,processing:1,retrying:9,done:100,event_count:70,oldest_wait_seconds:100000,priority_window:{window_seconds:93600,current_unfinished:65,current_ready:50,other_unfinished:2945,oldest_current_age_seconds:82800}}}};render()`);
+  let html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('26시간 이내 미완료 작업</dt><dd>65건'));
+  assert.ok(html.includes('이 중 지금 처리 가능</dt><dd>50건'));
+  assert.ok(html.includes('그 외 미완료 작업</dt><dd>2945건'));
+  assert.ok(html.includes('23.0시간'));
+  assert.ok(html.includes('분석·추천 완료를 뜻하지 않습니다'));
+  assert.ok(html.includes('과거 분석은 오래 미뤄질 수 있습니다'));
+  run(`delete data.intelligence.queue.priority_window;render()`);
+  html=run(`$('#source-view').innerHTML`);
+  assert.ok(!html.includes('현재 자료 분석 범위'));
+  assert.ok(!html.includes('26시간 이내 미완료 작업'));
+});
+
 test('briefing separates final event review coverage from article analysis and recommendations', () => {
   const run=ui();
   run(`data={articles:[{id:'a',title:'계약',themes:[],source:'test',score:40},{id:'b',title:'계약 취소',themes:[],source:'test',score:50}],intelligence:{ranking_stale:false,ranking_partial:true,ranked_at:new Date().toISOString(),coverage:{candidates:16,analyzed_articles:16,events:16,eligible_events:13,reviewed_events:12,unreviewed_events:1},events:[{event_id:'e',articles:[{id:'a'}]},{event_id:'f',articles:[{id:'b'}]}],assessments:[{event_id:'e'},{event_id:'f'}],ranking:[{event_id:'e',reason:'계약'}]}};render()`);

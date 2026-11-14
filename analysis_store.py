@@ -228,6 +228,7 @@ class Store:
     def summary(self):
         as_of=time.time()
         with self.db() as db:
+            db.execute('BEGIN')
             counts = dict(db.execute('SELECT status,count(*) FROM analysis_jobs WHERE namespace=? GROUP BY status',(self.namespace,)))
             oldest = db.execute("SELECT min(enqueued_at) FROM analysis_jobs WHERE namespace=? AND status IN ('pending','processing','error')",(self.namespace,)).fetchone()[0]
             elapsed = db.execute("SELECT finished_at-enqueued_at FROM analysis_jobs WHERE namespace=? AND status='done' ORDER BY finished_at DESC LIMIT 100",(self.namespace,)).fetchall()
@@ -241,9 +242,18 @@ class Store:
                 WHERE namespace=? AND status IN ('pending','processing','error') AND job_key NOT LIKE 'screen-review:%'
                 AND published_epoch>0 AND published_epoch<=? AND enqueued_at BETWEEN published_epoch AND published_epoch+3600''',
                 (self.namespace,as_of)).fetchone()
+            priority=dict((row[0],row[1:]) for row in db.execute('''SELECT
+                CASE WHEN published_epoch>0 AND published_epoch BETWEEN ? AND ? THEN 1 ELSE 0 END AS is_current,
+                count(*),sum(CASE WHEN available_at<=? THEN 1 ELSE 0 END),min(published_epoch)
+                FROM analysis_jobs WHERE namespace=? AND status IN ('pending','processing','error') GROUP BY is_current''',
+                (as_of-CURRENT_EVENT_SECONDS,as_of,as_of,self.namespace)))
+        current=priority.get(1,(0,0,None));other=priority.get(0,(0,0,None))
         delays = sorted(row[0] for row in elapsed)
         return {'pending':counts.get('pending',0),'processing':counts.get('processing',0),'retrying':counts.get('error',0),
                 'done':counts.get('done',0),'event_count':events,'oldest_wait_seconds':round(max(0,as_of-oldest)) if oldest else 0,
                 'recent_p95_seconds':round(delays[(len(delays)*95+99)//100-1]) if delays else None,
+                'priority_window':{'window_seconds':CURRENT_EVENT_SECONDS,'current_unfinished':current[0],
+                    'current_ready':current[1],'other_unfinished':other[0],
+                    'oldest_current_age_seconds':round(as_of-current[2]) if current[2] is not None else None},
                 'live_analysis':{**timing_summary(row[0] for row in live),'pending':pending[0],
                     'oldest_unfinished_seconds':round(max(0,as_of-pending[1])) if pending[1] else None}}
