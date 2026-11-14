@@ -859,6 +859,45 @@ class IntelligenceTest(unittest.TestCase):
             self.engine.cycle([ARTICLE])
         self.assertEqual(call.call_count,2)
 
+    def test_rank_cache_survives_candidate_reordering_and_restart_without_remapping_results(self):
+        articles=[ARTICLE,{**ARTICLE,'id':'b','url':ARTICLE['url']+'b'}]
+        readings=[{**ANALYZED,'event_id':a['id'],'article_id':a['id'],'source_url':a['url'],'published_at':a['published_at']} for a in articles]
+        gates=[dict(GATE,event_id=a['id']) for a in articles]
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=(readings,gates)),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=[rank_row('E2','두 번째 사건'),rank_row('E1','첫 번째 사건')]) as rank:
+            first=self.engine.cycle(articles)
+            readings.reverse();gates.reverse()
+            second=self.engine.cycle(list(reversed(articles)))
+            rank.assert_called_once()
+        other=ai.Engine(self.engine.path)
+        with patch.object(other.queue,'claim',return_value=None),patch.object(other.queue,'readings',return_value=(readings,gates)),patch.object(other,'rank') as rank:
+            restored=other.cycle(list(reversed(articles)))
+            rank.assert_not_called()
+        for result in (second,restored):
+            self.assertEqual(result['ranking'],first['ranking'])
+            self.assertEqual(result['ranked_at'],first['ranked_at'])
+            self.assertFalse(result['ranking_partial'])
+            self.assertEqual([(r['event_id'],r['reason']) for r in result['ranking']],[('b','두 번째 사건'),('a','첫 번째 사건')])
+        readings[0]={**readings[0],'event_id':'new-event'};gates[0]={**gates[0],'event_id':'new-event'}
+        with patch.object(other.queue,'claim',return_value=None),patch.object(other.queue,'readings',return_value=(readings,gates)),patch.object(other,'rank',return_value=[rank_row('E1'),rank_row('E2')]) as rank:
+            changed=other.cycle(articles)
+            rank.assert_called_once()
+        self.assertEqual({r['event_id'] for r in changed['ranking']},{'a','new-event'})
+
+    def test_candidate_reordering_cannot_bypass_same_input_failure_backoff(self):
+        articles=[ARTICLE,{**ARTICLE,'id':'b','url':ARTICLE['url']+'b'}]
+        readings=[{**ANALYZED,'event_id':a['id'],'article_id':a['id'],'source_url':a['url'],'published_at':a['published_at']} for a in articles]
+        gates=[dict(GATE,event_id=a['id']) for a in articles]
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=(readings,gates)),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',side_effect=TimeoutError) as rank:
+            failed=self.engine.cycle(articles)
+            readings.reverse();gates.reverse()
+            waiting=self.engine.cycle(list(reversed(articles)))
+            rank.assert_called_once()
+            self.assertEqual(waiting['rank_retry_at'],failed['rank_retry_at'])
+            self.assertEqual(waiting['status'],'partial')
+            readings[0]={**readings[0],'evidence':['계약 금액과 공급 조건을 정정했다고 공시했다.']}
+            self.engine.cycle(articles)
+            self.assertEqual(rank.call_count,2)
+
     def test_failed_reranking_cannot_reuse_reasons_from_different_evidence_or_market(self):
         reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}):

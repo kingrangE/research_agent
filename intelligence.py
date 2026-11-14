@@ -556,7 +556,7 @@ class Engine:
         policy = RANK_VERSION+READ_VERSION+SCREEN_VERSION
         market_key = json.dumps(self.last_market,sort_keys=True)
         source_keys = {event_id:sha256((policy+json.dumps(source,sort_keys=True)+market_key).encode()).hexdigest() for event_id,source in sources.items()}
-        rank_key = sha256((policy+json.dumps({'labels':labels,'events':events,'market':self.last_market},sort_keys=True)).encode()).hexdigest()
+        rank_key = sha256((policy+json.dumps({'events':sources,'market':self.last_market},sort_keys=True)).encode()).hexdigest()
         rank_due=bool(candidates and (rank_key!=self.rank_key or time.time()-self.ranked_at>=300))
         failure_key='rank:'+self.rank_namespace+':'+rank_key
         rank_retry_at=0
