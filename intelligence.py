@@ -156,6 +156,10 @@ def contract_party_names(event):
         return [],proof
     names=[name for name in event.get('entities',[]) if isinstance(name,str) and len(name.strip())>=2
            and name.casefold() in title.casefold() and name.casefold() in proof.casefold()]
+    if len(names)<2:
+        summary=event.get('summary') or ''
+        names=[name for name in event.get('entities',[]) if isinstance(name,str) and len(name.strip())>=2
+               and name.casefold() in summary.casefold() and name.casefold() in proof.casefold()]
     return (names if len(names)==2 else []),proof
 
 

@@ -92,6 +92,22 @@ class IntelligenceTest(unittest.TestCase):
         with patch('intelligence.stocks.related_stocks',side_effect=listed):
             self.assertEqual(ai.separate_event_update(output,[anchor],'2026-11-11')['match_event_id'],'')
 
+    def test_contract_party_guard_uses_source_checked_summary_when_title_omits_customer(self):
+        proof='한빛에너지는 동부전력과 3000억원 공급 계약을 체결했다.'
+        anchor={**READING,'event_id':'old','event_title':'한빛에너지 공급 계약','entities':['한빛에너지','동부전력'],
+                'summary':proof,'evidence':[proof]}
+        current={**anchor,'match_event_id':'old','event_title':'한빛에너지 서부전력 계약',
+                 'entities':['한빛에너지','서부전력'],'summary':'한빛에너지는 서부전력과 공급 계약을 체결했다.',
+                 'evidence':['한빛에너지는 서부전력과 공급 계약을 체결했다. 기존 동부전력 계약과 별도다.']}
+        self.assertEqual(ai.separate_event_update(current,[anchor],'2026-11-15')['match_event_id'],'')
+        reprint={**anchor,'match_event_id':'old'}
+        self.assertEqual(ai.separate_event_update(reprint,[anchor],'2026-11-15')['match_event_id'],'old')
+        ambiguous={**anchor,'summary':proof+' 서부전력도 언급했다.','entities':['한빛에너지','동부전력','서부전력'],
+                   'evidence':[proof+' 서부전력도 언급했다.']}
+        self.assertEqual(ai.contract_party_names(ambiguous)[0],[])
+        no_proof={**anchor,'evidence':['한빛에너지는 신규 계약을 공시했다.']}
+        self.assertEqual(ai.contract_party_names(no_proof)[0],[])
+
     def test_same_legal_party_is_preserved_across_security_identifiers(self):
         anchor={**READING,'event_id':'old','event_title':'NVIDIA Corporation Alphabet Inc. 공급 계약',
                 'entities':['NVIDIA Corporation','Alphabet Inc.'],
