@@ -1,5 +1,5 @@
 {
-  "version": "2026-11-11.1",
+  "version": "2026-11-15.1",
   "reviewed_on": "2026-11-11",
   "sources": {
     "ubs_framework": {"title":"UBS: AI enabling, intelligence and application layers", "url":"https://www.ubs.com/global/en/investor-relations/press-releases/overview-news-display-ndp/en-20240618-ai-investment.html", "published_on":"2024-06-18", "type":"research"},
@@ -30,6 +30,9 @@
     "samsung_nvidia": {"title":"NVIDIA–삼성: HBM·파운드리·AI 팩토리 협력", "url":"https://nvidianews.nvidia.com/news/samsung-ai-factory", "published_on":"2025-10-30", "type":"company"},
     "unicorn_policy": {"title":"중기부: AI 스타트업 유니콘 성장 전략 의견 수렴", "url":"https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1072109&cbIdx=86&parentSeq=1072109", "published_on":"2026-10-29", "type":"government"},
     "unicorn_eligibility": {"title":"중기부: 유니콘브릿지 지원 대상과 신청 조건", "url":"https://www.mss.go.kr/site/smba/ex/bbs/View.do?bcIdx=1065219&cbIdx=86&parentSeq=1065219", "published_on":"2026-01-30", "type":"government"},
+    "alphabet_legal_entities": {"title":"Alphabet 8-K: Google LLC와 상장 모회사 Alphabet Inc. 구분","url":"https://www.sec.gov/Archives/edgar/data/1652044/000165204425000027/goog-20250318.htm","published_on":"2025-03-18","type":"filing","checked_on":"2026-11-15"},
+    "amazon_legal_entities": {"title":"Amazon 2024 10-K Exhibit 21.1: 법인명과 자회사 목록","url":"https://www.sec.gov/Archives/edgar/data/1018724/000101872425000004/amzn-20241231xex211.htm","published_on":"2025-02-07","type":"filing","checked_on":"2026-11-15"},
+    "aws_contracting_entities": {"title":"AWS 고객 계약: 지역별 계약 법인과 주소","url":"https://aws.amazon.com/agreement/","published_on":"2026-10-29","type":"company","checked_on":"2026-11-15"},
     "krx": {"title":"KRX KIND 상장법인 목록·업종·주요제품", "url":"https://kind.krx.co.kr/corpgeneral/corpList.do?method=loadInitPage", "published_on":null, "type":"listing"},
     "nasdaq": {"title":"Nasdaq Trader: Symbol Directory definitions", "url":"https://www.nasdaqtrader.com/trader.aspx?id=symboldirdefs", "published_on":null, "type":"listing"}
   },
@@ -44,6 +47,13 @@
     {"id":"google", "name":"Alphabet / Google", "aliases":["구글","Google","알파벳","Alphabet","제미나이","Gemini"], "code":"GOOGL.O"},
     {"id":"amazon", "name":"Amazon / AWS", "aliases":["아마존","Amazon","AWS","아마존웹서비스"], "code":"AMZN.O"},
     {"id":"naver_cloud", "name":"NAVER Cloud", "aliases":["네이버클라우드","네이버 클라우드","NAVER Cloud","하이퍼클로바","HyperCLOVA"], "code":null}
+  ],
+  "legal_entities": [
+    {"id":"alphabet_inc","names":["Alphabet Inc."],"sources":["alphabet_legal_entities"]},
+    {"id":"google_llc","names":["Google LLC"],"sources":["alphabet_legal_entities"]},
+    {"id":"amazon_com_inc","names":["Amazon.com, Inc."],"sources":["amazon_legal_entities"]},
+    {"id":"amazon_web_services_inc","names":["Amazon Web Services, Inc."],"sources":["amazon_legal_entities"]},
+    {"id":"aws_emea_sarl","names":["Amazon Web Services EMEA SARL"],"sources":["aws_contracting_entities"]}
   ],
   "profiles": [
     {"code":"035420", "label":"NAVER", "roles":["llm","cloud","enterprise_ai"], "activity":"NAVER Cloud의 HyperCLOVA X·CLOVA Studio·기업용 AI", "sources":["naver_ai","naver_parent"]},

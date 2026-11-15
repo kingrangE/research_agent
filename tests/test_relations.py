@@ -1,11 +1,41 @@
 from datetime import datetime
 import unittest
+from unittest.mock import patch
 
 import relations
 from tests_catalogue import catalogue_for_research
 
 
 class RelatedResearchTest(unittest.TestCase):
+    def test_legal_identity_is_exact_sourced_and_not_a_group_or_brand_alias(self):
+        self.assertEqual(relations.legal_identity('Alphabet, Inc.','2026-11-11'),'alphabet_inc')
+        self.assertEqual(relations.legal_identity('google l.l.c.','2026-11-11'),'google_llc')
+        self.assertEqual(relations.legal_identity('Amazon Web Services Inc.','2026-11-11'),'amazon_web_services_inc')
+        self.assertNotEqual(relations.legal_identity('Google LLC','2026-11-11'),relations.legal_identity('Alphabet Inc.','2026-11-11'))
+        for name in ('Google','AWS','Amazon','미등록 법인','',None):
+            self.assertIsNone(relations.legal_identity(name,'2026-11-11'))
+        self.assertIsNone(relations.legal_identity('Google LLC','2025-03-17'))
+        self.assertIsNone(relations.legal_identity('Amazon Web Services EMEA SARL','2026-10-28'))
+        self.assertIsNone(relations.legal_identity('Google LLC','invalid-date'))
+        self.assertEqual(relations.legal_identity('Google','2026-11-11',source='Google LLC와 공급 계약을 체결했다.'),'google_llc')
+        self.assertIsNone(relations.legal_identity('AWS','2026-11-11',source='Amazon Web Services, Inc.를 AWS라고 지칭했다.'))
+        self.assertIsNone(relations.legal_identity('Amazon','2026-11-11',source='Amazon.com, Inc.와 Amazon Web Services, Inc.를 함께 언급했다.'))
+
+    def test_legal_identity_abstains_when_ambiguous_or_without_sources(self):
+        base={'id':'a','names':['Example LLC'],'sources':['alphabet_legal_entities']}
+        for records in ([base,{**base,'id':'b'}],[{**base,'sources':[]}]):
+            with patch.dict(relations.KNOWLEDGE,{'legal_entities':records}):
+                self.assertIsNone(relations.legal_identity('Example LLC','2026-11-11'))
+
+    def test_new_legal_sources_do_not_refresh_old_source_review_dates(self):
+        self.assertEqual(relations.source_records(['krx'],'2026-11-15')[0]['checked_on'],'2026-11-11')
+        self.assertEqual(relations.source_records(['alphabet_legal_entities'],'2026-11-15')[0]['checked_on'],'2026-11-15')
+        ids=[e['id'] for e in relations.KNOWLEDGE['legal_entities']]
+        self.assertEqual(len(ids),len(set(ids)))
+        for entity in relations.KNOWLEDGE['legal_entities']:
+            self.assertTrue(entity['names'] and entity['sources'])
+            self.assertTrue(all(s in relations.SOURCES for s in entity['sources']))
+
     def setUp(self):
         self.catalogue = catalogue_for_research()
 

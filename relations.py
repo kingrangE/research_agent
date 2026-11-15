@@ -36,7 +36,7 @@ def source_records(ids, as_of):
         source = SOURCES[source_id]
         if source["published_on"] and source["published_on"] > as_of:
             continue
-        result.append({"id": source_id, **source, "checked_on": KNOWLEDGE["reviewed_on"]})
+        result.append({"id": source_id, **source, "checked_on": source.get('checked_on',KNOWLEDGE["reviewed_on"])})
     return result
 
 
@@ -66,6 +66,23 @@ def context(title):
                           "listing_note": None if e["code"] else "직접 거래 종목 미확인 · 관계 기업을 별도 표시"} for e in entities], "events": events, "ai": ai,
             "event_state": "부인·취소 등 재확인 필요" if disputed else "계획·전망 포함" if prospective else "제목의 주장 · 원문 확인 필요",
             "disputed": disputed, "knowledge_version": KNOWLEDGE["version"], "basis": "기사 제목 + 공개 사업 근거"}
+
+
+def legal_identity(name, as_of=None, source=None):
+    if not isinstance(name,str) or len(name.strip())<2:
+        return None
+    as_of=(as_of or datetime.now(timezone.utc).isoformat())[:10]
+    try:
+        datetime.fromisoformat(as_of)
+    except ValueError:
+        return None
+    def normalize(value):
+        value=re.sub(r'\s+','',value).casefold()
+        return re.sub(r'l\.l\.c\.?$','llc',value).replace(',','').rstrip('.')
+    matches={e['id'] for e in KNOWLEDGE.get('legal_entities',[])
+             if any(normalize(name)==normalize(n) or (source and contains(n,name) and contains(source,n)) for n in e['names'])
+             and e['sources'] and all(not SOURCES[s]['published_on'] or SOURCES[s]['published_on']<=as_of for s in e['sources'])}
+    return next(iter(matches)) if len(matches)==1 else None
 
 
 def infer(title, catalogue, direct, as_of=None):
