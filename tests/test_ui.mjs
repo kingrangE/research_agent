@@ -98,7 +98,7 @@ test('qualified ordering explains that screening decisions stay separate from fi
   const run=ui();
   run(`data={articles:[],sources:[],intelligence:{ranking_role:'qualified_order',coverage:{eligible_events:13,reviewed_events:12,unreviewed_events:1}}};render()`);
   const html=run(`$('#source-view').innerHTML`);
-  assert.ok(html.includes('선별을 통과한 사건의 순서와 확인 사항만 비교'));
+  assert.ok(html.includes('선별을 통과한 사건의 순서만 비교'));
   assert.ok(!html.includes('최종 추천에서 제외한 사건도 포함'));
 });
 
@@ -483,7 +483,7 @@ test('decision card puts compact stocks before the event and exposes why and nex
   const html=run(`articleHTML(data.articles[0],0)`);
   assert.ok(html.indexOf('stock-chip')<html.indexOf('class="article-title"'));
   assert.ok(html.includes('<dt>모델 해석</dt>'));
-  assert.ok(html.includes('<dt>다음 확인</dt><dd>계약 공시 확인</dd>'));
+  assert.ok(html.includes('<dt>다음 확인 · 모델 제안</dt><dd>계약 공시 확인</dd>'));
   assert.ok(html.includes('&lt;수주&gt;'));
   assert.ok(html.includes('계획'));
   assert.ok(html.includes('기사·근거 보기'));
@@ -647,4 +647,17 @@ test('a changed headline cannot inherit the previous version model event or rank
   run(`view='feed'`);
   assert.equal(run(`filteredArticles().length`),1);
   assert.equal(run(`safeLink('https://:secret@example.com')`),null);
+});
+
+
+test('source bound ranking does not repeat its quote as model interpretation', () => {
+  const run=ui();
+  run(`const proof='코스피가 급락 이후 반등했다고 전했다.';data={articles:[{id:'a',title:'지수 반등',source:'공개 피드',themes:[],score_parts:{freshness:40},related_stocks:[]}],intelligence:{rank_reason_source:'article_evidence',ranking_stale:false,events:[{event_id:'e',article_id:'a',evidence:[proof],articles:[{id:'a',evidence:[proof]}]}],assessments:[{event_id:'e',reason:proof,screen_reason:'반등의 지속 여부를 검토할 자료',stock_relevance:'주식 판단 재료',watch_for:'후속 지표 확인'}],ranking:[{event_id:'e',reason:proof,watch_for:'후속 지표 확인'}]}};renderDetail('a')`);
+  const [visible,more]=run(`$('#detail').innerHTML`).split('<details class="detail-more">');
+  assert.ok(visible.includes('원문 근거'));
+  assert.ok(visible.includes('다음 확인 · 모델 제안'));
+  const modelNote=more.split('<h3>모델 선별 설명 · 검수 전</h3>')[1].split('</section>')[0];
+  assert.ok(modelNote.includes('반등의 지속 여부를 검토할 자료'));
+  assert.ok(!modelNote.includes('코스피가 급락'));
+  assert.ok(run(`articleHTML(data.articles[0],0)`).includes('원문 근거'));
 });

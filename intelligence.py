@@ -45,27 +45,14 @@ READ_SCHEMA = schema({'summary': TEXT, 'event_title': TEXT, 'event_type': TEXT,
         'description':'핵심 경제 사건의 진행 단계. 검토·추진 중인 제도/계약은 계획, 예측은 전망, 이미 체결·시행·발생한 사실은 확정. 발표나 발언이 실제 있었다는 이유로 그 안의 계획을 확정으로 바꾸지 않는다.'},
     'amount': TEXT, 'timing': TEXT, 'evidence': {'type': 'array', 'items': TEXT}, 'match_event_id': TEXT})
 RELEVANCE = ['주식 판단 재료', '배경·상품 안내', '연결 미확인']
-RANK_VERSION = 'equity-catalyst-v8-qualified-order'
+RANK_VERSION = 'equity-catalyst-v9-source-bound-order'
 GATE_VERSION = 'equity-screen-v3-business-evidence'
 SCREEN_VERSION = 'source-passages-v5-information-basis'
-RANK_SCHEMA = schema({'ranking': {'type': 'array', 'items': schema({'event_id': TEXT, 'reason': {'type':'string','description':'원문에 있는 당사자와 변경 사실만 요약. 매출·거래량·순이익의 추가 추정 금지'},
-    'watch_for': TEXT})}})
-EQUITY_POLICY = '''입력은 독립 선별 단계가 현재 원문으로 주식 판단 재료임을 확인한 사건만이다. 적합성을 다시 분류하지 않는다. stock_relevance를 출력하거나 사건을 제외하지 말고 모든 event_id를 한 번씩 반환한다.
-순서는 매수 선호가 아니라 사용자가 지금 먼저 읽고 투자 판단을 재검토해야 할 사건의 우선순위다. 원문에 확인된 기업 대비 변화 규모·임박성·적용 범위·확인 근거를 비교한다. 기회와 손실 위험을 같은 기준으로 다룬다. 실제 만기 상환 실패나 연 매출의 큰 부분에 해당하는 계약 취소처럼 놓치면 판단을 크게 바꿀 정보는 작은 주주환원·일반적인 투자 확대보다 먼저 확인할 필요가 있다. 모든 악재가 모든 호재보다 앞선다는 규칙은 아니며 사건별 원문 조건을 비교한다. 주가 상승을 기대할 만하다는 이유로 작은 호재를 중대한 손실 위험보다 앞세우지 않는다.
-공식 부인·정정과 근거 있는 실적 추정 변경, 구체적인 규제 변경안도 선별을 통과한 판단 정보다. 아직 시행 전인 계획과 실제 달성 사실, 회사 발표와 증권사 추정을 구분한다. 정렬 과정에서 배경 기사로 재분류하지 않는다.
-reason에는 원문에서 확인된 당사자와 무엇이 달라졌는지만 한 문장으로 요약한다. 원문에 없는 매출·거래량·순이익 증가 가능성이나 2차 효과를 덧붙이지 않는다. 영향의 전달 경로와 가격 반영 여부는 watch_for에서 확인 과제로 다룬다. '새로운 투자 기회', '유동성에 기여', '긍정적 신호'만으로 추천하지 않는다.
-사실 출처는 각 사건의 evidence 원문뿐이다. 발행 시각과 사건 최초 발행 시각을 구분하고 재보도를 새 사실로 만들지 않는다. 계약 체결·검토·부인·취소의 상태도 원문에서 확인한다.
-추산·예상·검토·미확인 표현을 보존한다. 조치 시행이 확정되어도 예상 절감액·예상 매출까지 확정 금액으로 바꾸지 않는다.
-거래 당사자별 매출과 비용을 구분한다. 플랫폼 수수료 감면은 입점 업주의 비용 감소이지만 플랫폼 자체의 순이익 증가를 뜻하지 않는다. 판매량 증가 등 상쇄 근거가 없으면 플랫폼의 순이익 방향은 미확인이다. 차환 실패·상환자금 미확보를 자금 확보 완료로 바꾸지 않는다.
-watch_for에는 다음 확인할 수치·공시·실적 전망·가격 반영 여부 등 판단을 확인하거나 뒤집을 사항을 한 문장으로 쓴다.
-자료에 시장 기대치·노출 비중·가격 반영 여부가 없으면 미확인으로 두고 임의로 서프라이즈·수혜 확정·매수 시점을 만들지 않는다.
-특정 업종에 고정 우대를 주지 않고 이미 급등한 종목만 우대하지 않는다. 시장 관측의 시각을 확인한다. reason과 watch_for는 각 120자 이내.
-reason·watch_for 대조 예시 (실제 입력 사실이 아님):
-원문이 플랫폼의 수수료 감면과 업주의 부담 감소만 밝힌 경우:
-{"reason":"플랫폼의 수수료 조건 변경과 입점 업주의 수수료 부담 감소 추산이 발표됐다.","watch_for":"플랫폼 수수료 매출과 거래량 변화, 양측 전체 이익 영향 확인"}
-원문이 공급업체의 판매 단가 인상만 밝힌 경우:
-{"reason":"공급업체와 구매 기업 사이의 판매 단가 인상 계약이 확인됐다.","watch_for":"판매량·원가·가격 전가와 양측 이익 전망 확인"}
-수수료 감면만으로 플랫폼 매출 증가 가능성까지 덧붙이거나 단가 인상만으로 공급업체 순이익 증가를 확정하지 않는다.'''
+RANK_SCHEMA = schema({'ranking': {'type':'array', 'items':TEXT}})
+EQUITY_POLICY = '''입력은 독립 선별 단계가 현재 원문으로 주식 판단 재료임을 확인한 사건만이다. 적합성을 다시 분류하지 않는다. 모든 event_id를 한 번씩 읽기 우선순위로 정렬한 문자열 배열만 반환한다. 설명이나 새 사실은 생성하지 않는다.
+순서는 매수 선호가 아니라 사용자가 지금 먼저 읽고 투자 판단을 재검토해야 할 사건의 우선순위다. 원문에 확인된 기업 대비 변화 규모·임박성·적용 범위·확인 근거를 비교한다. 기회와 손실 위험을 같은 기준으로 다룬다. 실제 만기 상환 실패나 연 매출의 큰 부분에 해당하는 계약 취소처럼 놓치면 판단을 크게 바꿀 정보는 작은 주주환원·일반적인 투자 확대보다 먼저 확인할 필요가 있다. 모든 악재가 모든 호재보다 앞선다는 규칙은 아니며 사건별 원문 조건을 비교한다.
+공식 부인·정정과 근거 있는 실적 추정 변경, 구체적인 규제 변경안도 선별을 통과한 판단 정보다. 계획·전망과 실제 달성 사실, 회사 발표와 증권사 추정을 구분한다. 각 사건의 사실 출처는 해당 evidence 원문뿐이다. 다른 사건의 사실을 옮겨 붙이지 않는다. 발행·최초 발행·시장 관측 시각을 확인하고 재보도를 새 사실로 만들지 않는다.
+시장 기대치·노출 비중·가격 반영 여부가 없으면 미확인으로 두고 임의로 서프라이즈·수혜 확정·매수 시점을 만들지 않는다. 특정 업종이나 이미 급등한 종목을 고정 우대하지 않는다.'''
 DRIVERS = ['기업 실적·수주·경쟁·비용 변화', '상장사 자금조달·희석·상환 위험', '규제·인허가·법적 위험 변화',
            '예상 밖 금리·환율·수급·산업 충격', '금융상품 조건·청약·판매 안내', '홍보·행사·수상·반복 정보', '주식 영향 근거 미확인']
 CHANGE_BASES = ['실적·영업·자본·수급의 관측 변화', '권한 있는 주체의 구체적 조치·제안', '공식 확인·정정·근거 있는 추정 변경', '의견·청원·지지 표현', '배경·일반 안내', '근거 부족']
@@ -650,9 +637,10 @@ class Engine:
         ids=[e['event_id'] for e in events]
         if any(not isinstance(i,str) or not i for i in ids) or len(set(ids))!=len(ids):
             raise ValueError('순위 입력 사건 ID 오류·중복')
-        rank_schema = schema({'ranking': {'type':'array', 'minItems':len(events), 'maxItems':len(events), 'items':schema({**RANK_SCHEMA['properties']['ranking']['items']['properties'],'event_id':{'type':'string','enum':ids}})}})
+        notes={e['event_id']:source_notes(e) for e in events}
+        rank_schema = schema({'ranking': {'type':'array', 'minItems':len(events), 'maxItems':len(events), 'uniqueItems':True, 'items':{'type':'string','enum':ids}}})
         output = self.call('rank', {'task': EQUITY_POLICY,'as_of': now(),'events': events,'market': market}, rank_schema)
-        return validate_ordering(output,set(ids))
+        return [{'event_id':i,**notes[i],'stock_relevance':'주식 판단 재료'} for i in validate_ordering(output,set(ids))]
 
     def cycle(self, articles):
         if not self.enabled:
@@ -710,6 +698,8 @@ class Engine:
         sources = {e['event_id']:{'evidence':e.get('evidence',[]),'published_at':e.get('published_at'),
             'first_published_at':e.get('first_published_at')} for e in candidates}
         events = [{'event_id':label,'stock_relevance':'주식 판단 재료',**sources[event_id]} for label,event_id in labels.items()]
+        gates_by_id={g['event_id']:g for g in gates}
+        notes={i:source_notes({**source,'watch_for':gates_by_id[i].get('watch_for')}) for i,source in sources.items()}
         policy = RANK_VERSION+READ_VERSION+SCREEN_VERSION
         market_identity=market_input(self.last_market)
         market_key = json.dumps(market_identity,sort_keys=True)
@@ -723,15 +713,15 @@ class Engine:
                 failure=db.execute('SELECT retry_after FROM failures WHERE cache_key=?',(failure_key,)).fetchone()
             rank_retry_at=failure[0] if failure else 0
         def result(rank_failed=False):
-            reviewed_ranking = [r for r in self.last_ranking if r['event_id'] in eligible and r['event_id'] in source_keys
+            reviewed_ranking = [{**r,**notes[r['event_id']]} for r in self.last_ranking if r['event_id'] in eligible and r['event_id'] in source_keys
                        and self.ranked_sources.get(r['event_id'])==source_keys[r['event_id']]]
             ranking = [r for r in reviewed_ranking if r['stock_relevance']=='주식 판단 재료']
             unreviewed=len(eligible)-len(reviewed_ranking)
             ranked = {r['event_id']:r for r in reviewed_ranking}
-            assessments = [{**gate,**ranked.get(gate['event_id'],{})} for gate in gates]
+            assessments = [{**gate,'screen_reason':gate.get('reason'),**ranked.get(gate['event_id'],{})} for gate in gates]
             return {'status': 'partial' if errors or not grouped or len(assessments) != len(grouped) or unreviewed else 'ok',
                     'message': '모델 참고 순위 · 검수 전' if grouped else '분석 가능한 본문 대기 · 원문 수집 실패 가능',
-                    'events': grouped, 'ranking': ranking, 'assessments':assessments, 'rank_policy':RANK_VERSION, 'ranking_role':'qualified_order', 'market': self.last_market, 'model': self.model,
+                    'events': grouped, 'ranking': ranking, 'assessments':assessments, 'rank_policy':RANK_VERSION, 'ranking_role':'qualified_order', 'rank_reason_source':'article_evidence', 'market': self.last_market, 'model': self.model,
                     'candidate_selection':'pointwise_priority' if priority_ready else 'input_order_pending_priority',
                     'updated_at': now(), 'ranked_at': datetime.fromtimestamp(self.ranked_at, timezone.utc).isoformat() if self.ranked_at else None,
                     'ranking_stale': not assessments or bool(candidates and not reviewed_ranking) or time.time() - self.ranked_at > 600,
@@ -755,7 +745,7 @@ class Engine:
                 STATE.clear()
                 STATE.update(progress)
             try:
-                ranking = [{**r,'event_id':labels[r['event_id']]} for r in self.rank(events,self.last_market)]
+                ranking = [{**r,'event_id':labels[r['event_id']],**notes[labels[r['event_id']]]} for r in self.rank(events,self.last_market)]
                 self.last_ranking, self.rank_key, self.ranked_at = ranking, rank_key, time.time()
                 self.ranked_sources = source_keys
                 with self.db() as db:
@@ -792,12 +782,27 @@ def validate_reading(value, body, anchor_ids):
         raise ValueError('존재하지 않는 사건 연결')
 
 
+def source_notes(event):
+    evidence=event.get('evidence')
+    if not isinstance(evidence,list) or not evidence or any(not isinstance(q,str) or not 8<=len(q)<=500 for q in evidence):
+        raise ValueError('정렬 원문 근거 오류')
+    watch=event.get('watch_for')
+    if watch is None or watch=='':
+        watch='후속 공시·수치와 가격 반영 여부 확인'
+    if not isinstance(watch,str) or not 1<=len(watch)<=800:
+        raise ValueError('다음 확인 사항 오류')
+    return {'reason':evidence[0],'watch_for':watch}
+
+
 def validate_ordering(value, ids):
     if not isinstance(value,dict) or set(value)!={'ranking'} or not isinstance(value['ranking'],list):
         raise ValueError('정렬 스키마 오류')
-    if any(not isinstance(r,dict) or set(r)!={'event_id','reason','watch_for'} for r in value['ranking']):
-        raise ValueError('정렬 단계는 적합성을 다시 분류할 수 없습니다.')
-    return validate_ranking({'ranking':[{**r,'stock_relevance':'주식 판단 재료'} for r in value['ranking']]},ids)
+    rows=value['ranking']
+    if any(not isinstance(i,str) for i in rows):
+        raise ValueError('정렬 단계는 사건 ID만 반환해야 합니다.')
+    if len(rows)!=len(ids) or set(rows)!=ids:
+        raise ValueError('순위 누락·중복·허구 ID')
+    return rows
 
 
 def validate_ranking(value, ids):
