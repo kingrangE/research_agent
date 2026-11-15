@@ -224,7 +224,7 @@ class Store:
                  'stock_relevance':json.loads(r['assessment']).get('stock_relevance'),
                  'assessment_reason':json.loads(r['assessment']).get('reason'),
                  **{k:json.loads(r['result']).get(k) for k in
-                 ('event_title','summary','certainty','amount','timing','source_url','published_at','analyzed_at','evidence')}} for r in reversed(rows)]
+                 ('event_title','summary','certainty','amount','timing','timing_original','source_url','published_at','analyzed_at','evidence')}} for r in reversed(rows)]
 
     def summary(self):
         as_of=time.time()

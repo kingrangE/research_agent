@@ -247,6 +247,19 @@ class AnalysisStoreTest(unittest.TestCase):
         self.assertEqual([h['event_id'] for h in history],['event-first','event-second'])
         self.assertIsNone(self.store.claim())
 
+    def test_rejected_model_time_survives_history_but_cannot_reenter_anchors(self):
+        self.store.enqueue([{'article':self.article(1)}])
+        job=self.store.claim()
+        self.store.complete(job,{'article_id':'1','event_id':'event','event_title':'한빛에너지 계약',
+            'entities':['한빛에너지'],'summary':'계약을 체결했다.','evidence':['계약을 체결했다.'],
+            'published_at':job['article']['published_at'],'timing':'미확인','timing_original':'2026-11-11',
+            'read_policy_version':'read-v1'},{'stock_relevance':'주식 판단 재료'})
+        saved=self.store.history('event')[0]
+        self.assertEqual((saved['timing'],saved['timing_original']),('미확인','2026-11-11'))
+        anchor=self.store.anchors(self.article(2),'read-v1')[0]
+        self.assertEqual(anchor['timing'],'미확인')
+        self.assertNotIn('timing_original',anchor)
+
     def test_retry_and_expired_lease_survive_restart_without_stale_completion(self):
         with patch('analysis_store.time.time',return_value=1000):
             self.store.enqueue([{'article':self.article(1)}])

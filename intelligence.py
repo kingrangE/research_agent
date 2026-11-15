@@ -38,7 +38,7 @@ def schema(properties):
 
 
 TEXT = {'type': 'string'}
-READ_VERSION = 'source-passages-v6-contract-parties'
+READ_VERSION = 'source-passages-v7-source-time'
 READ_SCHEMA = schema({'summary': TEXT, 'event_title': TEXT, 'event_type': TEXT,
     'entities': {'type': 'array', 'items': TEXT}, 'certainty': {'type': 'string', 'enum': ['확정', '계획', '전망', '부인', '미확인'],
         'description':'핵심 경제 사건의 진행 단계. 검토·추진 중인 제도/계약은 계획, 예측은 전망, 이미 체결·시행·발생한 사실은 확정. 발표나 발언이 실제 있었다는 이유로 그 안의 계획을 확정으로 바꾸지 않는다.'},
@@ -107,6 +107,20 @@ def source_passages(body):
         tail=chunks.pop()
         chunks[-1]+=tail
     return [{'id':i+1,'text':text} for i,text in enumerate(chunks)]
+
+
+def source_timing(value, body):
+    def normalize(text):
+        text=re.sub(r'\s+','',text)
+        text=re.sub(r'(?<!\d)(\d{4})[./-](\d{1,2})[./-](\d{1,2})(?!\d)',
+                    lambda m:f'{m[1]}년{int(m[2])}월{int(m[3])}일',text)
+        text=re.sub(r'(?<!\d)(\d{4})년(\d{1,2})월(\d{1,2})일',
+                    lambda m:f'{m[1]}년{int(m[2])}월{int(m[3])}일',text)
+        return re.sub(r'(?<!\d)(\d{4})년?[~∼〜–—-](\d{4})년?(?!\d)',
+                      lambda m:f'{m[1]}년부터{m[2]}년까지',text)
+    text=normalize(value)
+    # shortcut: 표기만 대조하며, 배경 날짜 혼동을 줄일 때 사건별 시점 근거 검증으로 보강한다.
+    return value if text and (value=='미확인' or re.search(r'(?<!\d)'+re.escape(text)+r'(?!\d)',normalize(body))) else '미확인'
 
 
 def entity_mentions(body, entities):
@@ -435,6 +449,9 @@ class Engine:
             raise ValueError('원문 구간 선택 오류')
         output={**output,'evidence':[passages[i-1]['text'] for i in ids]}
         validate_reading(output,body,{a['event_id'] for a in anchors[-6:]})
+        timing=source_timing(output['timing'],body)
+        if timing!=output['timing']:
+            output={**output,'timing':timing,'timing_original':output['timing']}
         return separate_event_update(output,anchors[-6:])
 
     def cached_reading(self, article):

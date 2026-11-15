@@ -448,12 +448,18 @@ test('market context shows only representative ETF observations with timestamps,
 
 test('article detail shows structured facts and keeps evidence and scoring behind one disclosure', () => {
   const run=ui();
-  run(`data={articles:[{id:'a',title:'신규 계약',source:'공개 피드',themes:[],score_parts:{freshness:40},reason:'제목 설명',related_stocks:[{code:'005930',name:'삼성전자'}]}],intelligence:{events:[{event_id:'e',summary:'새 공급 계약을 발표했다.',certainty:'확정',event_type:'수주',amount:'100억원',timing:'2026년',model:'test-model',articles:[{id:'a',evidence:['<검증된 원문>'],url:'javascript:bad'}]}],assessments:[{event_id:'e',reason:'매출 변화 확인',watch_for:'공시 확인',stock_relevance:'주식 판단 재료'}]}};renderDetail('a')`);
+  run(`data={articles:[{id:'a',title:'신규 계약',source:'공개 피드',themes:[],score_parts:{freshness:40},reason:'제목 설명',related_stocks:[{code:'005930',name:'삼성전자'}]}],intelligence:{events:[{event_id:'e',summary:'새 공급 계약을 발표했다.',certainty:'확정',event_type:'수주',amount:'100억원',timing:'미확인',timing_original:'<2026-11-11>',model:'test-model',articles:[{id:'a',evidence:['<검증된 원문>'],url:'javascript:bad'}]}],assessments:[{event_id:'e',reason:'매출 변화 확인',watch_for:'공시 확인',stock_relevance:'주식 판단 재료'}]}};renderDetail('a')`);
   const html=run(`$('#detail').innerHTML`);
   const [visible,more]=html.split('<details class="detail-more">');
   assert.ok(visible.includes('핵심 사건'));
   assert.ok(visible.includes('<dt>규모</dt><dd>100억원</dd>'));
   assert.ok(visible.includes('<dt>사건 상태</dt><dd>확정</dd>'));
+  assert.ok(visible.includes('<dt>시점 · 기사 기준</dt><dd>미확인</dd>'));
+  assert.ok(!visible.includes('2026-11-11'));
+  assert.ok(more.includes('원문에서 대조하지 못한 모델 시점: &lt;2026-11-11&gt;'));
+  assert.ok(!more.includes('<2026-11-11>'));
+  const history=run(`eventHistoryHTML({history:[{timing:'미확인',timing_original:'<이전 모델 날짜>',summary:'계약 체결'}]})`);
+  assert.ok(history.includes('원문에서 대조하지 못한 모델 시점: &lt;이전 모델 날짜&gt;'));
   assert.ok(visible.includes('매출 변화 확인'));
   assert.ok(visible.includes('공시 확인'));
   assert.ok(visible.includes('stock-chip'));

@@ -23,6 +23,45 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def test_captured_unsupported_time_cannot_become_a_fact_or_discard_other_facts(self):
+        body='가상 종합지수는 전일 대비 2.5% 상승 마감했다. 기관 매수가 확대됐다.'
+        for timing in ('오늘','현재','2026-11-11'):
+            raw={'summary':'가상 종합지수는 전일 대비 2.5% 상승 마감.',
+                 'event_title':'가상 종합지수 2.5% 상승 마감','event_type':'주가 변동',
+                 'entities':[],'certainty':'확정','amount':'2.5% 상승','timing':timing,
+                 'evidence':[1],'match_event_id':''}
+            with self.subTest(timing=timing),patch.object(self.engine,'call',return_value=raw):
+                result=self.engine.extract_reading(body,{'id':'current','title':'가상 종합지수 2.5% 상승 마감'},[{'event_id':'older','timing':timing}])
+                self.assertEqual(result['timing'],'미확인')
+                self.assertEqual(result['timing_original'],timing)
+                self.assertEqual({k:v for k,v in result.items() if k not in ('timing','timing_original','evidence')},
+                                 {k:v for k,v in raw.items() if k not in ('timing','evidence')})
+                self.assertEqual(result['evidence'],[body])
+                self.assertEqual(raw['timing'],timing)
+
+    def test_time_source_check_preserves_dates_ranges_and_explicit_relative_time(self):
+        cases=[('2027~2029년','공급 기간은 2027년부터 2029년까지다.','2027~2029년'),
+               ('2027년 ~ 2029년','계약 기간은 2027년부터 2029년까지다.','2027년 ~ 2029년'),
+               ('2026-11-11','11일 계약을 체결했다고 밝혔다.','미확인'),
+               ('2026-11-11','2026년 11월 11일 계약을 체결했다.','2026-11-11'),
+               ('2026.01.02','2026년 1월 2일 계약을 체결했다.','2026.01.02'),
+               ('2026년 1월 2일','계약일은 2026-01-02다.','2026년 1월 2일'),
+               ('2027~2029년','계약 기간은 2027년부터 2030년까지다.','미확인'),
+               ('11일','계약일은 21일이라고 밝혔다.','미확인'),
+               ('1일','계약일은 11일이라고 밝혔다.','미확인'),
+               ('2027~2029년','숫자 12027~2029년은 기간이 아니다.','미확인'),
+               ('3분기','3분기 실적을 발표했다고 밝혔다.','3분기'),
+               ('오늘부터','지원 제도는 오늘부터 시행된다.','오늘부터'),
+               ('오늘','가상 종합지수는 2.5% 상승 마감했다.','미확인'),
+               ('미확인','계약 기간은 공개하지 않았다.','미확인'),
+               ('','계약 기간은 공개하지 않았다.','미확인')]
+        for timing,body,expected in cases:
+            with self.subTest(timing=timing,body=body),patch.object(self.engine,'call',return_value={**READING,'timing':timing,'evidence':[1]}):
+                result=self.engine.extract_reading(body,ARTICLE,[])
+                self.assertEqual(result['timing'],expected)
+                if expected==timing:
+                    self.assertNotIn('timing_original',result)
+
     def test_captured_customer_swap_cannot_merge_but_same_customer_reprint_can(self):
         dataset=json.loads((Path('tests/fixtures')/'event_linking_eval.json').read_text())
         cases={c['id']:c for c in dataset['clusters']}
