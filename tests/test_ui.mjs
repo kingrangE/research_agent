@@ -117,6 +117,26 @@ test('briefing expands the same reviewed order without navigating into all news'
   assert.ok(!run(`$('#articles').innerHTML`).includes('article-card'));
 });
 
+test('current screening coverage stays distinct from source facts and shortlist readiness', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{candidate_selection:'pointwise_priority',coverage:{events:20,screened_events:3,screen_pending_events:17,eligible_events:2,priority_scored_events:2,priority_pending_events:0}}};render()`);
+  assert.ok(run(`$('#list-caption').textContent`).includes('선별 판정 3/20개 사건'));
+  let html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('현행 선별 기준 대기 17개'));
+  assert.ok(html.includes('이전 선별 판정을 새 추천으로 승계하지 않습니다'));
+  run(`data.intelligence.coverage.screened_events=20;data.intelligence.coverage.screen_pending_events=0;render()`);
+  html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('선별 판정 20/20개 사건'));
+  assert.ok(!run(`$('#list-caption').textContent`).includes('선별 판정'));
+});
+
+test('missing screening coverage never invents a completed or zero review count', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{coverage:{events:20}}};render()`);
+  assert.ok(!run(`$('#source-view').innerHTML`).includes('원문 분석과 선별 판정'));
+  assert.ok(!run(`$('#list-caption').textContent`).includes('선별 판정'));
+});
+
 test('priority backfill discloses fallback while full coverage discloses the limited shortlist', () => {
   const run=ui();
   run(`data={articles:[],sources:[],intelligence:{candidate_selection:'input_order_pending_priority',coverage:{eligible_events:20,reviewed_events:12,unreviewed_events:8,priority_scored_events:7,priority_pending_events:13}}};render()`);
