@@ -23,6 +23,73 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def test_separate_legal_counterparties_cannot_merge_via_the_same_stock(self):
+        catalogue={'NVDA.O':{'code':'NVDA.O','name':'NVIDIA','legal_name':'NVIDIA Corporation','country':'US'},
+                   'GOOGL.O':{'code':'GOOGL.O','name':'Alphabet Class A','legal_name':'Alphabet Inc.','country':'US'}}
+        matcher,names=ai.stocks.compile_names(catalogue)
+        old_body='NVIDIA Corporation은 Google LLC와 공급 계약을 체결했다.'
+        body='NVIDIA Corporation은 Alphabet Inc.와 별도의 공급 계약을 체결했다.'
+        anchor={**READING,'event_id':'old','event_title':'NVIDIA Corporation Google LLC 공급 계약',
+                'entities':['NVIDIA Corporation','Google LLC'],'summary':old_body,'evidence':[old_body]}
+        raw={**READING,'summary':body,'event_title':'NVIDIA Corporation Alphabet Inc. 공급 계약',
+             'entities':['NVIDIA Corporation','Alphabet Inc.'],'evidence':[1],'match_event_id':'old'}
+        with patch.object(ai.stocks,'CATALOGUE',catalogue),patch.object(ai.stocks,'NAME_MATCHER',matcher),patch.object(ai.stocks,'NAME_CODES',names),patch.object(self.engine,'call',return_value=raw):
+            result=self.engine.extract_reading(body,{'id':'current','title':raw['event_title'],'published_at':'2026-11-11T00:00:00Z'},[anchor])
+        self.assertEqual(result['match_event_id'],'')
+        self.assertEqual(result['summary'],body)
+        short={**raw,'event_title':'NVIDIA Alphabet 공급 계약','entities':['NVIDIA','Alphabet']}
+        short_anchor={**anchor,'event_title':'NVIDIA Google 공급 계약','entities':['NVIDIA','Google']}
+        with patch.object(ai.stocks,'CATALOGUE',catalogue),patch.object(ai.stocks,'NAME_MATCHER',matcher),patch.object(ai.stocks,'NAME_CODES',names),patch.object(self.engine,'call',return_value=short):
+            self.assertEqual(self.engine.extract_reading(body,{'id':'current','title':short['event_title'],'published_at':'2026-11-11'},[short_anchor])['match_event_id'],'')
+
+    def test_legal_party_guard_keeps_reprints_and_abstains_without_specific_legal_names(self):
+        catalogue={'NVDA.O':{'code':'NVDA.O','name':'NVIDIA','legal_name':'NVIDIA Corporation','country':'US'},
+                   'GOOGL.O':{'code':'GOOGL.O','name':'Alphabet Class A','legal_name':'Alphabet Inc.','country':'US'},
+                   'AMZN.O':{'code':'AMZN.O','name':'Amazon','legal_name':'Amazon.com, Inc.','country':'US'}}
+        matcher,names=ai.stocks.compile_names(catalogue)
+        cases=[('Amazon.com, Inc.','Amazon Web Services, Inc.','2026-11-11',''),
+               ('Amazon Web Services, Inc.','Amazon Web Services EMEA SARL','2026-11-11',''),
+               ('Amazon Web Services, Inc.','Amazon Web Services Inc.','2026-11-11','old'),
+               ('Google LLC','Google L.L.C.','2026-11-11','old'),
+               ('AWS','Amazon Web Services, Inc.','2026-11-11','old'),
+               ('Amazon Web Services, Inc.','Amazon Web Services EMEA SARL','2026-10-28','old')]
+        for old_name,current_name,date,expected in cases:
+            old_body=f'NVIDIA Corporation은 {old_name}와 공급 계약을 체결했다.'
+            body=f'NVIDIA Corporation은 {current_name}와 공급 계약을 체결했다.'
+            anchor={**READING,'event_id':'old','event_title':f'NVIDIA Corporation {old_name} 공급 계약',
+                    'entities':['NVIDIA Corporation',old_name],'summary':old_body,'evidence':[old_body]}
+            raw={**READING,'summary':body,'event_title':f'NVIDIA Corporation {current_name} 공급 계약',
+                 'entities':['NVIDIA Corporation',current_name],'evidence':[1],'match_event_id':'old'}
+            with self.subTest(old=old_name,current=current_name,date=date),patch.object(ai.stocks,'CATALOGUE',catalogue),patch.object(ai.stocks,'NAME_MATCHER',matcher),patch.object(ai.stocks,'NAME_CODES',names),patch.object(self.engine,'call',return_value=raw):
+                result=self.engine.extract_reading(body,{'id':'current','title':raw['event_title'],'published_at':date},[anchor])
+                self.assertEqual(result['match_event_id'],expected)
+
+    def test_registered_legal_parties_remain_distinct_when_both_map_to_one_stock(self):
+        old_body='Google LLC와 Alphabet Inc.는 공급 계약을 체결했다.'
+        body='Google LLC와 Amazon.com, Inc.는 공급 계약을 체결했다.'
+        anchor={**READING,'event_id':'old','event_title':'Google LLC Alphabet Inc. 공급 계약',
+                'entities':['Google LLC','Alphabet Inc.'],'summary':old_body,'evidence':[old_body]}
+        output={**READING,'event_title':'Google LLC Amazon.com, Inc. 공급 계약',
+                'entities':['Google LLC','Amazon.com, Inc.'],'summary':body,'evidence':[body],'match_event_id':'old'}
+        def listed(name,*args):
+            code='AMZN.O' if name.startswith('Amazon') else 'GOOGL.O'
+            return [{'code':code,'relation':'direct'}]
+        with patch('intelligence.stocks.related_stocks',side_effect=listed):
+            self.assertEqual(ai.separate_event_update(output,[anchor],'2026-11-11')['match_event_id'],'')
+
+    def test_same_legal_party_is_preserved_across_security_identifiers(self):
+        anchor={**READING,'event_id':'old','event_title':'NVIDIA Corporation Alphabet Inc. 공급 계약',
+                'entities':['NVIDIA Corporation','Alphabet Inc.'],
+                'evidence':['NVIDIA Corporation은 Alphabet Inc.와 공급 계약을 체결했다.']}
+        output={**READING,'event_title':'NVIDIA Corporation Alphabet, Inc. 공급 계약',
+                'entities':['NVIDIA Corporation','Alphabet, Inc.'],
+                'evidence':['NVIDIA Corporation은 Alphabet, Inc.와 공급 계약을 체결했다.'],'match_event_id':'old'}
+        def listed(name,*args):
+            code='NVDA.O' if name.startswith('NVIDIA') else 'GOOG.O' if name.startswith('Alphabet,') else 'GOOGL.O'
+            return [{'code':code,'relation':'direct'}]
+        with patch('intelligence.stocks.related_stocks',side_effect=listed):
+            self.assertEqual(ai.separate_event_update(output,[anchor],'2026-11-11')['match_event_id'],'old')
+
     def test_normalized_issuer_names_keep_literal_source_aliases_in_fresh_and_cached_views(self):
         import server
         catalogue={'122870':{'code':'122870','name':'와이지엔터테인먼트','market':'코스닥','country':'KR','industry':'엔터테인먼트','products':'음반'},
@@ -69,15 +136,17 @@ class IntelligenceTest(unittest.TestCase):
             self.assertEqual(match['start'],body.rindex('한빛,'))
             self.assertEqual(body[match['start']:match['end']],'한빛')
 
-    def seed_previous_time_policy(self, **changes):
-        article={**ARTICLE,'_analysis_body':BODY,'_body_version':ai.sha256(BODY.encode()).hexdigest()}
-        previous={**READING,'timing':'2026-11-11','read_policy_version':'source-passages-v6-contract-parties',
+    def seed_previous_time_policy(self, cache_policy='source-passages-v6-contract-parties', body=BODY, **changes):
+        article={**ARTICLE,'_analysis_body':body,'_body_version':ai.sha256(body.encode()).hexdigest()}
+        previous={**READING,'timing':'2026-11-11','read_policy_version':cache_policy,
                   'article_id':article['id'],'article_title':article['title'],'source_url':article['url'],
                   'published_at':article['published_at'],'body_version':article['_body_version'],
-                  'body_chars':len(BODY),'model':self.engine.model,'analyzed_at':'2026-11-11T10:00:00+00:00',
+                  'body_chars':len(body),'model':self.engine.model,'analyzed_at':'2026-11-11T10:00:00+00:00',
                   'source_version_at':'2026-11-11T09:00:00+00:00','event_id':'original-event',**changes}
-        with patch.object(ai,'READ_VERSION','source-passages-v6-contract-parties'):
-            key=self.engine.reading_key(article,BODY)
+        with patch.object(ai,'READ_VERSION',cache_policy):
+            key=self.engine.reading_key(article,body)
+        if body!=BODY and 'evidence' not in changes:
+            previous['evidence']=[body]
         if 'event_id' not in changes:
             previous['event_id']=previous['match_event_id'] or 'event-'+key[:20]
         with self.engine.db() as db:
@@ -103,13 +172,48 @@ class IntelligenceTest(unittest.TestCase):
         with patch.object(other,'extract_reading',side_effect=AssertionError('재시작 후 중복 모델 호출')):
             self.assertEqual(other.reading(article,[]),result)
 
-    def test_time_revalidation_preserves_a_previously_approved_event_link(self):
+    def test_new_connection_check_rereads_linked_legacy_results_and_keeps_current_links(self):
+        for policy in ('source-passages-v6-contract-parties','source-passages-v7-source-time'):
+            body='한빛에너지는 Google LLC와 3000억원 규모의 공급 계약을 체결했다.'
+            article,_,_=self.seed_previous_time_policy(cache_policy=policy,body=body,entities=['한빛에너지','Google LLC'],event_title='한빛에너지 Google LLC 공급 계약',match_event_id='existing-contract')
+            with self.subTest(policy=policy),patch.object(self.engine,'extract_reading',return_value=copy.deepcopy(READING)) as read:
+                self.engine.reading(article,[])
+                read.assert_called_once()
         article,previous,_=self.seed_previous_time_policy(match_event_id='existing-contract')
-        with patch.object(self.engine,'extract_reading',side_effect=AssertionError('불필요한 재연결 모델 호출')):
+        with patch.object(self.engine,'extract_reading',side_effect=AssertionError('새 법인 검사가 적용되지 않는 연결의 중복 호출')):
+            self.assertEqual(self.engine.reading(article,[])['event_id'],previous['event_id'])
+        article,previous,_=self.seed_previous_time_policy(cache_policy=ai.READ_VERSION,match_event_id='existing-contract',timing='미확인')
+        with patch.object(self.engine,'extract_reading',side_effect=AssertionError('현재 승인 연결의 중복 호출')):
             result=self.engine.reading(article,[])
-        self.assertEqual(result['match_event_id'],'existing-contract')
         self.assertEqual(result['event_id'],previous['event_id'])
-        self.assertEqual(result['timing'],'미확인')
+
+    def test_unlinked_time_policy_cache_revalidates_but_does_not_override_a_newer_link(self):
+        article,old,old_key=self.seed_previous_time_policy()
+        article,previous,_=self.seed_previous_time_policy(cache_policy='source-passages-v7-source-time',timing='미확인',timing_original='2026-11-11')
+        with patch.object(self.engine,'extract_reading',side_effect=AssertionError('연결 없는 본문의 중복 호출')):
+            result=self.engine.reading(article,[])
+        self.assertEqual(result['timing_original'],previous['timing_original'])
+        self.assertEqual(result['analyzed_at'],previous['analyzed_at'])
+        body='한빛에너지는 Google LLC와 공급 계약을 체결했다.'
+        article,old,old_key=self.seed_previous_time_policy(body=body,entities=['한빛에너지','Google LLC'],event_title='한빛에너지 Google LLC 공급 계약')
+        article,_,_=self.seed_previous_time_policy(cache_policy='source-passages-v7-source-time',body=body,entities=['한빛에너지','Google LLC'],event_title='한빛에너지 Google LLC 공급 계약',match_event_id='existing-contract')
+        with self.engine.db() as db:
+            db.execute('INSERT INTO readings VALUES(?,?,?,?)',(old_key,article['id'],json.dumps(old),old['analyzed_at']))
+        with patch.object(self.engine,'extract_reading',return_value=copy.deepcopy(READING)) as read:
+            self.engine.reading(article,[])
+            read.assert_called_once()
+
+    def test_revalidation_preserves_an_event_id_inherited_from_an_earlier_policy(self):
+        article,original,_=self.seed_previous_time_policy()
+        checked={**original,'read_policy_version':'source-passages-v7-source-time',
+                 'timing':'미확인','timing_original':original['timing']}
+        with self.engine.db() as db:
+            key=self.engine.reading_key(article,BODY,'source-passages-v7-source-time')
+            db.execute('INSERT INTO readings VALUES(?,?,?,?)',(key,article['id'],json.dumps(checked),ai.now()))
+        with patch.object(self.engine,'extract_reading',side_effect=AssertionError('버전 전환으로 상속한 사건 ID의 불필요한 재분석')):
+            result=self.engine.reading(article,[])
+        self.assertEqual(result['event_id'],original['event_id'])
+        self.assertEqual(result['analyzed_at'],original['analyzed_at'])
 
     def test_time_revalidation_rejects_incompatible_metadata_and_invalid_facts(self):
         for change in ({'read_policy_version':'unknown-policy'},{'article_id':'other'},

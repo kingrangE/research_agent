@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, urlopen, HTTPRedirectHandler, build_opener
 
 import stocks
+import relations
 import archive
 import analysis_store
 
@@ -38,7 +39,7 @@ def schema(properties):
 
 
 TEXT = {'type': 'string'}
-READ_VERSION = 'source-passages-v7-source-time'
+READ_VERSION = 'source-passages-v8-legal-parties'
 READ_SCHEMA = schema({'summary': TEXT, 'event_title': TEXT, 'event_type': TEXT,
     'entities': {'type': 'array', 'items': TEXT}, 'certainty': {'type': 'string', 'enum': ['확정', '계획', '전망', '부인', '미확인'],
         'description':'핵심 경제 사건의 진행 단계. 검토·추진 중인 제도/계약은 계획, 예측은 전망, 이미 체결·시행·발생한 사실은 확정. 발표나 발언이 실제 있었다는 이유로 그 안의 계획을 확정으로 바꾸지 않는다.'},
@@ -157,7 +158,17 @@ def event_recency(published_at, as_of):
     return 'future' if age<0 else 'current' if age<=analysis_store.CURRENT_EVENT_SECONDS else 'old'
 
 
-def separate_event_update(output, anchors):
+def contract_party_names(event):
+    title=event.get('event_title') or ''
+    proof=' '.join(event.get('evidence') or [event.get('summary') or ''])
+    if not re.search(r'계약|수주',title+' '+(event.get('event_type') or '')):
+        return [],proof
+    names=[name for name in event.get('entities',[]) if isinstance(name,str) and len(name.strip())>=2
+           and name.casefold() in title.casefold() and name.casefold() in proof.casefold()]
+    return (names if len(names)==2 else []),proof
+
+
+def separate_event_update(output, anchors, as_of=None):
     anchor = next((a for a in anchors if a['event_id']==output['match_event_id']),None)
     if not anchor:
         return output
@@ -169,25 +180,33 @@ def separate_event_update(output, anchors):
         return {**output,'match_event_id':''}
     resolved={}
     def parties(event):
-        title=event.get('event_title') or ''
-        proof=' '.join(event.get('evidence') or [event.get('summary') or ''])
-        if not re.search(r'계약|수주',title+' '+(event.get('event_type') or '')):
-            return set()
-        names=[name for name in event.get('entities',[]) if isinstance(name,str) and len(name.strip())>=2
-               and name.casefold() in title.casefold() and name.casefold() in proof.casefold()]
-        if len(names)!=2:
-            return set()
-        result=set()
+        names,proof=contract_party_names(event)
+        if not names:
+            return {}
+        result={}
         for name in names:
             key=re.sub(r'\s+','',name).casefold()
             if key not in resolved:
                 codes={s['code'] for s in stocks.related_stocks(name+',') if s['relation']=='direct'}
                 resolved[key]='stock:'+next(iter(codes)) if len(codes)==1 else 'name:'+key
-            result.add(resolved[key])
+            legal=relations.legal_identity(name,as_of or output.get('published_at') or now(),source=proof)
+            identities=result.setdefault(resolved[key],set())
+            if legal:
+                identities.add(legal)
         return result
     old_parties,current_parties=parties(anchor),parties(output)
-    if len(old_parties)==len(current_parties)==2 and len(old_parties & current_parties)==1:
+    old_legal=set().union(*old_parties.values()) if old_parties else set()
+    current_legal=set().union(*current_parties.values()) if current_parties else set()
+    if len(old_legal)==len(current_legal)==2 and old_legal!=current_legal:
         return {**output,'match_event_id':''}
+    shared_legal=old_legal & current_legal
+    def known_keys(parties):
+        return {('legal:'+next(iter(ids)) if len(ids)==1 and ids & shared_legal else key):ids for key,ids in parties.items()}
+    old_parties,current_parties=known_keys(old_parties),known_keys(current_parties)
+    if len(old_parties)==len(current_parties)==2:
+        common=old_parties.keys() & current_parties.keys()
+        if len(common)==1 or any(old_parties[k] and current_parties[k] and old_parties[k].isdisjoint(current_parties[k]) for k in common):
+            return {**output,'match_event_id':''}
     return output
 
 
@@ -465,16 +484,20 @@ class Engine:
             raise ValueError('원문 구간 선택 오류')
         output={**output,'evidence':[passages[i-1]['text'] for i in ids]}
         validate_reading(output,body,{a['event_id'] for a in anchors[-6:]})
-        return separate_event_update(check_source_timing(output,body),anchors[-6:])
+        return separate_event_update(check_source_timing(output,body),anchors[-6:],article.get('published_at'))
 
     def revalidate_cached_reading(self, article, body):
-        # Only this transition keeps model instructions and prior connection rules unchanged.
-        if READ_VERSION!='source-passages-v7-source-time':
+        # Recheck affected links; the original candidate snapshot is not archived in this cache.
+        if READ_VERSION!='source-passages-v8-legal-parties':
             return None
-        policy='source-passages-v6-contract-parties'
-        key=self.reading_key(article,body,policy)
+        policies=('source-passages-v7-source-time','source-passages-v6-contract-parties')
+        row=None
         with self.db() as db:
-            row=db.execute('SELECT payload FROM readings WHERE cache_key=?',(key,)).fetchone()
+            for policy in policies:
+                key=self.reading_key(article,body,policy)
+                row=db.execute('SELECT payload FROM readings WHERE cache_key=?',(key,)).fetchone()
+                if row:
+                    break
         if not row:
             return None
         try:
@@ -488,7 +511,12 @@ class Engine:
                 return None
             facts={k:saved[k] for k in READ_SCHEMA['properties']}
             validate_reading(facts,body,{facts['match_event_id']})
-            if saved.get('event_id')!=(facts['match_event_id'] or 'event-'+key[:20]):
+            names,proof=contract_party_names(facts)
+            if facts['match_event_id'] and any(relations.legal_identity(n,article.get('published_at') or now(),source=proof) for n in names):
+                return None
+            event_ids=({facts['match_event_id']} if facts['match_event_id'] else
+                       {'event-'+self.reading_key(article,body,p)[:20] for p in policies[policies.index(policy):]})
+            if saved.get('event_id') not in event_ids:
                 return None
         except (ValueError,TypeError,KeyError):
             return None
