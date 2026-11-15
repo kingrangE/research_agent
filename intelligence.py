@@ -47,7 +47,7 @@ READ_SCHEMA = schema({'summary': TEXT, 'event_title': TEXT, 'event_type': TEXT,
 RELEVANCE = ['주식 판단 재료', '배경·상품 안내', '연결 미확인']
 RANK_VERSION = 'equity-catalyst-v6-factual-reasons'
 GATE_VERSION = 'equity-screen-v3-business-evidence'
-SCREEN_VERSION = 'source-passages-v4-pointwise-priority'
+SCREEN_VERSION = 'source-passages-v5-information-basis'
 RANK_SCHEMA = schema({'ranking': {'type': 'array', 'items': schema({'event_id': TEXT, 'reason': {'type':'string','description':'원문에 있는 당사자와 변경 사실만 요약. 매출·거래량·순이익의 추가 추정 금지'},
     'stock_relevance': {'type':'string','enum':RELEVANCE}, 'watch_for': TEXT})}})
 EQUITY_POLICY = '''목표는 일반 금융 뉴스 추천이 아니라 오늘·수일 내 국내·미국 주식 투자 판단에 쓸 새로운 재료 선별이다.
@@ -73,9 +73,14 @@ reason·watch_for 대조 예시 (실제 입력 사실이 아님):
 수수료 감면만으로 플랫폼 매출 증가 가능성까지 덧붙이거나 단가 인상만으로 공급업체 순이익 증가를 확정하지 않는다.'''
 DRIVERS = ['기업 실적·수주·경쟁·비용 변화', '상장사 자금조달·희석·상환 위험', '규제·인허가·법적 위험 변화',
            '예상 밖 금리·환율·수급·산업 충격', '금융상품 조건·청약·판매 안내', '홍보·행사·수상·반복 정보', '주식 영향 근거 미확인']
-GATE_SCHEMA = schema({'driver': {'type':'string','enum':DRIVERS}, 'impact_evidence':TEXT, 'reason':TEXT, 'watch_for':TEXT,
+CHANGE_BASES = ['실적·영업·자본·수급의 관측 변화', '권한 있는 주체의 구체적 조치·제안', '공식 확인·정정·근거 있는 추정 변경', '의견·청원·지지 표현', '배경·일반 안내', '근거 부족']
+GATE_SCHEMA = schema({'change_basis':{'type':'string','enum':CHANGE_BASES}, 'driver': {'type':'string','enum':DRIVERS}, 'impact_evidence':TEXT, 'reason':TEXT, 'watch_for':TEXT,
     'priority':{'type':'integer','minimum':0,'maximum':100}})
-GATE_POLICY = """한 사건만 검토하라. 목적은 오늘·수일 내 어떤 주식의 판단을 바꿀 새 근거인지 판정하는 것이다.
+GATE_POLICY = """먼저 change_basis에 현재 원문이 새로 전하는 투자 판단 정보의 성격을 분류한다. 새 실적·영업 조건·자본·시장 가격·수급이 관측됐으면 실적·영업·자본·수급의 관측 변화다. 이사회 결정·경영진 교체·구체적인 규제 개정안·주주가 제출한 주주총회 안건처럼 주체·내용·단계가 있으면 권한 있는 주체의 구체적 조치·제안이다. 아직 계획이라는 이유만으로 제외하지 않는다.
+투자 판단 정보는 신규 거래의 발생만이 아니다. 회사·고객의 계약 해지설 사실무근 공시처럼 기존 위험에 대한 공식 확인·정정도 중요한 새 정보다. 신규 수주나 새 실적 전망이 없어도 부인·정정 자체를 판단 재료로 유지하고 그 원문을 인용한다. 증권사가 구체적인 주문·가동률 등 근거를 반영해 실적 추정치를 수정한 보고서도 공식 확인·정정·근거 있는 추정 변경이다. 회사 실적과 증권사의 추정을 구분하고 추정을 실제 달성 실적으로 바꾸지 않는다. 이 세 성격의 정보에서 실제 전달 경로에 맞는 driver를 고르며, 근거가 있는 부인·추정 변경을 단순 의견으로 버리지 않는다.
+반대로 핵심이 제3자의 희망·일반 주장·온라인 청원 지지라면 의견·청원·지지 표현이다. 서명했다는 행동의 발생을 기업의 경제적 상태나 법적 조치의 변화로 바꾸지 않는다. 배경의 과거 경영진 교체·주가 하락·보유 규모를 청원 자체의 새 경제적 변화로 대신하지 않는다. 실제 조치나 새 관측·구체적 추정 변경이 없는 지지 표현의 impact_evidence는 0이다. 반복 정보·상품 일정은 배경·일반 안내, 확인할 수 없으면 근거 부족이다.
+
+한 사건만 검토하라. 목적은 오늘·수일 내 어떤 주식의 판단을 바꿀 새 근거인지 판정하는 것이다.
 먼저 source_passages에서 기업 실적·수주·영업 조건·자본·법적 의무 또는 실제 시장 가격/수급에 생긴 구체적인 변화를 직접 보여주는 원문 구간의 정수 id 하나를 impact_evidence로 선택하라. 그런 근거가 없으면 0으로 두어라. 문장을 새로 쓰거나 존재하지 않는 번호를 만들지 않는다. summary의 추정 설명을 원문 인용으로 대신하지 않는다.
 그 다음 확인된 경제적 변화를 driver에서 선택한다. '영향을 미칠 수 있다'는 상상, 평판/정치적 불확실성/일반 투자심리만으로 첫 네 driver를 선택하지 않는다. 경제적 변화가 원문 인용에 없으면 주식 영향 근거 미확인이다.
 정책 간담회의 의견 대립·일반적인 개선 주장·가정적인 우려만으로 상장사의 자금조달·상환 위험이나 법적 의무가 바뀌었다고 추정하지 않는다. 새로 제안된 규정도 적용 대상·의무·변경 조건이 구체적으로 제시됐다면 계획 단계의 판단 재료가 될 수 있다. 단순 논쟁과 구체적인 정책 변경안을 구분하며 계획을 시행된 사실로 바꾸지 않는다.
@@ -606,17 +611,20 @@ class Engine:
             row = db.execute('SELECT payload FROM screens WHERE cache_key=?',(key,)).fetchone()
         if row:
             saved=json.loads(row[0])
-            if priority_value(saved) is not None:
+            if (priority_value(saved) is not None and saved.get('change_basis') in CHANGE_BASES
+                    and not (saved.get('stock_relevance')=='주식 판단 재료' and saved['change_basis'] not in CHANGE_BASES[:3])):
                 return saved
             with self.db() as db:
                 db.execute('DELETE FROM screens WHERE cache_key=?',(key,))
-        source_schema=schema({'impact_evidence':{'type':'integer',
+        source_schema=schema({'change_basis':GATE_SCHEMA['properties']['change_basis'],'impact_evidence':{'type':'integer',
             'enum':list(range(len(passages)+1)),'description':'경제적 변화를 보여주는 원문 구간 id, 근거 없으면 0'},
-            **{k:v for k,v in GATE_SCHEMA['properties'].items() if k!='impact_evidence'}})
+            **{k:v for k,v in GATE_SCHEMA['properties'].items() if k not in ('change_basis','impact_evidence')}})
         # Generated summaries must not become factual evidence in the next model call.
         result = self.call('screen',payload,source_schema)
         if not isinstance(result,dict) or set(result)!=set(GATE_SCHEMA['properties']) or result.get('driver') not in DRIVERS or not isinstance(result.get('reason'),str) or not 1<=len(result['reason'])<=800 or not isinstance(result.get('watch_for'),str) or len(result['watch_for'])>800:
             raise ValueError('주식 적합성 판정 오류')
+        if result.get('change_basis') not in CHANGE_BASES:
+            raise ValueError('투자 판단 정보 성격 오류')
         if priority_value(result) is None:
             raise ValueError('기사 중요도 형식 오류')
         result = dict(result)
@@ -628,6 +636,9 @@ class Engine:
         if result['driver'] in DRIVERS[:4] and not evidence:
             result.update(model_driver=result['driver'],model_reason=result['reason'],driver=DRIVERS[-1],
                           reason='현재 원문 인용에서 주식 판단을 바꿀 구체적인 경제적 변화 근거를 확인하지 못했습니다.')
+        if result['driver'] in DRIVERS[:4] and result['change_basis'] not in CHANGE_BASES[:3]:
+            result.update(model_driver=result['driver'],model_reason=result['reason'],driver=DRIVERS[-1],
+                          reason='모델이 의견·배경 또는 근거 부족으로 분류한 자료이므로 주식 판단 재료로 채택하지 않았습니다.')
         result['assessed_at'] = now()
         result['screen_policy_version'] = SCREEN_VERSION
         result['stock_relevance'] = '주식 판단 재료' if result['driver'] in DRIVERS[:4] else '연결 미확인' if result['driver']==DRIVERS[-1] else '배경·상품 안내'
@@ -674,7 +685,7 @@ class Engine:
             with LOCK:
                 STATE.update(status='processing',message='분석 대기열 처리 중',model=self.model,
                              queue=self.queue.summary(),daily_call_limit=self.daily_limit,usage=self.usage())
-        readings, gates = self.queue.readings(articles,review_compatibility=review_compatibility)
+        readings, gates = self.queue.readings(articles,review_compatibility=review_compatibility,reading_policy=READ_VERSION)
         compatible=[(r,g) for r,g in zip(readings,gates) if r.get('read_policy_version')==READ_VERSION]
         readings=[r for r,_ in compatible]
         gates=[g for _,g in compatible]
@@ -729,6 +740,7 @@ class Engine:
                     'ranking_stale': not assessments or bool(candidates and not reviewed_ranking) or time.time() - self.ranked_at > 600,
                     'ranking_partial': rank_failed or self.rank_key != rank_key or len(assessments) != len(grouped) or bool(unreviewed),
                     'coverage': {'candidates': len(articles), 'analyzed_articles': len(readings), 'events': len(grouped),
+                                 'screened_events':len(gates),'screen_pending_events':len(grouped)-len(gates),
                                  'eligible_events':len(eligible),'reviewed_events':len(reviewed_ranking),'unreviewed_events':unreviewed,
                                  'priority_scored_events':scored,'priority_pending_events':len(eligible)-scored},
                     'queue': self.queue.summary(),
