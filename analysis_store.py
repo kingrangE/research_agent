@@ -173,20 +173,23 @@ class Store:
                      row['body'],row['published_epoch'],time.time(),row['result']))
                 break
 
-    def readings(self, articles, limit=None, review_compatibility=()):
+    def readings(self, articles, limit=None, review_compatibility=(), reading_policy=None):
         latest=self._latest(articles)
         selected=[]
         with self.db() as db:
             for article in articles:
                 row=latest.get(article['id'])
-                if row and row['status']!='done' and review_compatibility and row['job_key'].startswith('screen-review:') and row['result']:
+                if row and row['status']!='done' and (review_compatibility or reading_policy) and row['job_key'].startswith('screen-review:') and row['result']:
                     previous=db.execute('''SELECT * FROM analysis_jobs WHERE namespace=? AND article_id=?
                         AND status='done' AND id<? AND url=? AND title=? AND body_version=? AND article=? AND result=?
                         ORDER BY id DESC LIMIT 1''',(self.namespace,row['article_id'],row['id'],row['url'],row['title'],
                         row['body_version'],row['article'],row['result'])).fetchone()
-                    if previous and (json.loads(previous['result']).get('read_policy_version'),
-                                     json.loads(previous['assessment']).get('screen_policy_version')) in review_compatibility:
-                        row=previous
+                    if previous:
+                        version=json.loads(previous['result']).get('read_policy_version')
+                        policy=json.loads(previous['assessment']).get('screen_policy_version')
+                        # Reusing source facts does not approve the previous screen policy.
+                        if (version,policy) in review_compatibility or (reading_policy and version==reading_policy):
+                            row=previous
                 if row and row['status']=='done':
                     selected.append(row)
         selected=selected[:limit]

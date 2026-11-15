@@ -149,6 +149,24 @@ class AnalysisStoreTest(unittest.TestCase):
         self.store.enqueue([{'article':{**a,'title':'새 계약 조건'},'body':'새 본문','body_version':'body-v2'}])
         self.assertEqual(self.store.readings([{**a,'title':'새 계약 조건'}],review_compatibility=compatibility),([],[]))
 
+    def test_reading_only_fallback_keeps_facts_without_upgrading_the_old_assessment(self):
+        a=self.article(1)
+        reading={'event_id':'e','article_id':'1','read_policy_version':'read-v1','analyzed_at':'original'}
+        gate={'screen_policy_version':'old','stock_relevance':'주식 판단 재료','assessed_at':'original'}
+        self.store.enqueue([{'article':a,'body':'원문 근거','body_version':'body-v1'}])
+        self.store.complete(self.store.claim(),reading,gate)
+        expected=self.store.readings([a])
+        self.store.enqueue_reviews([a],'new','read-v1')
+        self.assertEqual(self.store.readings([a]),([],[]))
+        self.assertEqual(self.store.readings([a],reading_policy='read-v1'),expected)
+        self.assertEqual(self.store.readings([a],reading_policy='read-v2'),([],[]))
+        job=self.store.claim();self.store.retry(job,'retry')
+        self.assertEqual(self.store.readings([a],reading_policy='read-v1'),expected)
+        self.assertEqual(Store(self.path,'other-model').readings([a],reading_policy='read-v1'),([],[]))
+        newer={**a,'_version_at':'2026-11-11T01:00:00Z'}
+        self.store.enqueue([{'article':newer,'body':'변경된 본문','body_version':'body-v2'}])
+        self.assertEqual(self.store.readings([newer],reading_policy='read-v1'),([],[]))
+
     def test_compatible_review_never_skips_a_newer_completed_rejection(self):
         a=self.article(1);reading={'event_id':'event','article_id':'1','read_policy_version':'read-v1'}
         self.store.enqueue([{'article':a}]);self.store.complete(self.store.claim(),reading,{'screen_policy_version':'old','stock_relevance':'주식 판단 재료'})
