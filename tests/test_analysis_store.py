@@ -380,6 +380,34 @@ class AnalysisStoreTest(unittest.TestCase):
         self.assertEqual(isolated.summary()['done'],0)
         self.assertEqual(isolated.anchors(self.article(2),'read-v1'),[])
 
+    def test_candidate_retrieval_keeps_original_headlines_and_exact_matches_first(self):
+        title='이런 폭락장 뒤엔 항상 반전 있었다'
+        a=self.article(1,title=title)
+        self.store.enqueue([{'article':a}]);job=self.store.claim();self.finish(job)
+        with self.store.db() as db:
+            r=json.loads(db.execute('SELECT result FROM analysis_jobs WHERE id=?',(job['id'],)).fetchone()[0])
+            r.update(event_title='코스피 지수 급락 후 반등 가능성',entities=['코스피'])
+            db.execute('UPDATE analysis_jobs SET result=? WHERE id=?',(json.dumps(r),job['id']))
+        self.store.enqueue([{'article':self.article(2,title='다른 주제의 소개')}]);other=self.store.claim();self.finish(other,event='unrelated')
+        with self.store.db() as db:
+            r=json.loads(db.execute('SELECT result FROM analysis_jobs WHERE id=?',(other['id'],)).fetchone()[0])
+            r.update(event_title=title,entities=['코스피'])
+            db.execute('UPDATE analysis_jobs SET result=? WHERE id=?',(json.dumps(r),other['id']))
+        found=self.store.anchors(self.article(3,title=title),'read-v1',limit=1)
+        self.assertEqual([r['event_id'] for r in found],['event-contract'])
+        self.assertEqual(found[0]['article_title'],title)
+        self.assertEqual(found[0]['event_title'],'코스피 지수 급락 후 반등 가능성')
+        self.assertEqual(self.store.anchors(self.article(3,title=title,published_at='2026-11-10'),'read-v1'),[])
+
+    def test_candidate_uses_best_matching_reprint_without_future_or_own_revisions(self):
+        title='동일한 공급 계약 원문 제목'
+        for i,t in ((1,title),(2,'다른 표현의 후속 보도')):
+            self.store.enqueue([{'article':self.article(i,title=t)}]);self.finish(self.store.claim())
+        rows=self.store.anchors(self.article(3,title=title),'read-v1')
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]['article_title'],title)
+        self.assertEqual(self.store.anchors(self.article(1,title=title),'read-v1'),[])
+
     def test_candidate_policy_filter_precedes_the_recent_analysis_limit(self):
         self.store.enqueue([{'article':self.article(1)}]);self.finish(self.store.claim())
         self.store.enqueue([{'article':self.article(i)} for i in range(2,503)])

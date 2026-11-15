@@ -199,7 +199,7 @@ class Store:
         # shortcut: scan 500 compatible analyses; add embedding retrieval after recall evaluation.
         tokens = set(re.findall(r'[가-힣A-Za-z0-9]{2,}',article['title'].lower()))
         with self.db() as db:
-            rows = db.execute('''SELECT event_id,result FROM analysis_jobs WHERE namespace=? AND status='done'
+            rows = db.execute('''SELECT event_id,result,title FROM analysis_jobs WHERE namespace=? AND status='done'
                 AND json_extract(result,'$.read_policy_version')=?
                 ORDER BY finished_at DESC LIMIT 500''',(self.namespace,reading_policy)).fetchall()
         candidates = {}
@@ -213,13 +213,14 @@ class Store:
                 continue
             if epoch(article.get('_version_at')) and epoch(r.get('source_version_at')) > epoch(article['_version_at']):
                 continue
-            words = set(re.findall(r'[가-힣A-Za-z0-9]{2,}',(' '.join(r.get('entities',[]))+' '+r.get('event_title','')).lower()))
+            words = set(re.findall(r'[가-힣A-Za-z0-9]{2,}',(' '.join(r.get('entities',[]))+' '+r.get('event_title','')+' '+(row['title'] or '')).lower()))
             overlap = len(tokens & words)
-            if overlap and row['event_id'] not in candidates:
-                candidates[row['event_id']] = (overlap,r)
+            score=(row['title']==article['title'],overlap)
+            if overlap and (row['event_id'] not in candidates or score>candidates[row['event_id']][0]):
+                candidates[row['event_id']] = (score,r,row['title'])
         return [{**{k:r.get(k) for k in ('event_id','event_title','entities','published_at','summary','certainty','event_type','amount','timing')},
-                 'evidence':r.get('evidence',[])[:1]}
-                for _,r in sorted(candidates.values(),key=lambda x:x[0],reverse=True)[:limit]]
+                 'evidence':r.get('evidence',[])[:1], 'article_title':title}
+                for _,r,title in sorted(candidates.values(),key=lambda x:x[0],reverse=True)[:limit]]
 
     def first_published(self, event_ids):
         result = {}
