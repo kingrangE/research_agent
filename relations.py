@@ -141,10 +141,16 @@ def infer(title, catalogue, direct, as_of=None):
                 evidence, [relationship["condition"], *common_checks], kind=RELATION_NAMES[relationship["kind"]])
 
     if eligible:
-        if "policy" in event_ids:
-            roles = {"llm", "cloud", "enterprise_ai"}
+        scope = "AI"
+        # A concrete product scope narrows theme expansion, not direct or documented links.
+        if re.search(r"반도체|파운드리|가속기|AI\s*칩|인공지능\s*칩|\b(?:GPU|TPU|semiconductors?)\b", title, re.I):
+            roles = {"accelerator", "memory", "foundry", "packaging"}
+            scope = "AI 반도체"
         elif re.search(r"HBM|메모리", title, re.I):
             roles = {"memory", "packaging"}
+            scope = "AI 메모리"
+        elif "policy" in event_ids:
+            roles = {"llm", "cloud", "enterprise_ai"}
         elif re.search(r"LLM|파운데이션|기반.?모델|에이전트|기업용|소프트웨어", title, re.I) or ids & {"openai", "anthropic"}:
             roles = {"llm", "cloud", "enterprise_ai", "accelerator", "memory"}
         else:
@@ -168,15 +174,15 @@ def infer(title, catalogue, direct, as_of=None):
                 continue
             label = ROLE_NAMES[role]
             if "policy" in event_ids:
-                path = f"AI 생태계·정책 → {label} 사업 → {profile['label']}"
+                path = f"{scope} 생태계·정책 → {label} 사업 → {profile['label']}"
                 mechanism = "AI 생태계 사업 참여를 근거로 살펴볼 후보. 이 정책의 지원 대상·수주 여부는 확인되지 않음"
                 checks = ["정책 수혜 자격·선정 기업·예산 집행 확인", "비상장 지원 대상과 상장 사업자 구분"]
             elif "equity" in event_ids:
-                path = f"AI 기업 투자·자금 조달 → 사업 확대 가능성 → {label}"
+                path = f"{scope} 기업 투자·자금 조달 → 사업 확대 가능성 → {label}"
                 mechanism = "투자금이 해당 제품·서비스 구매로 이어질 경우의 간접 노출. 투자 발표만으로 발주는 확정되지 않음"
                 checks = ["지분 투자와 설비·구매 계약을 구분", "자금 사용처·고객·확정 발주와 매출 인식 시점 확인"]
             else:
-                path = f"AI 사건 → {label} 가치사슬 → {profile['label']}"
+                path = f"{scope} 사건 → {label} 가치사슬 → {profile['label']}"
                 mechanism = "공개된 해당 사업 참여를 근거로 연결한 가치사슬 후보. 개별 사건의 거래 상대방은 미확인"
                 checks = ["사건이 실제 제품·고객·수요와 연결되는지 확인", "효율 개선·규제·경쟁 변화는 영향 방향이 혼재할 수 있음"]
             add(profile["code"], "theme" if "policy" in event_ids else "value_chain", profile["activity"], path, mechanism,

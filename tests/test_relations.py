@@ -51,6 +51,30 @@ class RelatedResearchTest(unittest.TestCase):
         self.assertTrue(all(c["relation"] == "theme" for c in candidates))
         self.assertTrue(all("지원 대상" in c["mechanism"] and c["impact"] == "영향 미정" for c in candidates))
 
+    def test_specific_chip_scope_does_not_expand_to_unrelated_software_roles(self):
+        chip_roles={'memory','foundry','packaging','accelerator'}
+        profiles={p['code']:p for p in relations.KNOWLEDGE['profiles']}
+        for title in ("'대체불가' 삼전닉스 AI 반도체…세계 4위 수출대국 견인",
+                      'AI GPU 수요 확대', '정부, AI 반도체 유니콘 육성',
+                      'AI semiconductor 수요 확대', 'AI TPU 공급 계약'):
+            with self.subTest(title=title):
+                rows,_=self.infer(title)
+                self.assertTrue(rows)
+                self.assertIn('005930',{r['code'] for r in rows})
+                self.assertIn('000660',{r['code'] for r in rows})
+                self.assertTrue(all(set(profiles[r['code']]['roles']) & chip_roles for r in rows))
+                self.assertTrue(all(r['code'] not in {'035420','017670','018260','MSFT.O'} for r in rows))
+                self.assertTrue(all('반도체' in r['path'] for r in rows))
+                self.assertTrue(all(r['impact']=='영향 미정' and r['sources'] for r in rows))
+
+    def test_specific_product_scope_preserves_direct_and_documented_connections(self):
+        direct=[{**self.catalogue['035420'],'reason':'제목의 NAVER 직접 언급'}]
+        rows,_=self.infer('NAVER, AI 반도체 공급 계약',direct=direct)
+        self.assertEqual(rows[0]['code'],'035420')
+        self.assertEqual(rows[0]['relation'],'direct')
+        rows,_=self.infer('Anthropic AI 반도체 공급 계약')
+        self.assertTrue(any(r['relation']=='documented' and r['code']=='AMZN.O' for r in rows))
+
     def test_tsmc_investment_keeps_direct_issuer_and_expands_to_models_and_chips(self):
         title = "TSMC, 오픈 AI·엔트로픽에 10억달러 투자"
         candidates, analysis = self.infer(title)
