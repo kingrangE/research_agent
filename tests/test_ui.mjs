@@ -117,6 +117,29 @@ test('briefing expands the same reviewed order without navigating into all news'
   assert.ok(!run(`$('#articles').innerHTML`).includes('article-card'));
 });
 
+test('priority backfill discloses fallback while full coverage discloses the limited shortlist', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{candidate_selection:'input_order_pending_priority',coverage:{eligible_events:20,reviewed_events:12,unreviewed_events:8,priority_scored_events:7,priority_pending_events:13}}};render()`);
+  let html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('후보 중요도 평가 7/20개 사건'));
+  assert.ok(html.includes('보충 중 · 기존 순서로 비교'));
+  assert.ok(html.includes('미평가를 0점으로 두지 않습니다'));
+  assert.ok(html.includes('중요도 보충 중인 호환 선별 결과는 유지'));
+  run(`data.intelligence.candidate_selection='pointwise_priority';data.intelligence.coverage.priority_scored_events=20;data.intelligence.coverage.priority_pending_events=0;render()`);
+  html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('중요도순 후보 선정'));
+  assert.ok(html.includes('상위 최대 12개'));
+  assert.ok(html.includes('수익 확률'));
+  assert.ok(html.includes('최종 순위 검토 12/20개 사건'));
+});
+
+test('older responses never claim that missing priority coverage is completed or zero', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{coverage:{eligible_events:20,reviewed_events:12,unreviewed_events:8}}};render()`);
+  assert.ok(!run(`$('#source-view').innerHTML`).includes('후보 중요도 평가'));
+  assert.ok(!run(`$('#list-caption').textContent`).includes('중요도순 후보 선정'));
+});
+
 test('failed dashboard refresh keeps a persistent warning until a current request succeeds', async () => {
   let fail=false;
   const payload={articles:[],sources:[],updated_at:'2026-11-13T00:00:00Z',intelligence:{events:[],ranking:[]}};
