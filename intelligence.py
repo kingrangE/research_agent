@@ -273,8 +273,8 @@ def read_article(url):
         parser = ArticleParser()
         parser.feed(body.decode(response.headers.get_content_charset() or 'utf-8', errors='replace'))
     text = ' '.join(' '.join(parser.parts).split())
-    if len(text) < 120:
-        raise ValueError('본문 추출 실패 · 로그인·유료 원문 미지원')
+    if not text:
+        raise ValueError('본문 텍스트 없음 · 이미지·로그인·유료 원문 미지원')
     return text
 
 

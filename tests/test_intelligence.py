@@ -693,6 +693,26 @@ class IntelligenceTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             ai.ArticleRedirect().redirect_request(None,None,302,'',{},'http://127.0.0.1/private')
 
+    def test_public_reader_keeps_short_news_and_captions_but_rejects_missing_text(self):
+        caption='[인천공항=뉴시스] 전신 기자 = 원·달러 환율이 1330원대 후반에서 횡보하고 있는 가운데 15일 인천국제공항 1터미널 환전소 전광판에 환율이 표시돼 2026.11.15. photo1006@newsis.com'
+        for text in ('한빛에너지는 3000억원 공급 계약이 취소됐다고 공시했다.',caption,'짧음'):
+            response=MagicMock()
+            response.__enter__.return_value=response
+            response.headers.get_content_charset.return_value='utf-8'
+            response.read.return_value=('<nav>메뉴</nav><article id="dic_area">'+text+'</article><footer>푸터</footer>').encode()
+            with patch('intelligence.build_opener') as opener:
+                opener.return_value.open.return_value=response
+                self.assertEqual(ai.read_article(ARTICLE['url']),text)
+            if len(text)>=8:
+                self.assertEqual(ai.source_passages(text),[{'id':1,'text':text}])
+            else:
+                self.assertRaises(ValueError,ai.source_passages,text)
+        for html in ('<nav>본문 밖 메뉴</nav>','<article id="dic_area"> <img src="table.png"><script>숨긴 글</script></article>'):
+            response.read.return_value=html.encode()
+            with patch('intelligence.build_opener') as opener:
+                opener.return_value.open.return_value=response
+                self.assertRaises(ValueError,ai.read_article,ARTICLE['url'])
+
     def test_evidence_must_exist_and_cluster_id_must_be_supplied(self):
         ai.validate_reading(READING,BODY,set())
         bad=copy.deepcopy(READING);bad['evidence']=['허구의 공시와 계약 문장입니다.']
