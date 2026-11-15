@@ -23,6 +23,52 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def test_normalized_issuer_names_keep_literal_source_aliases_in_fresh_and_cached_views(self):
+        import server
+        catalogue={'122870':{'code':'122870','name':'와이지엔터테인먼트','market':'코스닥','country':'KR','industry':'엔터테인먼트','products':'음반'},
+                   '005930':{'code':'005930','name':'삼성전자','market':'유가증권','country':'KR','industry':'전자','products':'반도체'}}
+        body='삼성전자는 배경으로 언급됐다. 신한투자증권은 내년 와이지엔터의 실적을 전망했다.'
+        article={**ARTICLE,'title':'내년 엔터테인먼트 실적 전망','_analysis_body':body}
+        raw={**READING,'summary':'YG Entertainment의 내년 실적 전망이다.','event_title':'엔터테인먼트 실적 전망',
+             'entities':['YG Entertainment'],'certainty':'전망','amount':'미확인','timing':'내년','evidence':[1]}
+        with patch.dict(ai.stocks.ALIASES,{'122870':['YG Entertainment','와이지엔터']}):
+            matcher,names=ai.stocks.compile_names(catalogue)
+        with patch.object(ai.stocks,'CATALOGUE',catalogue),patch.object(ai.stocks,'NAME_MATCHER',matcher),patch.object(ai.stocks,'NAME_CODES',names),patch.object(self.engine,'call',return_value=raw):
+            fresh=self.engine.reading(article,[])
+            matched=ai.stocks.body_related_stocks(fresh['entity_mentions'],article['url'])
+            self.assertEqual([s['code'] for s in matched],['122870'])
+            self.assertEqual(fresh['entity_mentions'][0]['name'],'와이지엔터')
+            self.assertIn(fresh['entity_mentions'][0]['evidence'],body)
+            saved={**fresh,'entity_mentions':[]}
+            grouped,_=ai.group_events([saved],[GATE])
+            rendered=server.classify(article,reading=grouped[0]['articles'][0])
+            self.assertEqual([s['code'] for s in rendered['related_stocks']],['122870'])
+            self.assertEqual(rendered['related_stocks'][0]['relation'],'body')
+            self.assertEqual(saved['entity_mentions'],[])
+            self.assertEqual(grouped[0]['entities'],['YG Entertainment'])
+            split={**saved,'evidence':['첫 인용에서는 YG','Entertainment만 두 번째 인용에 등장했다.']}
+            separate_quotes,_=ai.group_events([split],[GATE])
+            self.assertEqual(separate_quotes[0]['articles'][0]['entity_mentions'],[])
+
+    def test_alias_evidence_cannot_link_other_issuers_or_expand_unknown_names(self):
+        catalogue={'111111':{'code':'111111','name':'한빛'},'222222':{'code':'222222','name':'한빛홀딩스'},
+                   '333333':{'code':'333333','name':'한빛우'}}
+        with patch.dict(ai.stocks.ALIASES,{'111111':['Example Parent','Shared Brand'],'222222':['Shared Brand']}):
+            matcher,names=ai.stocks.compile_names(catalogue)
+        with patch.object(ai.stocks,'NAME_MATCHER',matcher),patch.object(ai.stocks,'NAME_CODES',names),patch.object(ai.stocks,'related_stocks',side_effect=AssertionError('테마 확장 호출 금지')):
+            for entity,body in [('Example Parent','한빛홀딩스, 실적 전망 발표.'),
+                                ('Example Parent','한빛우, 배당 확대 발표.'),
+                                ('Shared Brand','한빛, 실적 전망 발표.'),
+                                ('PrivateModelCo','비상장 AI 기업과 한빛, 공동 행사.')]:
+                with self.subTest(entity=entity,body=body):
+                    self.assertEqual(ai.entity_mentions(body,[entity]),[])
+            body='한빛홀딩스, 실적 발표. 한빛, 공급 계약 체결.'
+            mentions=ai.entity_mentions(body,['Example Parent'])
+            self.assertEqual([m['name'] for m in mentions],['한빛'])
+            match=next(m for m in ai.stocks.direct_mentions(body) if m['code']=='111111')
+            self.assertEqual(match['start'],body.rindex('한빛,'))
+            self.assertEqual(body[match['start']:match['end']],'한빛')
+
     def seed_previous_time_policy(self, **changes):
         article={**ARTICLE,'_analysis_body':BODY,'_body_version':ai.sha256(BODY.encode()).hexdigest()}
         previous={**READING,'timing':'2026-11-11','read_policy_version':'source-passages-v6-contract-parties',

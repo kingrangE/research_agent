@@ -30,7 +30,9 @@ QUOTE_WAIT_SECONDS = 5
 QUOTE_POOL = ThreadPoolExecutor(max_workers=4)
 QUOTE_PENDING = {}
 ALIASES = {"000660": ["SK하이닉스", "하이닉스"], "005380": ["현대차"], "005930": ["삼전"],
-           "005490": ["포스코홀딩스"], "035420": ["네이버"], "030200": ["KT"]}
+           "005490": ["포스코홀딩스"], "035420": ["네이버"], "030200": ["KT"],
+           "122870": ["YG Entertainment", "와이지엔터"]}
+# YG identity: https://ygfamily.com/en/ir/stock ; 와이지엔터 is a reviewed article abbreviation.
 for entity in relations.KNOWLEDGE["entities"]:
     if entity["code"]:
         ALIASES.setdefault(entity["code"], []).extend(entity["aliases"])
@@ -187,11 +189,8 @@ def catalogue_collector():
         time.sleep(86400 if success else 300)
 
 
-def related_stocks(title, as_of=None):
-    with LOCK:
-        catalogue = dict(CATALOGUE)
-        matcher, names = NAME_MATCHER, NAME_CODES
-    direct = []
+def _direct_mentions(title, matcher, names):
+    seen = set()
     for match in matcher.finditer(title) if matcher else []:
         name = match.group()
         code = names[name.lower()]
@@ -202,9 +201,25 @@ def related_stocks(title, as_of=None):
         if len(name) <= 2 and not (re.search(r"주가|실적|매출|영업|배당|주주|수주|상장|목표가|자사주|매수|매도", title)
                                            or re.match(r"\s*[,，:：]", title[match.end():])):
             continue
-        if any(s["code"] == code for s in direct):
+        if code in seen:
             continue
-        direct.append({**catalogue[code], "relation": "direct", "reason": f"기사 제목에 ‘{name}’ 직접 언급", "evidence": name})
+        seen.add(code)
+        yield {'code':code,'text':name,'start':match.start(),'end':match.end()}
+
+
+def direct_mentions(text):
+    with LOCK:
+        matcher,names=NAME_MATCHER,NAME_CODES
+    return list(_direct_mentions(text,matcher,names))
+
+
+def related_stocks(title, as_of=None):
+    with LOCK:
+        catalogue = dict(CATALOGUE)
+        matcher, names = NAME_MATCHER, NAME_CODES
+    direct = [{**catalogue[m['code']], 'relation':'direct',
+               'reason':f"기사 제목에 ‘{m['text']}’ 직접 언급",'evidence':m['text']}
+              for m in _direct_mentions(title,matcher,names)]
     inferred, analysis = relations.infer(title, catalogue, direct, as_of)
     if inferred or analysis["ai"]:
         return inferred

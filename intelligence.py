@@ -130,11 +130,22 @@ def check_source_timing(output, body):
 
 def entity_mentions(body, entities):
     mentions = []
+    body_matches = None
     for name in entities:
         match = re.search(re.escape(name),body,re.I) if len(name.strip())>=2 else None
         if match:
             start,end = match.span()
-            mentions.append({'name':name,'evidence':body[max(0,start-70):min(len(body),end+140)]})
+        else:
+            codes={m['code'] for m in stocks.direct_mentions(name+',')}
+            if len(codes)!=1:
+                continue
+            if body_matches is None:
+                body_matches=stocks.direct_mentions(body)
+            source=next((m for m in body_matches if m['code'] in codes),None)
+            if source is None:
+                continue
+            name,start,end=source['text'],source['start'],source['end']
+        mentions.append({'name':name,'evidence':body[max(0,start-70):min(len(body),end+140)]})
     return mentions
 
 
@@ -720,6 +731,12 @@ def group_events(readings, gates):
     groups, representatives = {}, {}
     as_of=analysis_store.epoch(now())
     for r,g in zip(readings,gates):
+        mentions=list(r.get('entity_mentions',[]))
+        for quote in r.get('evidence',[]):
+            for mention in entity_mentions(quote,r.get('entities',[])):
+                if not any(m['name']==mention['name'] for m in mentions):
+                    mentions.append(mention)
+        r={**r,'entity_mentions':mentions}
         published=analysis_store.epoch(r.get('published_at'))
         current_gate=g.get('screen_policy_version')==SCREEN_VERSION
         priority=(0<published<=as_of,current_gate,current_gate and g.get('stock_relevance')=='주식 판단 재료',published,r['article_id'])

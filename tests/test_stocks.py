@@ -15,6 +15,7 @@ CATALOGUE = {
     "001680": {"code": "001680", "name": "대상", "market": "유가증권", "industry": "식품", "products": "식품"},
     "217500": {"code": "217500", "name": "러셀", "market": "코스닥", "industry": "전자", "products": "반도체 장비"},
     "030200": {"code": "030200", "name": "케이티", "market": "유가증권", "industry": "통신", "products": "통신"},
+    "122870": {"code": "122870", "name": "와이지엔터테인먼트", "market": "코스닥", "industry": "엔터테인먼트", "products": "음반"},
 }
 QUOTE = {"itemCode": "003470", "stockName": "유안타증권", "closePrice": "3,935", "fluctuationsRatio": "2.88",
          "compareToPreviousPrice": {"code": "2"}, "localTradedAt": "2026-11-11T15:42:16+09:00", "delayTimeName": "실시간", "marketStatus": "OPEN"}
@@ -46,6 +47,12 @@ class StocksTest(unittest.TestCase):
         self.assertEqual([s["code"] for s in stocks.related_stocks("하이닉스가 투자 확대")], ["000660"])
         self.assertEqual(len(stocks.related_stocks("삼성전자와 SK하이닉스, HBM 투자 확대")), 2)
         self.assertEqual(stocks.related_stocks("삼성전자우, 배당 확대"), [])
+
+    def test_verified_issuer_english_name_and_reviewed_news_abbreviation(self):
+        for name in ('YG Entertainment','와이지엔터','와이지엔터테인먼트'):
+            with self.subTest(name=name):
+                self.assertEqual([s['code'] for s in stocks.related_stocks(name+', 실적 전망')],['122870'])
+        self.assertEqual(stocks.related_stocks('YG PLUS, 실적 전망'),[])
 
     def test_ambiguous_names_and_broker_attribution_are_not_company_matches(self):
         for title in ["FDA, 비만약 실명 위험 경고…릴리·노보 대상", "러셀 브랜드, 징역 선고", "케이티 페리 전남편 소식", "시장 반등 전망-한화"]:
