@@ -274,6 +274,15 @@ def read_article(url):
     return text
 
 
+def market_input(market):
+    # Polling clocks are not new observations; trade times and provider context still are.
+    result={k:v for k,v in market.items() if k not in ('as_of','fetched_epoch')}
+    if isinstance(result.get('observations'),list):
+        result['observations']=[{k:v for k,v in quote.items() if k!='fetched_at'} if isinstance(quote,dict) else quote
+                                for quote in result['observations']]
+    return result
+
+
 def market_snapshot():
     result, errors = [], []
     def get(item):
@@ -321,7 +330,7 @@ class Engine:
         self.ranked_sources = {}
         self.ranked_at = 0
         self.rank_key = ''
-        self.rank_namespace=sha256(json.dumps([self.queue.namespace,READ_VERSION,SCREEN_VERSION,RANK_VERSION]).encode()).hexdigest()
+        self.rank_namespace=sha256(json.dumps([self.queue.namespace,READ_VERSION,SCREEN_VERSION,RANK_VERSION,'market-input-v1']).encode()).hexdigest()
         self.rank_cache_error=None
         self.restore_rank()
 
@@ -666,9 +675,10 @@ class Engine:
             'first_published_at':e.get('first_published_at')} for e in candidates}
         events = [{'event_id':label,**sources[event_id]} for label,event_id in labels.items()]
         policy = RANK_VERSION+READ_VERSION+SCREEN_VERSION
-        market_key = json.dumps(self.last_market,sort_keys=True)
+        market_identity=market_input(self.last_market)
+        market_key = json.dumps(market_identity,sort_keys=True)
         source_keys = {event_id:sha256((policy+json.dumps(source,sort_keys=True)+market_key).encode()).hexdigest() for event_id,source in sources.items()}
-        rank_key = sha256((policy+json.dumps({'events':sources,'market':self.last_market},sort_keys=True)).encode()).hexdigest()
+        rank_key = sha256((policy+json.dumps({'events':sources,'market':market_identity},sort_keys=True)).encode()).hexdigest()
         rank_due=bool(candidates and (rank_key!=self.rank_key or time.time()-self.ranked_at>=300))
         failure_key='rank:'+self.rank_namespace+':'+rank_key
         rank_retry_at=0

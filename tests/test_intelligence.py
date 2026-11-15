@@ -977,6 +977,88 @@ class IntelligenceTest(unittest.TestCase):
             result=self.engine.cycle([ARTICLE])
         return reading,result
 
+    def seed_market_rank(self, rank_delay=0):
+        market={'as_of':'2026-11-11T12:00:00+00:00','missing':[],'limitations':'ETF 관측 일부',
+                'observations':[{'code':'SPY','name':'S&P500','change_percent':0.5,
+                    'traded_at':'2026-11-10T16:00:00-05:00','fetched_at':'2026-11-11T12:00:00+00:00',
+                    'market_status':'CLOSE','currency':'USD','source':'공개 시세','delay_label':'지연',
+                    'session':'regular','relative_to_spy_pp':0}]}
+        reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
+        clock=[ai.time.time()]
+        def finish(*args):
+            clock[0]+=rank_delay
+            return [rank_row('E1')]
+        with patch('intelligence.time.time',side_effect=lambda:clock[0]),patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value=market),patch.object(self.engine,'rank',side_effect=finish):
+            first=self.engine.cycle([ARTICLE])
+        return market,first
+
+    def test_market_poll_does_not_rerank_before_five_minutes_since_inference_completed(self):
+        market,first=self.seed_market_rank(rank_delay=60)
+        changed=copy.deepcopy(market);changed['as_of']='2026-11-11T12:05:01+00:00'
+        changed['observations'][0]['fetched_at']=changed['as_of']
+        with patch('intelligence.time.time',return_value=self.engine.ranked_at+241),patch('intelligence.market_snapshot',return_value=changed) as fetch,patch.object(self.engine,'rank') as rank:
+            result=self.engine.cycle([ARTICLE])
+        fetch.assert_called_once();rank.assert_not_called()
+        self.assertEqual(result['ranking'],first['ranking'])
+        self.assertEqual(result['ranked_at'],first['ranked_at'])
+        self.assertEqual(result['market']['as_of'],changed['as_of'])
+
+    def test_market_poll_times_keep_valid_rank_during_refresh_and_retry_after_restart(self):
+        market,first=self.seed_market_rank()
+        clock=self.engine.ranked_at+301
+        changed=copy.deepcopy(market);changed['as_of']='2026-11-11T12:05:00+00:00'
+        changed['observations'][0]['fetched_at']=changed['as_of']
+        progress=[]
+        def fail(*args):
+            progress.append(ai.snapshot())
+            raise TimeoutError()
+        with patch('intelligence.time.time',return_value=clock),patch.object(ai,'STATE',{}):
+            other=ai.Engine(self.engine.path)
+            with patch('intelligence.market_snapshot',return_value=changed),patch.object(other,'rank',side_effect=fail) as rank:
+                result=other.cycle([ARTICLE])
+        rank.assert_called_once()
+        self.assertEqual(progress[0]['ranking'],first['ranking'])
+        self.assertEqual(result['ranking'],first['ranking'])
+        self.assertFalse(result['ranking_stale']);self.assertTrue(result['ranking_partial'])
+        self.assertEqual(result['ranked_at'],first['ranked_at'])
+        self.assertEqual(result['market']['as_of'],changed['as_of'])
+        self.assertEqual(result['market']['observations'][0]['fetched_at'],changed['as_of'])
+        changed['as_of']='2026-11-11T12:05:10+00:00';changed['observations'][0]['fetched_at']=changed['as_of']
+        with patch('intelligence.time.time',return_value=clock+10):
+            restarted=ai.Engine(self.engine.path)
+            with patch('intelligence.market_snapshot',return_value=changed),patch.object(restarted,'rank') as rank:
+                waiting=restarted.cycle([ARTICLE])
+        rank.assert_not_called()
+        self.assertEqual(waiting['ranking'],first['ranking'])
+        self.assertEqual(waiting['rank_retry_at'],result['rank_retry_at'])
+        self.assertEqual(waiting['ranked_at'],first['ranked_at'])
+        with patch('intelligence.time.time',return_value=clock+301),patch('intelligence.market_snapshot',return_value=changed),patch.object(other,'rank',side_effect=TimeoutError):
+            expired=other.cycle([ARTICLE])
+        self.assertTrue(expired['ranking_stale'])
+        self.assertEqual(expired['ranked_at'],first['ranked_at'])
+
+    def test_actual_market_changes_do_not_keep_previous_rank_on_refresh_failure(self):
+        market,first=self.seed_market_rank()
+        changes=[('change_percent',-2),('traded_at','2026-11-11T16:00:00-05:00'),
+                 ('market_status','OPEN'),('currency','KRW'),('source','다른 제공처'),
+                 ('delay_label','실시간'),('session','extended'),('relative_to_spy_pp',1),
+                 ('new_observation_field','새 관측')]
+        variants=[]
+        for field,value in changes:
+            changed=copy.deepcopy(market);changed['observations'][0][field]=value;variants.append((field,changed))
+        variants.extend([('missing',{**market,'observations':[],'missing':['SPY']}),
+                         ('limitations',{**market,'limitations':'환율 관측 추가'}),
+                         ('new_context',{**market,'new_context':'새 시장 사실'})])
+        for name,changed in variants:
+            with self.subTest(field=name),patch('intelligence.time.time',return_value=self.engine.ranked_at+301):
+                other=ai.Engine(self.engine.path)
+                with patch('intelligence.market_snapshot',return_value=changed),patch.object(other,'rank',side_effect=TimeoutError) as rank:
+                    result=other.cycle([ARTICLE])
+                rank.assert_called_once()
+                self.assertEqual(result['ranking'],[])
+                self.assertTrue(result['ranking_stale'])
+                self.assertEqual(result['ranked_at'],first['ranked_at'])
+
     def test_saved_rank_isolated_by_model_and_each_analysis_policy(self):
         self.seed_saved_rank()
         for policy in ('READ_VERSION','SCREEN_VERSION','RANK_VERSION'):
@@ -990,6 +1072,17 @@ class IntelligenceTest(unittest.TestCase):
         with patch.dict(os.environ,{'LLM_PROVIDER':'gemini','LLM_MODEL':self.engine.model,'GEMINI_API_KEY':''}):
             other=ai.Engine(self.engine.path)
         self.assertEqual(other.last_ranking,[])
+
+    def test_previous_market_fingerprint_cache_namespace_is_not_restored_as_current(self):
+        self.seed_saved_rank()
+        old_namespace=ai.sha256(json.dumps([self.engine.queue.namespace,ai.READ_VERSION,ai.SCREEN_VERSION,ai.RANK_VERSION]).encode()).hexdigest()
+        with self.engine.db() as db:
+            payload=db.execute('SELECT payload FROM rank_snapshots WHERE namespace=?',(self.engine.rank_namespace,)).fetchone()[0]
+            db.execute('DELETE FROM rank_snapshots WHERE namespace=?',(self.engine.rank_namespace,))
+            db.execute('INSERT INTO rank_snapshots VALUES(?,?)',(old_namespace,payload))
+        other=ai.Engine(self.engine.path)
+        self.assertEqual(other.last_ranking,[])
+        self.assertIsNone(other.rank_cache_error)
 
     def test_restored_market_and_rank_still_refresh_after_the_original_five_minutes(self):
         self.seed_saved_rank()
@@ -1042,7 +1135,7 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(result['assessments'][0]['stock_relevance'],'배경·상품 안내')
 
     def test_failed_unchanged_rank_waits_while_background_readings_keep_progressing(self):
-        reading,_=self.seed_saved_rank()
+        reading,saved=self.seed_saved_rank()
         articles=[ARTICLE,*[{**ARTICLE,'id':i,'url':ARTICLE['url']+i} for i in ('b','c')]]
         clock=self.engine.ranked_at+301
         def background(article,anchors):
@@ -1054,7 +1147,9 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(second['queue']['done'],3)
         self.assertTrue(second['ranking_partial'])
         self.assertEqual(second['status'],'partial')
-        self.assertEqual(second['ranking'],[])
+        self.assertEqual(second['ranking'],saved['ranking'])
+        self.assertEqual(second['ranked_at'],saved['ranked_at'])
+        self.assertFalse(second['ranking_stale'])
         self.assertIsNotNone(first['rank_retry_at'])
         self.assertEqual(second['rank_retry_at'],first['rank_retry_at'])
 
