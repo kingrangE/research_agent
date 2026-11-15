@@ -13,7 +13,7 @@ import intelligence as ai
 from evaluate_models import evaluate, evaluate_equity, evaluate_ranking, evaluate_window_ranking, evaluate_pairwise
 
 BODY = '한빛에너지는 미국 고객사와 3000억원 규모의 전력변압기 공급 계약을 체결했다고 공시했다. 계약 기간은 2027년부터 2029년까지다.'
-GATE = {'driver':'기업 실적·수주·경쟁·비용 변화','reason':'실적에 영향을 주는 계약 변화','watch_for':'공시와 실적 전망 확인','stock_relevance':'주식 판단 재료','screen_policy_version':ai.SCREEN_VERSION}
+GATE = {'priority':50,'driver':'기업 실적·수주·경쟁·비용 변화','reason':'실적에 영향을 주는 계약 변화','watch_for':'공시와 실적 전망 확인','stock_relevance':'주식 판단 재료','screen_policy_version':ai.SCREEN_VERSION}
 READING = {'summary':'전력변압기 계약 체결','event_title':'한빛에너지 공급 계약','event_type':'계약','entities':['한빛에너지'],
            'certainty':'확정','amount':'3000억원','timing':'2027~2029년','evidence':[BODY.split('. ')[0]+'.'],'match_event_id':''}
 ANALYZED = {**READING,'read_policy_version':ai.READ_VERSION}
@@ -1411,6 +1411,69 @@ class IntelligenceTest(unittest.TestCase):
             self.assertEqual(result['coverage']['unreviewed_events'],1)
             self.assertEqual(len(result['ranking']),11)
 
+    def priority_candidates(self):
+        articles=[{**ARTICLE,'id':str(i),'url':ARTICLE['url']+str(i)} for i in range(14)]
+        readings=[{**ANALYZED,'event_id':a['id'],'article_id':a['id'],'source_url':a['url'],'published_at':a['published_at'],
+                   'evidence':[f'서로 다른 사건 {i}의 공시 원문 근거입니다.']} for i,a in enumerate(articles)]
+        gates=[dict(GATE,event_id=a['id'],priority=10) for a in articles]
+        gates[-2].update(stock_relevance='배경·상품 안내',priority=100)
+        return articles,readings,gates
+
+    def test_priority_shortlist_reaches_tail_events_without_promoting_background_scores(self):
+        articles,readings,gates=self.priority_candidates();gates[-1]['priority']=100
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=(readings,gates)),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=[rank_row('E'+str(i)) for i in range(1,13)]) as rank:
+            result=self.engine.cycle(articles)
+        evidence=[e['evidence'] for e in rank.call_args.args[0]]
+        self.assertEqual(evidence[0],readings[-1]['evidence'])
+        self.assertNotIn(readings[-2]['evidence'],evidence)
+        self.assertEqual(evidence[1:],[r['evidence'] for r in readings[:11]])
+        self.assertEqual(result['candidate_selection'],'pointwise_priority')
+        self.assertEqual(result['coverage']['priority_scored_events'],13)
+        self.assertEqual(result['coverage']['priority_pending_events'],0)
+        self.assertEqual(result['coverage']['reviewed_events'],12)
+        self.assertEqual(result['coverage']['unreviewed_events'],1)
+
+    def test_missing_priority_never_becomes_zero_or_displaces_unscored_events(self):
+        articles,readings,gates=self.priority_candidates()
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=(readings,gates)),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=[rank_row('E'+str(i)) for i in range(1,13)]) as rank:
+            gates[0].update(screen_policy_version='source-passages-v3-examples',priority=100)
+            legacy=self.engine.cycle(articles)
+            self.assertEqual(legacy['coverage']['priority_pending_events'],1)
+            self.assertEqual(legacy['candidate_selection'],'input_order_pending_priority')
+            gates[0]['screen_policy_version']=ai.SCREEN_VERSION
+            for value in (None,True,101,-1,'90'):
+                gates[0]['priority']=value
+                result=self.engine.cycle(articles)
+                self.assertEqual(result['candidate_selection'],'input_order_pending_priority')
+                self.assertEqual(result['coverage']['priority_pending_events'],1)
+                self.assertEqual([e['evidence'] for e in rank.call_args.args[0]],[r['evidence'] for r in readings[:12]])
+            gates[0]['priority']=0
+            result=self.engine.cycle(articles)
+            self.assertEqual(result['candidate_selection'],'pointwise_priority')
+            self.assertEqual(result['coverage']['priority_pending_events'],0)
+
+    def test_priority_backfill_keeps_compatible_legacy_selection_and_original_reading(self):
+        reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at'],'analyzed_at':ai.now()}
+        legacy={**GATE,'screen_policy_version':'source-passages-v3-examples','assessed_at':'old-assessment'}
+        legacy.pop('priority',None)
+        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=legacy),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=[rank_row('E1')]):
+            first=self.engine.cycle([ARTICLE])
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine,'rank') as rank:
+            pending=self.engine.cycle([ARTICLE])
+        rank.assert_not_called()
+        self.assertEqual(pending['ranking'],first['ranking'])
+        self.assertEqual(pending['coverage']['analyzed_articles'],1)
+        self.assertEqual(pending['coverage']['priority_pending_events'],1)
+        with patch.object(self.engine,'reading',side_effect=AssertionError('priority backfill must reuse the existing source reading')),patch.object(self.engine,'screen',return_value={**GATE,'priority':75}),patch.object(self.engine,'rank') as rank:
+            finished=self.engine.cycle([ARTICLE])
+        rank.assert_not_called()
+        self.assertEqual(finished['ranking'],first['ranking'])
+        self.assertEqual(finished['events'][0]['analyzed_at'],reading['analyzed_at'])
+        self.assertEqual(finished['coverage']['priority_pending_events'],0)
+        self.assertEqual(finished['candidate_selection'],'pointwise_priority')
+        with patch.object(ai,'SCREEN_VERSION','future-eligibility-change'):
+            self.assertEqual(ai.screen_policies(),('future-eligibility-change',))
+
     def test_inflight_ranking_keeps_only_unchanged_compatible_previous_results(self):
         articles=[ARTICLE,{**ARTICLE,'id':'b','url':ARTICLE['url']+'b'}]
         readings=[{**ANALYZED,'event_id':a['id'],'article_id':a['id'],'source_url':a['url'],'published_at':a['published_at']} for a in articles]
@@ -1521,7 +1584,7 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(self.engine.queue.summary()['done'],1)
 
     def test_stock_gate_requires_a_verbatim_economic_evidence_quote(self):
-        base={'driver':ai.DRIVERS[0],'impact_evidence':0,'reason':'일반 투자심리 개선 가능','watch_for':'실적 확인'}
+        base={'priority':50,'driver':ai.DRIVERS[0],'impact_evidence':0,'reason':'일반 투자심리 개선 가능','watch_for':'실적 확인'}
         with patch.object(self.engine,'call',return_value=base):
             result=self.engine.screen(READING)
         self.assertEqual(result['stock_relevance'],'연결 미확인')
@@ -1537,7 +1600,7 @@ class IntelligenceTest(unittest.TestCase):
     def test_screen_selects_exact_passages_and_rejects_invalid_ids(self):
         quotes=['실제 공급 계약을 체결했고 조건을 공시했다. '*20,'고객 주문 취소로 공장 가동을 중단했다.']
         event={**READING,'evidence':quotes}
-        output={'driver':ai.DRIVERS[0],'impact_evidence':len(ai.source_passages(quotes[0]))+1,'reason':'주문 취소로 공급 중단','watch_for':'정정 공시'}
+        output={'priority':50,'driver':ai.DRIVERS[0],'impact_evidence':len(ai.source_passages(quotes[0]))+1,'reason':'주문 취소로 공급 중단','watch_for':'정정 공시'}
         with patch.object(self.engine,'call',return_value=output) as call:
             result=self.engine.screen(event)
         self.assertEqual(result['impact_evidence'],quotes[1])
@@ -1552,14 +1615,39 @@ class IntelligenceTest(unittest.TestCase):
                 self.assertRaisesRegex(ValueError,'원문 인용',self.engine.screen,{**event,'summary':str(value)})
 
     def test_background_screen_can_abstain_without_inventing_a_followup(self):
-        result={'driver':ai.DRIVERS[-1],'impact_evidence':0,'reason':'원문에 경제적 변화 근거 없음','watch_for':''}
+        result={'priority':50,'driver':ai.DRIVERS[-1],'impact_evidence':0,'reason':'원문에 경제적 변화 근거 없음','watch_for':''}
         with patch.object(self.engine,'call',return_value=result):
             answer=self.engine.screen(READING)
         self.assertEqual(answer['stock_relevance'],'연결 미확인')
         self.assertEqual(answer['watch_for'],'')
 
+    def test_screen_priority_rejects_missing_boolean_fractional_and_out_of_range_values(self):
+        base={'priority':50,'driver':ai.DRIVERS[0],'impact_evidence':1,'reason':'계약 변경 확인','watch_for':'공시 확인'}
+        with patch.object(self.engine,'call',return_value={k:v for k,v in base.items() if k!='priority'}):
+            self.assertRaises(ValueError,self.engine.screen,READING)
+        for value in (None,True,'50',50.5,-1,101):
+            with patch.object(self.engine,'call',return_value={**base,'priority':value}):
+                self.assertRaisesRegex(ValueError,'중요도',self.engine.screen,READING)
+        for value in (0,100):
+            with self.engine.db() as db:db.execute('DELETE FROM screens')
+            with patch.object(self.engine,'call',return_value={**base,'priority':value}):
+                result=self.engine.screen(READING)
+            self.assertEqual(result['priority'],value)
+            with patch.object(self.engine,'call',side_effect=AssertionError('valid score cache must not call model')):
+                self.assertEqual(self.engine.screen(READING),result)
+
+    def test_screen_cache_with_unusable_priority_is_rebuilt_instead_of_treated_as_zero(self):
+        raw={'priority':75,'driver':ai.DRIVERS[0],'impact_evidence':1,'reason':'계약 변경 확인','watch_for':'공시 확인'}
+        with patch.object(self.engine,'call',return_value=raw):saved=self.engine.screen(READING)
+        for bad in ({k:v for k,v in saved.items() if k!='priority'},{**saved,'priority':True},{**saved,'priority':101}):
+            with self.engine.db() as db:db.execute('UPDATE screens SET payload=?',(json.dumps(bad),))
+            with patch.object(self.engine,'call',return_value=raw) as call:
+                result=self.engine.screen(READING)
+            call.assert_called_once()
+            self.assertEqual(result['priority'],75)
+
     def test_screen_abstains_with_no_source_and_rejects_malformed_quotes(self):
-        output={'driver':ai.DRIVERS[0],'impact_evidence':0,'reason':'원문 미확인','watch_for':''}
+        output={'priority':50,'driver':ai.DRIVERS[0],'impact_evidence':0,'reason':'원문 미확인','watch_for':''}
         with patch.object(self.engine,'call',return_value=output) as call:
             result=self.engine.screen({**READING,'evidence':[]})
         self.assertEqual(result['stock_relevance'],'연결 미확인')
@@ -1571,7 +1659,7 @@ class IntelligenceTest(unittest.TestCase):
                 call.assert_not_called()
 
     def test_screen_policy_change_invalidates_cache_without_resetting_queue(self):
-        output={'driver':ai.DRIVERS[-1],'impact_evidence':0,'reason':'경제적 변화 미확인','watch_for':''}
+        output={'priority':50,'driver':ai.DRIVERS[-1],'impact_evidence':0,'reason':'경제적 변화 미확인','watch_for':''}
         with patch.object(ai,'SCREEN_VERSION','old'),patch.object(self.engine,'call',return_value=output):
             old=self.engine.screen(READING)
         self.engine.queue.enqueue([{'article':ARTICLE}])
@@ -1582,7 +1670,7 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(self.engine.queue.summary()['pending'],1)
 
     def test_screening_is_per_event_cached_and_separate_from_ranking(self):
-        output={'driver':'금융상품 조건·청약·판매 안내','impact_evidence':0,'reason':'국채 발행 조건 안내이며 증권사 이익 변화 미확인','watch_for':'상장사 실적 영향이 있는지 확인'}
+        output={'priority':50,'driver':'금융상품 조건·청약·판매 안내','impact_evidence':0,'reason':'국채 발행 조건 안내이며 증권사 이익 변화 미확인','watch_for':'상장사 실적 영향이 있는지 확인'}
         with patch.object(self.engine,'call',return_value=output) as call:
             first=self.engine.screen(READING)
             second=self.engine.screen(READING)
@@ -1593,7 +1681,7 @@ class IntelligenceTest(unittest.TestCase):
             self.assertEqual(other.screen(READING),first);call.assert_not_called()
 
     def test_screen_cache_uses_only_actual_source_input_and_keeps_original_assessment_time(self):
-        output={'driver':ai.DRIVERS[0],'impact_evidence':1,'reason':'원문에서 계약 체결 확인','watch_for':'이행 확인'}
+        output={'priority':50,'driver':ai.DRIVERS[0],'impact_evidence':1,'reason':'원문에서 계약 체결 확인','watch_for':'이행 확인'}
         changed={**READING,'summary':'다른 생성 요약','event_title':'다른 제목','amount':'다른 규모',
                  'entities':['다른 생성 당사자'],'certainty':'계획','timing':'다른 시점','published_at':'2026-11-12T00:00:00Z'}
         with patch.object(self.engine,'call',return_value=output) as call,patch('intelligence.now',return_value='2026-11-11T01:00:00Z'):
@@ -1610,7 +1698,7 @@ class IntelligenceTest(unittest.TestCase):
         self.assertNotEqual(call.call_args.args[1],expected_payload)
 
     def test_screen_cache_isolates_model_provider_and_policy_text(self):
-        output={'driver':ai.DRIVERS[-1],'impact_evidence':0,'reason':'경제적 변화 미확인','watch_for':''}
+        output={'priority':50,'driver':ai.DRIVERS[-1],'impact_evidence':0,'reason':'경제적 변화 미확인','watch_for':''}
         with patch.object(self.engine,'call',return_value=output):self.engine.screen(READING)
         for field,value in [('model','other-model'),('provider','other-provider')]:
             with patch.object(self.engine,field,value),patch.object(self.engine,'call',return_value=output) as call:
