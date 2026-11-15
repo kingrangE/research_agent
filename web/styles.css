@@ -20,3 +20,5 @@ dialog{border:1px solid #cdd8cc;border-radius:12px;width:min(760px,calc(100vw - 
 .archive-tools label { display:flex; gap:6px; align-items:center; }
 .archive-tools input,.archive-tools select,.archive-tools button { padding:8px; border:1px solid #d5d9e1; border-radius:6px; background:white; color:#243047; }
 .archive-tools button:disabled { opacity:.5; cursor:default; }
+
+.decision-notes .source-excerpt{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}

@@ -431,7 +431,7 @@ test('decision card puts compact stocks before the event and exposes why and nex
   run(`data={articles:[{id:'a',title:'공급 계약',source:'공개 피드',themes:[],related_stocks:[{code:'005930',name:'삼성전자'}]}],intelligence:{ranking_stale:false,events:[{event_id:'e',certainty:'계획',articles:[{id:'a'}]}],assessments:[{event_id:'e',watch_for:'계약 공시 확인'}],ranking:[{event_id:'e',reason:'<수주>가 이익에 미칠 영향'}]}}`);
   const html=run(`articleHTML(data.articles[0],0)`);
   assert.ok(html.indexOf('stock-chip')<html.indexOf('class="article-title"'));
-  assert.ok(html.includes('<dt>왜 지금</dt>'));
+  assert.ok(html.includes('<dt>모델 해석</dt>'));
   assert.ok(html.includes('<dt>다음 확인</dt><dd>계약 공시 확인</dd>'));
   assert.ok(html.includes('&lt;수주&gt;'));
   assert.ok(html.includes('계획'));
@@ -455,6 +455,45 @@ test('market context shows only representative ETF observations with timestamps,
   assert.ok(run(`$('#source-view').innerHTML`).includes('일일 제한 없음'));
   run(`data.intelligence.daily_call_limit=200;render()`);
   assert.ok(run(`$('#source-view').innerHTML`).includes('일일 한도 200회'));
+});
+
+test('source evidence leads the card and detail while conflicting model interpretation stays in disclosure', () => {
+  const run=ui();
+  run(`const proof='채권자가 회사에 기한이익 상실을 통지했다. <추가 공시>';const wrong='회사가 채권자에게 기한이익 상실을 통지했다.';data={articles:[{id:'a',title:'상환 불이행',source:'공개 피드',themes:[],score_parts:{freshness:40},related_stocks:[]}],intelligence:{ranking_stale:false,events:[{event_id:'e',article_id:'a',summary:'회사채 원금 상환 불이행',evidence:[proof],articles:[{id:'a',evidence:[proof]}]}],assessments:[{event_id:'e',impact_evidence:proof,reason:wrong,watch_for:'채권단 대응 확인',stock_relevance:'주식 판단 재료'}],ranking:[{event_id:'e',reason:wrong,watch_for:'채권단 대응 확인'}]}}`);
+  const card=run(`articleHTML(data.articles[0],0)`);
+  assert.ok(card.includes('원문 근거'));
+  assert.ok(card.includes('채권자가 회사에'));
+  assert.ok(card.includes('&lt;추가 공시&gt;'));
+  assert.ok(!card.includes('<추가 공시>'));
+  assert.ok(!card.includes('회사가 채권자에게'));
+  run(`renderDetail('a')`);
+  const [visible,more]=run(`$('#detail').innerHTML`).split('<details class="detail-more">');
+  assert.ok(visible.includes('채권자가 회사에'));
+  assert.ok(!visible.includes('회사가 채권자에게'));
+  assert.ok(more.includes('모델 선별 설명 · 검수 전'));
+  assert.ok(more.includes('회사가 채권자에게'));
+  assert.ok(visible.includes('채권단 대응 확인'));
+  run(`data.intelligence.ranking[0].reason='<다른 순위 해석>';renderDetail('a')`);
+  const changed=run(`$('#detail').innerHTML`).split('<details class="detail-more">')[1];
+  assert.ok(changed.includes('&lt;다른 순위 해석&gt;'));
+  assert.ok(changed.includes('회사가 채권자에게'));
+  assert.ok(!changed.includes('<다른 순위 해석>'));
+  run(`data.intelligence.events[0].article_id='representative'`);
+  assert.ok(run(`articleHTML(data.articles[0],0)`).includes('대표 원문 근거'));
+});
+
+test('an unmatched or malformed assessment excerpt never appears as source evidence', () => {
+  const run=ui();
+  run(`data={articles:[{id:'a',title:'계약',source:'공개 피드',themes:[],related_stocks:[]}],intelligence:{ranking_stale:false,events:[{event_id:'e',evidence:['현재 원문에서 확인한 계약 조건'],articles:[{id:'a'}]}],assessments:[{event_id:'e',impact_evidence:'다른 원문의 계약 조건'}],ranking:[{event_id:'e',reason:'검토가 필요한 모델 해석'}]}}`);
+  for (const excerpt of ['다른 원문의 계약 조건', '', null, [], {}]) {
+    run(`data.intelligence.assessments[0].impact_evidence=${JSON.stringify(excerpt)}`);
+    const card=run(`articleHTML(data.articles[0],0)`);
+    assert.ok(!card.includes('원문 근거'));
+    assert.ok(card.includes('<dt>모델 해석</dt>'));
+    assert.ok(card.includes('검토가 필요한 모델 해석'));
+  }
+  run(`data.intelligence.events[0].evidence=null`);
+  assert.ok(run(`articleHTML(data.articles[0],0)`).includes('모델 해석'));
 });
 
 test('article detail shows structured facts and keeps evidence and scoring behind one disclosure', () => {
