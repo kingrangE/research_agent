@@ -51,6 +51,17 @@ test('briefing discloses article analysis coverage even when ranking itself succ
   assert.ok(!run(`$('#list-caption').textContent`).includes('이번 대상'));
 });
 
+test('startup waits for analysis while confirmed disabled settings report disconnection', () => {
+  const run=ui();
+  run(`data={articles:[{id:'a',title:'계약',themes:[],source:'test',score:50}],intelligence:{status:'starting',events:[],ranking:[]}};render()`);
+  let html=run(`$('#articles').innerHTML`);
+  assert.ok(html.includes('주식 판단 재료를 분석하고 있어요'));
+  assert.ok(!html.includes('모델이 연결되지 않았어요'));
+  assert.ok(html.includes('전체 자료 보기'));
+  run(`data.intelligence.status='disabled';render()`);
+  assert.ok(run(`$('#articles').innerHTML`).includes('주식 분석 모델이 연결되지 않았어요'));
+});
+
 test('operations separates current unfinished work from ready work and preserves older payload uncertainty', () => {
   const run=ui();
   run(`data={articles:[],sources:[],intelligence:{queue:{pending:3000,processing:1,retrying:9,done:100,event_count:70,oldest_wait_seconds:100000,priority_window:{window_seconds:93600,current_unfinished:65,current_ready:50,other_unfinished:2945,oldest_current_age_seconds:82800}}}};render()`);

@@ -2,6 +2,8 @@ import copy
 import json
 import os
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 import tempfile
 import unittest
@@ -23,6 +25,15 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def test_startup_snapshot_waits_for_settings_instead_of_claiming_disconnection(self):
+        result=subprocess.run([sys.executable,'-c',
+            'import intelligence,json; print(json.dumps(intelligence.snapshot()))'],
+            cwd=Path(__file__).resolve().parents[1],capture_output=True,text=True,check=True)
+        snapshot=json.loads(result.stdout)
+        self.assertEqual(snapshot['status'],'starting')
+        self.assertFalse(snapshot['ranking'])
+        self.assertIsNone(snapshot['updated_at'])
+
     def test_separate_legal_counterparties_cannot_merge_via_the_same_stock(self):
         catalogue={'NVDA.O':{'code':'NVDA.O','name':'NVIDIA','legal_name':'NVIDIA Corporation','country':'US'},
                    'GOOGL.O':{'code':'GOOGL.O','name':'Alphabet Class A','legal_name':'Alphabet Inc.','country':'US'}}
