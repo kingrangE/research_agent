@@ -123,6 +123,11 @@ def source_timing(value, body):
     return value if text and (value=='미확인' or re.search(r'(?<!\d)'+re.escape(text)+r'(?!\d)',normalize(body))) else '미확인'
 
 
+def check_source_timing(output, body):
+    timing=source_timing(output['timing'],body)
+    return {**output,'timing':timing,'timing_original':output['timing']} if timing!=output['timing'] else output
+
+
 def entity_mentions(body, entities):
     mentions = []
     for name in entities:
@@ -434,8 +439,8 @@ class Engine:
             db.execute('INSERT OR REPLACE INTO bodies VALUES(?,?,?)', (url, text, time.time() + (3600 if not text else 900)))
         return text
 
-    def reading_key(self, article, body):
-        return sha256((VERSION + READ_VERSION + self.provider + self.model + article['url'] + article['title'] + body + article.get('_body_version','')).encode()).hexdigest()
+    def reading_key(self, article, body, policy=None):
+        return sha256((VERSION + (policy or READ_VERSION) + self.provider + self.model + article['url'] + article['title'] + body + article.get('_body_version','')).encode()).hexdigest()
 
     def extract_reading(self, body, article, anchors):
         passages=source_passages(body)
@@ -449,10 +454,34 @@ class Engine:
             raise ValueError('원문 구간 선택 오류')
         output={**output,'evidence':[passages[i-1]['text'] for i in ids]}
         validate_reading(output,body,{a['event_id'] for a in anchors[-6:]})
-        timing=source_timing(output['timing'],body)
-        if timing!=output['timing']:
-            output={**output,'timing':timing,'timing_original':output['timing']}
-        return separate_event_update(output,anchors[-6:])
+        return separate_event_update(check_source_timing(output,body),anchors[-6:])
+
+    def revalidate_cached_reading(self, article, body):
+        # Only this transition keeps model instructions and prior connection rules unchanged.
+        if READ_VERSION!='source-passages-v7-source-time':
+            return None
+        policy='source-passages-v6-contract-parties'
+        key=self.reading_key(article,body,policy)
+        with self.db() as db:
+            row=db.execute('SELECT payload FROM readings WHERE cache_key=?',(key,)).fetchone()
+        if not row:
+            return None
+        try:
+            saved=json.loads(row[0])
+            expected={'read_policy_version':policy,'article_id':article['id'],'article_title':article['title'],
+                      'source_url':article['url'],'published_at':article.get('published_at'),'model':self.model,
+                      'body_version':article.get('_body_version') or sha256(body.encode()).hexdigest(),'body_chars':len(body)}
+            if not isinstance(saved,dict) or any(saved.get(k)!=v for k,v in expected.items()):
+                return None
+            if not 0<analysis_store.epoch(saved.get('analyzed_at'))<=time.time():
+                return None
+            facts={k:saved[k] for k in READ_SCHEMA['properties']}
+            validate_reading(facts,body,{facts['match_event_id']})
+            if saved.get('event_id')!=(facts['match_event_id'] or 'event-'+key[:20]):
+                return None
+        except (ValueError,TypeError,KeyError):
+            return None
+        return {**check_source_timing(saved,body),'read_policy_version':READ_VERSION}
 
     def cached_reading(self, article):
         with self.db() as db:
@@ -478,6 +507,12 @@ class Engine:
         if row:
             output = json.loads(row[0])
             return {**output,'article_title':article['title'],'entity_mentions':entity_mentions(body,output.get('entities',[]))}
+        output=self.revalidate_cached_reading(article,body)
+        if output is not None:
+            output={**output,'entity_mentions':entity_mentions(body,output.get('entities',[]))}
+            with self.db() as db:
+                db.execute('INSERT OR REPLACE INTO readings VALUES(?,?,?,?)',(key,article['id'],json.dumps(output,ensure_ascii=False),now()))
+            return output
         with self.db() as db:
             failure = db.execute('SELECT retry_after FROM failures WHERE cache_key=?',(key,)).fetchone()
         if failure and time.time() < failure[0]:

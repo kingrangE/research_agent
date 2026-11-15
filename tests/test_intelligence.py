@@ -23,6 +23,93 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def seed_previous_time_policy(self, **changes):
+        article={**ARTICLE,'_analysis_body':BODY,'_body_version':ai.sha256(BODY.encode()).hexdigest()}
+        previous={**READING,'timing':'2026-11-11','read_policy_version':'source-passages-v6-contract-parties',
+                  'article_id':article['id'],'article_title':article['title'],'source_url':article['url'],
+                  'published_at':article['published_at'],'body_version':article['_body_version'],
+                  'body_chars':len(BODY),'model':self.engine.model,'analyzed_at':'2026-11-11T10:00:00+00:00',
+                  'source_version_at':'2026-11-11T09:00:00+00:00','event_id':'original-event',**changes}
+        with patch.object(ai,'READ_VERSION','source-passages-v6-contract-parties'):
+            key=self.engine.reading_key(article,BODY)
+        if 'event_id' not in changes:
+            previous['event_id']=previous['match_event_id'] or 'event-'+key[:20]
+        with self.engine.db() as db:
+            db.execute('DELETE FROM readings')
+            db.execute('INSERT INTO readings VALUES(?,?,?,?)',(key,article['id'],json.dumps(previous),previous['analyzed_at']))
+        return article,previous,key
+
+    def test_time_only_policy_revalidates_exact_cached_source_without_new_model_analysis(self):
+        article,previous,old_key=self.seed_previous_time_policy()
+        with patch.object(self.engine,'extract_reading',side_effect=AssertionError('불필요한 본문 모델 호출')):
+            result=self.engine.reading(article,[])
+        self.assertEqual(result['timing'],'미확인')
+        self.assertEqual(result['timing_original'],previous['timing'])
+        self.assertEqual(result['read_policy_version'],ai.READ_VERSION)
+        for key in ('summary','amount','certainty','evidence','event_id','analyzed_at','source_version_at'):
+            self.assertEqual(result[key],previous[key])
+        with self.engine.db() as db:
+            old=json.loads(db.execute('SELECT payload FROM readings WHERE cache_key=?',(old_key,)).fetchone()[0])
+            current=json.loads(db.execute('SELECT payload FROM readings WHERE cache_key=?',(self.engine.reading_key(article,BODY),)).fetchone()[0])
+        self.assertEqual(old,previous)
+        self.assertEqual(current,result)
+        other=ai.Engine(self.engine.path)
+        with patch.object(other,'extract_reading',side_effect=AssertionError('재시작 후 중복 모델 호출')):
+            self.assertEqual(other.reading(article,[]),result)
+
+    def test_time_revalidation_preserves_a_previously_approved_event_link(self):
+        article,previous,_=self.seed_previous_time_policy(match_event_id='existing-contract')
+        with patch.object(self.engine,'extract_reading',side_effect=AssertionError('불필요한 재연결 모델 호출')):
+            result=self.engine.reading(article,[])
+        self.assertEqual(result['match_event_id'],'existing-contract')
+        self.assertEqual(result['event_id'],previous['event_id'])
+        self.assertEqual(result['timing'],'미확인')
+
+    def test_time_revalidation_rejects_incompatible_metadata_and_invalid_facts(self):
+        for change in ({'read_policy_version':'unknown-policy'},{'article_id':'other'},
+                       {'article_title':'다른 기사'},{'source_url':'https://example.com/other'},
+                       {'published_at':'2026-11-12T00:00:00Z'},{'model':'other-model'},
+                       {'body_version':'other-version'},{'body_chars':1},{'analyzed_at':None},
+                       {'analyzed_at':'2999-01-01T00:00:00Z'},{'evidence':['원문에 없는 계약 문장']},
+                       {'certainty':'잘못된 단계'},{'event_id':'unrelated-event'}):
+            article,_,_=self.seed_previous_time_policy(**change)
+            with self.subTest(change=change),patch.object(self.engine,'extract_reading',return_value=copy.deepcopy(READING)) as read:
+                result=self.engine.reading(article,[])
+                read.assert_called_once()
+                self.assertEqual(result['analyzed_at'],ai.now())
+
+    def test_time_revalidation_cannot_cross_source_model_or_future_policy_changes(self):
+        for change in ({'title':'계약 정정'},{'url':ARTICLE['url']+'new'},
+                       {'_analysis_body':BODY+' 추가 조건이 있다.'},{'_body_version':'new-version'}):
+            article,_,_=self.seed_previous_time_policy()
+            with self.subTest(change=change),patch.object(self.engine,'extract_reading',return_value=copy.deepcopy(READING)) as read:
+                self.engine.reading({**article,**change},[])
+                read.assert_called_once()
+        for attribute,value in (('provider','gemini'),('model','other-model')):
+            article,_,_=self.seed_previous_time_policy()
+            with self.subTest(attribute=attribute),patch.object(self.engine,attribute,value),patch.object(self.engine,'extract_reading',return_value=copy.deepcopy(READING)) as read:
+                self.engine.reading(article,[])
+                read.assert_called_once()
+        article,_,_=self.seed_previous_time_policy()
+        with patch.object(ai,'READ_VERSION','future-policy'),patch.object(self.engine,'extract_reading',return_value=copy.deepcopy(READING)) as read:
+            self.engine.reading(article,[])
+            read.assert_called_once()
+
+    def test_time_only_review_keeps_original_analysis_time_and_adds_review_history(self):
+        article,previous,_=self.seed_previous_time_policy()
+        self.engine.queue.enqueue([{'article':article,'body':BODY,'body_version':article['_body_version']}])
+        self.engine.queue.complete(self.engine.queue.claim(),previous,GATE)
+        with patch.object(self.engine,'extract_reading',side_effect=AssertionError('불필요한 본문 모델 호출')),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=[rank_row('E1')]):
+            self.engine.cycle([article])
+        history=self.engine.queue.history(previous['event_id'])
+        self.assertEqual(len(history),2)
+        self.assertEqual([h['analyzed_at'] for h in history],[previous['analyzed_at']]*2)
+        self.assertEqual(history[0]['timing'],previous['timing'])
+        self.assertEqual(history[1]['timing'],'미확인')
+        self.assertEqual(history[1]['timing_original'],previous['timing'])
+        self.assertTrue(history[1]['assessment_review'])
+        self.assertIsNotNone(history[1]['reviewed_at'])
+
     def test_captured_unsupported_time_cannot_become_a_fact_or_discard_other_facts(self):
         body='가상 종합지수는 전일 대비 2.5% 상승 마감했다. 기관 매수가 확대됐다.'
         for timing in ('오늘','현재','2026-11-11'):
