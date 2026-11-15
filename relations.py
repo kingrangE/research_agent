@@ -114,6 +114,7 @@ def infer(title, catalogue, direct, as_of=None):
 
     for stock in direct:
         source = source_records(["krx" if stock.get("country", "KR") == "KR" else "nasdaq"], as_of)
+        source.extend(stock.get('alias_sources',[]))
         add(stock["code"], "direct", stock["reason"], f"기사 직접 언급 → {stock['name']}",
             "기사에 이름이 등장한 사실이며 수혜나 주가 방향 판정은 아님", source, common_checks)
 

@@ -32,6 +32,7 @@ QUOTE_PENDING = {}
 ALIASES = {"000660": ["SK하이닉스", "하이닉스"], "005380": ["현대차"], "005930": ["삼전"],
            "005490": ["포스코홀딩스"], "035420": ["네이버"], "030200": ["KT"],
            "122870": ["YG Entertainment", "와이지엔터"]}
+REVIEWED_ALIASES = {r["code"]:r for r in relations.KNOWLEDGE.get("issuer_aliases",[])}
 # YG identity: https://ygfamily.com/en/ir/stock ; 와이지엔터 is a reviewed article abbreviation.
 for entity in relations.KNOWLEDGE["entities"]:
     if entity["code"]:
@@ -133,7 +134,9 @@ def compile_names(catalogue):
     for code, stock in catalogue.items():
         legal = stock.get("legal_name", stock["name"])
         short = re.sub(r",?\s+(?:Corporation|Incorporated|Inc\.?|Corp\.?|Ltd\.?).*$", "", legal, flags=re.I)
-        for name in [stock["name"], legal, short, *ALIASES.get(code, [])]:
+        review = REVIEWED_ALIASES.get(code)
+        reviewed = review['aliases'] if review and stock.get('country')=='US' and short.casefold()==review['issuer'].casefold() else []
+        for name in [stock["name"], legal, short, *ALIASES.get(code, []), *reviewed]:
             names.setdefault(name.lower(), set()).add(code)
     names = {name: next(iter(codes)) for name, codes in names.items() if len(codes) == 1}
     long = "|".join(re.escape(name) for name in sorted(names, key=len, reverse=True) if len(name) > 2)
@@ -217,9 +220,15 @@ def related_stocks(title, as_of=None):
     with LOCK:
         catalogue = dict(CATALOGUE)
         matcher, names = NAME_MATCHER, NAME_CODES
-    direct = [{**catalogue[m['code']], 'relation':'direct',
-               'reason':f"기사 제목에 ‘{m['text']}’ 직접 언급",'evidence':m['text']}
-              for m in _direct_mentions(title,matcher,names)]
+    direct = []
+    for m in _direct_mentions(title,matcher,names):
+        review=REVIEWED_ALIASES.get(m['code'])
+        reviewed=review and m['text'].casefold() in {n.casefold() for n in review['aliases']}
+        evidence=relations.source_records(review['sources'],(as_of or datetime.now(timezone.utc).isoformat())[:10]) if reviewed else []
+        if reviewed and (not review['sources'] or len(evidence)!=len(review['sources'])):
+            continue
+        direct.append({**catalogue[m['code']], 'relation':'direct',
+                       'reason':f"기사 제목에 ‘{m['text']}’ 직접 언급",'evidence':m['text'],'alias_sources':evidence})
     inferred, analysis = relations.infer(title, catalogue, direct, as_of)
     if inferred or analysis["ai"]:
         return inferred

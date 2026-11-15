@@ -1,7 +1,11 @@
 {
-  "version": "2026-11-15.1",
+  "version": "2026-11-15.2",
   "reviewed_on": "2026-11-11",
+  "issuer_aliases": [{"code": "ARRY.O", "issuer": "Array Technologies", "aliases": ["어레이 테크놀로지스", "어레이테크놀로지스"], "sources": ["array_listing", "array_article_alias"]}],
   "sources": {
+    "array_listing": {"title": "ARRAY investor FAQs: ticker and exchange", "url": "https://ir.arraytechinc.com/investor-resources/investor-faqs/", "published_on": null, "checked_on": "2026-11-15", "type": "company"},
+    "array_article_alias": {"title": "매일경제: 어레이 테크놀로지스(ARRY) 기사 표기", "url": "https://n.news.naver.com/article/009/0005764086", "published_on": "2026-11-15", "checked_on": "2026-11-15", "type": "article"},
+
     "ubs_framework": {"title":"UBS: AI enabling, intelligence and application layers", "url":"https://www.ubs.com/global/en/investor-relations/press-releases/overview-news-display-ndp/en-20240618-ai-investment.html", "published_on":"2024-06-18", "type":"research"},
     "gs_framework": {"title":"Goldman Sachs: four phases of the AI trade", "url":"https://www.goldmansachs.com/insights/articles/ai-infrastructure-stocks-poised-to-be-next-phase", "published_on":"2024-04-16", "type":"research"},
     "ms_framework": {"title":"Morgan Stanley: AI exposure mapping across 3,600 stocks", "url":"https://www.morganstanley.com/insights/articles/3600-stocks-map-out-ai-investing-opportunties-across-sectors", "published_on":"2026-10-21", "type":"research"},

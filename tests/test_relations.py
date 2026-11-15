@@ -141,6 +141,10 @@ class RelatedResearchTest(unittest.TestCase):
                 datetime.fromisoformat(source["published_on"])
         for relationship in relations.KNOWLEDGE["relationships"]:
             self.assertTrue(all(s in relations.SOURCES for s in relationship["sources"]))
+        for issuer in relations.KNOWLEDGE.get('issuer_aliases',[]):
+            self.assertTrue(issuer['issuer'] and issuer['aliases'] and issuer['sources'])
+            self.assertEqual(len(issuer['sources']),len(set(issuer['sources'])))
+            self.assertTrue(all(s in relations.SOURCES for s in issuer['sources']))
 
     def test_investment_type_distinguishes_equity_capex_and_unknown_use(self):
         def events(title):

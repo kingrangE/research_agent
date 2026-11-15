@@ -66,6 +66,32 @@ class StocksTest(unittest.TestCase):
         self.assertTrue(all(s["relation"] == "value_chain" and s["sources"] for s in related))
         self.assertEqual(stocks.related_stocks("전쟁 우려 속 환율 상승"), [])
 
+    def test_reviewed_foreign_alias_requires_the_expected_listed_issuer(self):
+        listed={**CATALOGUE,'ARRY.O':{'code':'ARRY.O','name':'Array Technologies, Inc.',
+                'legal_name':'Array Technologies, Inc.','country':'US','market':'NASDAQ'}}
+        matcher,names=stocks.compile_names(listed)
+        with patch.object(stocks,'CATALOGUE',listed),patch.object(stocks,'NAME_MATCHER',matcher),patch.object(stocks,'NAME_CODES',names):
+            for name in ('어레이 테크놀로지스','어레이테크놀로지스'):
+                rows=stocks.related_stocks(name+', 주가 상승','2026-11-15')
+                self.assertEqual([r['code'] for r in rows],['ARRY.O'])
+                self.assertTrue(any(s['url']=='https://ir.arraytechinc.com/investor-resources/investor-faqs/' for s in rows[0]['sources']))
+                self.assertTrue(any(s['url']=='https://n.news.naver.com/article/009/0005764086' for s in rows[0]['sources']))
+                self.assertEqual(stocks.related_stocks(name+', 주가 상승','2026-11-14'),[])
+            self.assertEqual(stocks.related_stocks('어레이 주가 상승','2026-11-15'),[])
+            mentions=[{'name':'어레이 테크놀로지스','evidence':'어레이 테크놀로지스 편에서 주가 흐름을 소개했다.'}]
+            body=stocks.body_related_stocks(mentions,'https://example.com/news','2026-11-15')
+            self.assertEqual([r['code'] for r in body],['ARRY.O'])
+            self.assertEqual(body[0]['relation'],'body')
+            self.assertEqual(body[0]['sources'][0]['excerpt'],mentions[0]['evidence'])
+            with patch.dict(stocks.REVIEWED_ALIASES,{'ARRY.O':{**stocks.REVIEWED_ALIASES['ARRY.O'],'sources':[]}}):
+                self.assertEqual(stocks.related_stocks('어레이 테크놀로지스 주가 상승','2026-11-15'),[])
+        for wrong in ({**listed['ARRY.O'],'legal_name':'Array BioPharma, Inc.'},
+                      {**listed['ARRY.O'],'country':'KR'}):
+            catalogue={'ARRY.O':wrong};matcher,names=stocks.compile_names(catalogue)
+            with patch.object(stocks,'CATALOGUE',catalogue),patch.object(stocks,'NAME_MATCHER',matcher),patch.object(stocks,'NAME_CODES',names):
+                self.assertEqual(stocks.related_stocks('어레이 테크놀로지스 주가 상승','2026-11-15'),[])
+        self.assertEqual(stocks.related_stocks('어레이 테크놀로지스 주가 상승','2026-11-15'),[])
+
     def test_body_names_need_literal_evidence_and_never_expand_their_themes(self):
         result=stocks.body_related_stocks([{'name':'삼성전자','evidence':'삼성전자가 공급 계약을 발표했다.'},
                                          {'name':'가짜기업','evidence':'삼성전자가 공급 계약을 발표했다.'}],
