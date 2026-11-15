@@ -45,12 +45,15 @@ READ_SCHEMA = schema({'summary': TEXT, 'event_title': TEXT, 'event_type': TEXT,
         'description':'핵심 경제 사건의 진행 단계. 검토·추진 중인 제도/계약은 계획, 예측은 전망, 이미 체결·시행·발생한 사실은 확정. 발표나 발언이 실제 있었다는 이유로 그 안의 계획을 확정으로 바꾸지 않는다.'},
     'amount': TEXT, 'timing': TEXT, 'evidence': {'type': 'array', 'items': TEXT}, 'match_event_id': TEXT})
 RELEVANCE = ['주식 판단 재료', '배경·상품 안내', '연결 미확인']
-RANK_VERSION = 'equity-catalyst-v6-factual-reasons'
+RANK_VERSION = 'equity-catalyst-v7-read-priority'
 GATE_VERSION = 'equity-screen-v3-business-evidence'
 SCREEN_VERSION = 'source-passages-v5-information-basis'
 RANK_SCHEMA = schema({'ranking': {'type': 'array', 'items': schema({'event_id': TEXT, 'reason': {'type':'string','description':'원문에 있는 당사자와 변경 사실만 요약. 매출·거래량·순이익의 추가 추정 금지'},
     'stock_relevance': {'type':'string','enum':RELEVANCE}, 'watch_for': TEXT})}})
-EQUITY_POLICY = '''목표는 일반 금융 뉴스 추천이 아니라 오늘·수일 내 국내·미국 주식 투자 판단에 쓸 새로운 재료 선별이다.
+EQUITY_POLICY = '''이번 출력의 순서는 매수 선호 순서가 아니라 사용자가 지금 먼저 읽고 투자 판단을 재검토해야 할 사건의 우선순위다. 원문에 확인된 기업 대비 변화 규모·임박성·적용 범위·확인 근거를 비교한다. 좋은 소식과 손실 위험을 같은 기준으로 다룬다. 실제 만기 상환 실패나 연 매출의 큰 부분에 해당하는 계약 취소처럼 놓치면 판단을 크게 바꿀 정보는 작은 주주환원·일반적인 투자 확대보다 먼저 확인할 필요가 있다. 모든 악재가 모든 호재보다 앞선다는 규칙은 아니며 사건별 원문 조건을 비교한다. 주가 상승을 기대할 만하다는 이유로 작은 호재를 중대한 손실 위험보다 앞세우지 않는다.
+신규 거래가 발생하지 않아도 중요한 사실관계의 공식 확인·부인·정정이나 구체적인 근거를 반영한 실적 추정치 수정은 새로운 판단 정보다. 회사와 고객이 계약 해지설을 사실무근으로 확인했다면 신규 수주나 새 실적 전망이 없다는 이유만으로 배경 기사로 제외하지 않는다. 구체적인 규제 변경안은 아직 시행 전이라는 이유만으로 연결 미확인으로 낮추지 않고 계획 단계를 보존한다. 원문에 없는 정보나 가격 반영 여부는 만들지 않는다.
+
+목표는 일반 금융 뉴스 추천이 아니라 오늘·수일 내 국내·미국 주식 투자 판단에 쓸 새로운 재료 선별이다.
 모든 사건을 비교 순서로 한 번씩 반환하되 stock_relevance로 먼저 적합성을 판정한다.
 이전 단계가 판단 재료로 올린 사건도 원문 근거가 부족하면 배경·상품 안내 또는 연결 미확인으로 낮춘다. 주식 판단 재료로 유지하도록 강제하지 않는다.
 주식 판단 재료: 상장 기업·산업의 매출/이익 전망, 수주, 경쟁, 비용, 규제, 자본조달/희석, 기업가치 또는 수급의 구체적 변화가 원문에 있고 그 전달 경로를 설명할 수 있다. 기회와 손실 위험 모두 포함한다. 부인·계약 취소 등도 중요할 수 있으며 확정 여부를 보존한다.
