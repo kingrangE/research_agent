@@ -197,7 +197,8 @@ class Store:
             overlap = len(tokens & words)
             if overlap and row['event_id'] not in candidates:
                 candidates[row['event_id']] = (overlap,r)
-        return [{k:r.get(k) for k in ('event_id','event_title','entities','published_at','summary','certainty','event_type','amount','timing')}
+        return [{**{k:r.get(k) for k in ('event_id','event_title','entities','published_at','summary','certainty','event_type','amount','timing')},
+                 'evidence':r.get('evidence',[])[:1]}
                 for _,r in sorted(candidates.values(),key=lambda x:x[0],reverse=True)[:limit]]
 
     def first_published(self, event_ids):

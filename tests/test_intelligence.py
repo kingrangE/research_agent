@@ -23,6 +23,46 @@ def rank_row(event_id,reason='사업 변화 확인'):
 
 
 class IntelligenceTest(unittest.TestCase):
+    def test_captured_customer_swap_cannot_merge_but_same_customer_reprint_can(self):
+        dataset=json.loads((Path('tests/fixtures')/'event_linking_eval.json').read_text())
+        cases={c['id']:c for c in dataset['clusters']}
+        for case_id,customer,expected in [('new-customer-same-amount','동부전력',''),('contract-paraphrase','서부전력','west-contract')]:
+            case=cases[case_id]
+            captured={'summary':f'한빛에너지는 {customer}과 3000억원 규모의 변압기 공급 계약을 체결했다. 계약 기간은 2027년부터 2029년까지다.',
+                'event_title':f'한빛에너지 {customer} 변압기 공급 계약','event_type':'계약','entities':['한빛에너지',customer],
+                'certainty':'확정','amount':'3000억원','timing':'2027~2029년','evidence':[1],'match_event_id':'west-contract'}
+            for with_quote in (False,True):
+                anchors=copy.deepcopy(case['anchors'])
+                if with_quote:anchors[0]['evidence']=[anchors[0]['summary']]
+                with self.subTest(case_id=case_id,with_quote=with_quote),patch.object(self.engine,'call',return_value=captured) as call:
+                    result=self.engine.extract_reading(case['body'],{'id':'current','title':case['title']},anchors)
+                    self.assertEqual(result['match_event_id'],expected)
+                    self.assertIn(customer,result['entities'])
+                    self.assertEqual(result['amount'],'3000억원')
+                    self.assertNotIn('evidence',call.call_args.args[1]['existing_events'][0])
+
+    def test_contract_party_guard_keeps_verified_aliases_and_ignores_background_entities(self):
+        anchor={**READING,'event_id':'old','event_title':'SK하이닉스 서부전력 공급 계약',
+                'entities':['SK하이닉스','서부전력','배경기업'],'summary':'SK하이닉스와 서부전력의 공급 계약이다.',
+                'evidence':['SK하이닉스와 서부전력이 공급 계약을 체결했다.']}
+        current={**READING,'match_event_id':'old','event_title':'하이닉스 서부전력 공급 계약',
+                 'entities':['하이닉스','서부전력','다른배경기업'],'evidence':['하이닉스와 서부전력이 공급 계약을 체결했다.']}
+        def resolve(title):
+            return [{'code':'000660','relation':'direct'}] if title in ('SK하이닉스,','하이닉스,') else []
+        with patch('intelligence.stocks.related_stocks',side_effect=resolve) as lookup:
+            self.assertEqual(ai.separate_event_update(current,[anchor])['match_event_id'],'old')
+            lookup.assert_any_call('SK하이닉스,');lookup.assert_any_call('하이닉스,')
+            self.assertFalse(any('배경기업' in c.args[0] for c in lookup.call_args_list))
+
+    def test_contract_party_guard_abstains_without_two_proven_title_parties(self):
+        anchor={**READING,'event_id':'old','event_title':'한빛에너지 서부전력 공급 계약',
+                'entities':['한빛에너지','서부전력'],'summary':'한빛에너지가 서부전력에 공급한다.',
+                'evidence':['한빛에너지가 서부전력과 공급 계약을 체결했다.']}
+        for title,proof in [('한빛에너지 공급 계약','한빛에너지가 동부전력에 공급한다.'),
+                            ('한빛에너지 동부전력 공급 계약','한빛에너지의 계약이며 고객은 비공개다.')]:
+            current={**READING,'match_event_id':'old','event_title':title,'entities':['한빛에너지','동부전력'],'evidence':[proof]}
+            self.assertEqual(ai.separate_event_update(current,[anchor])['match_event_id'],'old')
+
     def test_reading_evaluation_compares_measure_tokens_not_numeric_substrings(self):
         cases=[('3000','30000억원',False),('3000','13000억원',False),('3000','3000.5억원',False),
                ('3000','3,000억원',True),('3000','3000억원',True),('1%','11%',False),
