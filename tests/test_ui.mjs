@@ -94,6 +94,14 @@ test('briefing separates final event review coverage from article analysis and r
   assert.ok(!run(`$('#source-view').innerHTML`).includes('최종 순위 검토 범위'));
 });
 
+test('qualified ordering explains that screening decisions stay separate from final comparison', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{ranking_role:'qualified_order',coverage:{eligible_events:13,reviewed_events:12,unreviewed_events:1}}};render()`);
+  const html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('선별을 통과한 사건의 순서와 확인 사항만 비교'));
+  assert.ok(!html.includes('최종 추천에서 제외한 사건도 포함'));
+});
+
 test('briefing expands the same reviewed order without navigating into all news', () => {
   const run=ui();
   run(`data={articles:Array.from({length:13},(_,i)=>({id:'a'+i,title:'기업'+i,source:'test',themes:[],score:50-i})),sources:[],intelligence:{ranking_stale:false,events:Array.from({length:12},(_,i)=>({event_id:'e'+i,articles:[{id:'a'+i}]})),assessments:Array.from({length:12},(_,i)=>({event_id:'e'+i})),ranking:Array.from({length:12},(_,i)=>({event_id:'e'+(11-i),reason:'검토한 사실'}))}};render()`);

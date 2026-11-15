@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 import intelligence as ai
-from evaluate_models import evaluate, evaluate_equity, evaluate_ranking, evaluate_window_ranking, evaluate_pairwise
+from evaluate_models import evaluate, evaluate_equity, evaluate_ranking, evaluate_window_ranking, evaluate_pairwise, ranking_cases
 
 BODY = '한빛에너지는 미국 고객사와 3000억원 규모의 전력변압기 공급 계약을 체결했다고 공시했다. 계약 기간은 2027년부터 2029년까지다.'
 GATE = {'change_basis':ai.CHANGE_BASES[0],'priority':50,'driver':'기업 실적·수주·경쟁·비용 변화','reason':'실적에 영향을 주는 계약 변화','watch_for':'공시와 실적 전망 확인','stock_relevance':'주식 판단 재료','screen_policy_version':ai.SCREEN_VERSION}
@@ -22,6 +22,10 @@ ARTICLE = {'id':'a','url':'https://www.hankyung.com/article/2026111100001','titl
 
 def rank_row(event_id,reason='사업 변화 확인'):
     return {'event_id':event_id,'reason':reason,'stock_relevance':'주식 판단 재료','watch_for':'공시와 실적 전망을 확인'}
+
+
+def order_row(event_id,reason='사업 변화 확인'):
+    return {k:v for k,v in rank_row(event_id,reason).items() if k!='stock_relevance'}
 
 
 class IntelligenceTest(unittest.TestCase):
@@ -394,6 +398,20 @@ class IntelligenceTest(unittest.TestCase):
                 self.assertNotIn(higher,json.dumps(payload));self.assertNotIn(lower,json.dumps(payload))
         self.assertIn('격리',report['limitations'])
 
+    def test_pairwise_comparison_uses_provided_source_quotes_instead_of_replacing_them_with_the_summary(self):
+        quotes=['회사는 대규모 계약 취소를 공시했다.','해당 계약은 연간 매출의 절반 규모다.']
+        small='회사는 소액의 배당 인상을 공시했다.'
+        data={'equity_screening':[{'id':'risk','summary':' '.join(quotes),'evidence':quotes,'expected':'주식 판단 재료'},
+                                  {'id':'small','summary':small,'expected':'주식 판단 재료'}],
+              'priority_pairs':[['risk','small']]}
+        engine=MagicMock(model='test',provider='ollama');engine.usage.return_value={}
+        def compare(task,payload,output_schema):
+            self.assertEqual({tuple(e['evidence']) for e in payload['events']},{tuple(quotes),(small,)})
+            return {'winner':next(e['event_id'] for e in payload['events'] if e['evidence']==quotes),'reason':'계약 취소의 변화 규모가 크다.'}
+        engine.call.side_effect=compare
+        with patch('builtins.print'):result=evaluate_pairwise(engine,data)
+        self.assertEqual((result['passed'],result['valid']),(1,1))
+
     def test_pairwise_position_bias_and_ties_cannot_pass(self):
         dataset=self.coverage_fixture()
         for winner,consistent in [('E1',0),('동순위',4)]:
@@ -425,11 +443,15 @@ class IntelligenceTest(unittest.TestCase):
     def coverage_fixture(self):
         return json.loads((Path(__file__).parent/'fixtures/ranking_coverage_eval.json').read_text())
 
+    def mock_screening(self,engine,dataset):
+        labels={tuple(c['evidence']):c['expected'] for c in ranking_cases(dataset)}
+        engine.screen.side_effect=lambda event:{'stock_relevance':labels[tuple(event['evidence'])]}
+
     def coverage_oracle(self,dataset):
         cases=dataset['equity_screening']
         priorities={case['summary']:i+2 for i,case in enumerate(cases)}
-        priorities[cases[12]['summary']]=0
-        priorities[cases[13]['summary']]=1
+        for index,critical in enumerate(dataset['priority_checks']):
+            priorities[next(c['summary'] for c in cases if c['id']==critical)]=index
         labels={c['summary']:c['expected'] for c in cases}
         def rank(events,market):
             return [dict(rank_row(e['event_id']),stock_relevance=labels[e['evidence'][0]]) for e in sorted(events,key=lambda e:priorities[e['evidence'][0]])]
@@ -441,23 +463,24 @@ class IntelligenceTest(unittest.TestCase):
         engine.usage.return_value={}
         engine.rank.side_effect=self.coverage_oracle(dataset)
         with patch('builtins.print'):
-            report=evaluate_window_ranking(engine,dataset)
+            self.mock_screening(engine,dataset);report=evaluate_window_ranking(engine,dataset)
         first,forward,reverse=report['runs']
         self.assertEqual((report['window_size'],report['step'],report['top_k']),(12,4,8))
         self.assertGreater(sum(c['expected']=='주식 판단 재료' for c in dataset['equity_screening']),8)
-        self.assertEqual(engine.rank.call_count,9)
+        self.assertEqual(engine.rank.call_count,5)
+        self.assertEqual(engine.screen.call_count,24)
         self.assertEqual((first['reviewed'],first['critical_hits']),(12,0))
         for run in (forward,reverse):
             self.assertTrue(run['valid'])
-            self.assertEqual((run['reviewed'],run['passed'],run['critical_hits']),(24,24,2))
+            self.assertEqual((run['reviewed'],run['passed'],run['critical_hits']),(15,24,2))
             self.assertEqual(run['eligibility_passed'],24)
-            self.assertEqual(len({r['event_id'] for r in run['ranking']}),24)
-            self.assertEqual([len(w['inputs']) for w in run['windows']],[12,12,12,12])
+            self.assertEqual(len({r['event_id'] for r in run['ranking']}),15)
+            self.assertEqual([len(w['inputs']) for w in run['windows']],[12,11])
         original={c['summary'] for c in dataset['equity_screening']}
         for call in engine.rank.call_args_list:
             self.assertEqual([e['event_id'] for e in call.args[0]],[f'E{i+1}' for i in range(len(call.args[0]))])
             for event in call.args[0]:
-                self.assertEqual(set(event),{'event_id','evidence','published_at','first_published_at'})
+                self.assertEqual(set(event),{'event_id','evidence','published_at','first_published_at','stock_relevance'})
                 self.assertIn(event['evidence'][0],original)
                 self.assertRegex(event['event_id'],r'^E\d+$')
 
@@ -474,12 +497,12 @@ class IntelligenceTest(unittest.TestCase):
             return oracle(events,market)
         engine.rank.side_effect=rank
         with patch('builtins.print'):
-            report=evaluate_window_ranking(engine,dataset)
+            self.mock_screening(engine,dataset);report=evaluate_window_ranking(engine,dataset)
         run=report['runs'][1]
         self.assertFalse(run['valid'])
         self.assertEqual(run['error'],'TimeoutError')
-        self.assertEqual((run['reviewed'],run['passed'],run['total']),(12,12,24))
-        self.assertEqual(run['eligibility_passed'],12)
+        self.assertEqual((run['reviewed'],run['passed'],run['total']),(12,21,24))
+        self.assertEqual(run['eligibility_passed'],24)
         self.assertEqual(sum(c['reviewed'] for c in run['checks']),12)
 
     def test_window_boundaries_keep_top_eight_with_a_consistent_ranker(self):
@@ -490,7 +513,7 @@ class IntelligenceTest(unittest.TestCase):
             engine.usage.return_value={}
             engine.rank.side_effect=lambda events,market:[rank_row(e['event_id']) for e in sorted(events,key=lambda e:int(e['evidence'][0].split()[-1]),reverse=True)]
             with patch('builtins.print'):
-                report=evaluate_window_ranking(engine,dataset)
+                self.mock_screening(engine,dataset);report=evaluate_window_ranking(engine,dataset)
             for run in report['runs'][1:]:
                 self.assertEqual(run['reviewed'],size)
                 self.assertEqual(run['top8'],[str(i) for i in range(size-1,size-9,-1)])
@@ -508,20 +531,15 @@ class IntelligenceTest(unittest.TestCase):
             return [dict(rank_row(e['event_id']),stock_relevance=cases[number(e)]['expected']) for e in ordered]
         engine.rank.side_effect=rank
         with patch('builtins.print'):
-            result=evaluate_window_ranking(engine,dataset)
-        self.assertEqual(result['retention_policy'],'eligible-first-v1')
+            self.mock_screening(engine,dataset);result=evaluate_window_ranking(engine,dataset)
+        self.assertEqual(result['retention_policy'],'screened-candidates-only-v2')
+        self.assertEqual(engine.screen.call_count,16)
         for run in result['runs'][1:]:
             self.assertEqual(run['top8'],[str(i) for i in range(15,7,-1)])
             self.assertEqual(run['eligibility_passed'],16)
             self.assertEqual(run['critical_hits'],2)
-            for w in run['windows']:
-                raw=w['model_ranking'];selected=w['ranking']
-                self.assertEqual({r['event_id']:r for r in raw},{r['event_id']:r for r in selected})
-                for relevance in (True,False):
-                    self.assertEqual([r['event_id'] for r in raw if (r['stock_relevance']=='주식 판단 재료')==relevance],
-                                     [r['event_id'] for r in selected if (r['stock_relevance']=='주식 판단 재료')==relevance])
-                self.assertEqual(selected[0]['stock_relevance'],'주식 판단 재료')
-            self.assertEqual(run['windows'][0]['model_ranking'][0]['stock_relevance'],'배경·상품 안내')
+            for call in engine.rank.call_args_list:
+                self.assertTrue(all(not 4<=int(e['evidence'][0].split()[-1])<8 for e in call.args[0]))
 
     def test_window_evaluator_rejects_bad_model_ids_and_missing_expected_labels(self):
         dataset=self.coverage_fixture()
@@ -529,9 +547,9 @@ class IntelligenceTest(unittest.TestCase):
         engine.usage.return_value={}
         engine.rank.return_value=[rank_row('invented')]
         with patch('builtins.print'):
-            report=evaluate_window_ranking(engine,dataset)
+            self.mock_screening(engine,dataset);report=evaluate_window_ranking(engine,dataset)
         self.assertTrue(all(not r['valid'] and r['reviewed']==0 for r in report['runs']))
-        self.assertTrue(all(r['eligibility_passed']==0 for r in report['runs']))
+        self.assertTrue(all(r['eligibility_passed']==24 for r in report['runs']))
         for broken in ({**dataset,'priority_checks':['not-a-case']},
                        {**dataset,'equity_screening':[{**c,'expected':'unknown'} for c in dataset['equity_screening']]}):
             engine.rank.reset_mock()
@@ -581,60 +599,102 @@ class IntelligenceTest(unittest.TestCase):
     def test_shared_rank_service_rejects_invalid_ids_before_calling_the_model(self):
         with patch.object(self.engine,'call') as call:
             self.assertEqual(self.engine.rank([],{}),[])
-            self.assertRaises(ValueError,self.engine.rank,[{'event_id':'E1'},{'event_id':'E1'}],{})
-            self.assertRaises(ValueError,self.engine.rank,[{'event_id':[]}],{})
+            self.assertRaises(ValueError,self.engine.rank,[{'event_id':'E1','stock_relevance':'주식 판단 재료'},{'event_id':'E1','stock_relevance':'주식 판단 재료'}],{})
+            self.assertRaises(ValueError,self.engine.rank,[{'event_id':[],'stock_relevance':'주식 판단 재료'}],{})
         call.assert_not_called()
+
+    def test_rank_orders_only_screened_events_and_does_not_ask_for_reclassification(self):
+        event={'event_id':'E1','evidence':['회사와 고객이 계약 해지설을 사실무근이라고 공식 확인했다.'],
+               'stock_relevance':'주식 판단 재료'}
+        raw={'event_id':'E1','reason':'계약 해지설을 공식 부인했다.','watch_for':'후속 공시 확인'}
+        with patch.object(self.engine,'call',return_value={'ranking':[raw]}) as call:
+            output=self.engine.rank([event],{})
+        self.assertEqual(output,[{**raw,'stock_relevance':'주식 판단 재료'}])
+        self.assertNotIn('stock_relevance',call.call_args.args[2]['properties']['ranking']['items']['properties'])
+        self.assertNotIn('stock_relevance',call.call_args.args[1]['events'][0])
+        for label in (None,'배경·상품 안내','연결 미확인'):
+            with patch.object(self.engine,'call') as call:
+                self.assertRaises(ValueError,self.engine.rank,[{**event,'stock_relevance':label}],{})
+            call.assert_not_called()
+        with patch.object(self.engine,'call',return_value={'ranking':[{**raw,'stock_relevance':'배경·상품 안내'}]}):
+            self.assertRaises(ValueError,self.engine.rank,[event],{})
 
     def test_ranking_evaluator_matches_case_ids_even_when_the_model_changes_order(self):
         engine=MagicMock(model='test',provider='ollama')
-        engine.usage.side_effect=[{'calls_today':0,'output_tokens':0},{'calls_today':1,'output_tokens':120}]
-        engine.rank.return_value=[{**rank_row('E2'),'stock_relevance':'배경·상품 안내'},rank_row('E1')]
+        engine.usage.side_effect=[{'calls_today':0,'output_tokens':0},{'calls_today':4,'output_tokens':120}]
+        engine.rank.return_value=[rank_row('E3'),rank_row('E1')]
         data={'equity_screening':[{'id':'risk','summary':'확인된 차환 발행 실패입니다.','expected':'주식 판단 재료'},
-                                  {'id':'award','summary':'매출 변화 없는 수상 소식입니다.','expected':'배경·상품 안내'}]}
-        with patch('builtins.print'):
-            report=evaluate_ranking(engine,data)
+                                  {'id':'award','summary':'매출 변화 없는 수상 소식입니다.','expected':'배경·상품 안내'},
+                                  {'id':'other','summary':'확인된 공급 계약 취소입니다.','expected':'주식 판단 재료'}]}
+        self.mock_screening(engine,data)
+        with patch('builtins.print'):report=evaluate_ranking(engine,data)
         self.assertTrue(report['valid'])
-        self.assertEqual(report['passed'],2)
-        self.assertEqual(report['call_delta'],1)
+        self.assertEqual((report['passed'],report['screened'],report['ordered']),(3,3,2))
+        self.assertEqual(report['call_delta'],4)
         self.assertEqual(report['output_tokens_delta'],120)
-        self.assertEqual([r['id'] for r in report['checks']],['risk','award'])
-        self.assertNotIn('summary',engine.rank.call_args.args[0][0])
-        self.assertEqual(report['inputs'],engine.rank.call_args.args[0])
+        self.assertEqual([r['id'] for r in report['checks']],['risk','award','other'])
+        self.assertEqual([e['event_id'] for e in engine.rank.call_args.args[0]],['E1','E3'])
+        self.assertTrue(all(e['stock_relevance']=='주식 판단 재료' for e in engine.rank.call_args.args[0]))
+        self.assertEqual([r['event_id'] for r in report['ranking']],['E3','E1'])
         engine.call.assert_not_called()
 
-    def test_ranking_evaluator_does_not_score_incomplete_or_unknown_cases_as_success(self):
-        engine=MagicMock(model='test',provider='ollama')
-        engine.usage.return_value={}
+    def test_ranking_evaluator_keeps_screen_results_but_never_passes_failed_ordering(self):
+        engine=MagicMock(model='test',provider='ollama');engine.usage.return_value={}
         engine.rank.return_value=[rank_row('unknown')]
-        with patch('builtins.print'):
-            report=evaluate_ranking(engine,{'equity_screening':[{'id':'risk','summary':'확인된 차환 실패','expected':'주식 판단 재료'}]})
+        data={'equity_screening':[{'id':'risk','summary':'확인된 차환 실패 공시입니다.','expected':'주식 판단 재료'}]}
+        self.mock_screening(engine,data)
+        with patch('builtins.print'):report=evaluate_ranking(engine,data)
         self.assertFalse(report['valid'])
-        self.assertEqual(report['passed'],0)
-        self.assertIsNone(report['checks'][0]['actual'])
+        self.assertEqual((report['passed'],report['screened'],report['ordered']),(0,1,0))
+        self.assertEqual(report['checks'][0]['actual'],'주식 판단 재료')
+        self.assertTrue(report['checks'][0]['eligibility_pass'])
+        self.assertFalse(report['checks'][0]['reviewed'])
 
     def test_ranking_evaluator_rejects_invalid_expected_labels_without_model_calls(self):
         engine=MagicMock()
         self.assertRaises(ValueError,evaluate_ranking,engine,{'equity_screening':[{'id':'bad','summary':'평가용 본문입니다.','expected':'수혜 확정'}]})
         engine.rank.assert_not_called()
 
-    def test_ranking_evaluator_separates_label_agreement_from_equity_eligibility_without_guessing_missing_results(self):
-        engine=MagicMock(model='test',provider='ollama')
-        engine.usage.return_value={}
+    def test_mixed_evaluator_preserves_multiple_source_quotes_and_rejects_invented_evidence(self):
+        quotes=['회사는 계약 해지설을 사실무근이라고 공시했다.','고객도 기존 공급 계약이 유지된다고 확인했다.']
+        data={'equity_screening':[{'id':'confirmation','summary':' '.join(quotes),'evidence':quotes,'expected':'주식 판단 재료'}]}
+        engine=MagicMock(model='test',provider='ollama');engine.usage.return_value={}
+        engine.screen.return_value={'stock_relevance':'주식 판단 재료'};engine.rank.return_value=[rank_row('E1')]
+        with patch('builtins.print'):result=evaluate_ranking(engine,data)
+        self.assertTrue(result['valid'])
+        engine.screen.assert_called_once_with({'evidence':quotes})
+        self.assertEqual(engine.rank.call_args.args[0][0]['evidence'],quotes)
+        data['equity_screening'][0]['evidence']=['기사에 없는 임의의 판단 근거입니다.']
+        engine.reset_mock()
+        self.assertRaises(ValueError,evaluate_ranking,engine,data)
+        engine.screen.assert_not_called();engine.rank.assert_not_called()
+
+    def test_mixed_evaluator_never_orders_excluded_only_inputs(self):
+        data={'equity_screening':[{'id':'guide','summary':'실적 변화 없는 정기 상품 안내입니다.','expected':'배경·상품 안내'}]}
+        engine=MagicMock(model='test',provider='ollama');engine.usage.return_value={}
+        self.mock_screening(engine,data)
+        with patch('builtins.print'):result=evaluate_ranking(engine,data)
+        self.assertTrue(result['valid'])
+        self.assertEqual((result['screened'],result['ordered'],result['passed']),(1,0,1))
+        engine.rank.assert_not_called()
+
+    def test_ranking_evaluator_separates_label_agreement_from_eligibility_and_keeps_screen_failures_unknown(self):
+        engine=MagicMock(model='test',provider='ollama');engine.usage.return_value={}
         data={'equity_screening':[{'id':'background','summary':'일반 금융교육 일정 안내입니다.','expected':'배경·상품 안내'},
                                   {'id':'risk','summary':'상장사 채무 불이행 공시입니다.','expected':'주식 판단 재료'}]}
-        engine.rank.return_value=[dict(rank_row('E1'),stock_relevance='연결 미확인'),dict(rank_row('E2'),stock_relevance='배경·상품 안내')]
-        with patch('builtins.print'):
-            result=evaluate_ranking(engine,data)
-        self.assertEqual(result['passed'],0)
-        self.assertEqual(result['eligibility_passed'],1)
+        engine.screen.side_effect=[{'stock_relevance':'연결 미확인'},{'stock_relevance':'배경·상품 안내'}]
+        with patch('builtins.print'):result=evaluate_ranking(engine,data)
+        self.assertEqual((result['passed'],result['eligibility_passed']),(0,1))
         self.assertTrue(result['checks'][0]['eligibility_pass'])
         self.assertFalse(result['checks'][1]['eligibility_pass'])
-        engine.rank.return_value=[]
-        with patch('builtins.print'):
-            missing=evaluate_ranking(engine,data)
+        engine.rank.assert_not_called()
+        engine.screen.side_effect=TimeoutError('screen failed')
+        with patch('builtins.print'):missing=evaluate_ranking(engine,data)
         self.assertFalse(missing['valid'])
         self.assertEqual(missing['eligibility_passed'],0)
+        self.assertEqual(len(missing['screen_errors']),2)
         self.assertTrue(all(c['actual'] is None and not c['eligibility_pass'] for c in missing['checks']))
+        engine.rank.assert_not_called()
 
     def test_source_passages_cover_the_body_and_selected_ids_restore_exact_evidence(self):
         for length in (8,240,241,247,248,480,481,6000):
@@ -970,11 +1030,11 @@ class IntelligenceTest(unittest.TestCase):
 
     def test_cycle_publishes_only_valid_ranking_and_reuses_it(self):
         reading={**copy.deepcopy(ANALYZED),'event_id':'event-a','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at'],'model':'test','analyzed_at':ai.now()}
-        with patch.object(self.engine,'screen',return_value=GATE),patch.object(self.engine,'reading',return_value=reading),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1','확정 공급 계약')]}) as call:
+        with patch.object(self.engine,'screen',return_value=GATE),patch.object(self.engine,'reading',return_value=reading),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[order_row('E1','확정 공급 계약')]}) as call:
             first=self.engine.cycle([ARTICLE]);second=self.engine.cycle([ARTICLE])
         self.assertEqual(first['status'],'ok');self.assertEqual(len(second['ranking']),1);call.assert_called_once()
         self.engine.rank_key='changed'
-        with patch.object(self.engine,'screen',return_value=GATE),patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'call',return_value={'ranking':[rank_row('invented','허구')]}):
+        with patch.object(self.engine,'screen',return_value=GATE),patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'call',return_value={'ranking':[order_row('invented','허구')]}):
             failed=self.engine.cycle([ARTICLE])
         self.assertFalse(failed['ranking_stale']);self.assertTrue(failed['ranking_partial']);self.assertEqual(failed['status'],'partial')
         self.assertEqual(failed['ranking'],first['ranking'])
@@ -991,9 +1051,9 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(restored['ranked_at'],first['ranked_at'])
         self.assertEqual(restored['market'],first['market'])
 
-    def seed_saved_rank(self, relevance='주식 판단 재료'):
+    def seed_saved_rank(self):
         reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
-        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=[dict(rank_row('E1'),stock_relevance=relevance)]):
+        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=[rank_row('E1')]):
             result=self.engine.cycle([ARTICLE])
         return reading,result
 
@@ -1145,14 +1205,20 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(result['events'][0]['summary'],'새 계약 조건')
         self.assertEqual(result['ranked_at'],first['ranked_at'])
 
-    def test_restored_final_rejection_stays_excluded_without_another_rank_call(self):
-        self.seed_saved_rank('배경·상품 안내')
+    def test_cached_reclassification_is_rejected_before_it_can_override_a_source_screen(self):
+        self.seed_saved_rank()
+        with self.engine.db() as db:
+            saved=json.loads(db.execute('SELECT payload FROM rank_snapshots WHERE namespace=?',(self.engine.rank_namespace,)).fetchone()[0])
+            saved['ranking'][0]['stock_relevance']='배경·상품 안내'
+            db.execute('UPDATE rank_snapshots SET payload=? WHERE namespace=?',(json.dumps(saved),self.engine.rank_namespace))
         other=ai.Engine(self.engine.path)
-        with patch.object(other,'rank') as rank,patch('intelligence.market_snapshot') as market:
+        self.assertEqual(other.last_ranking,[])
+        self.assertIn('복구 실패',other.rank_cache_error)
+        with patch.object(other,'rank',return_value=[rank_row('E1')]) as rank,patch('intelligence.market_snapshot',return_value={'observations':[]}):
             result=other.cycle([ARTICLE])
-        rank.assert_not_called();market.assert_not_called()
-        self.assertEqual(result['ranking'],[])
-        self.assertEqual(result['assessments'][0]['stock_relevance'],'배경·상품 안내')
+        rank.assert_called_once()
+        self.assertEqual(len(result['ranking']),1)
+        self.assertEqual(result['assessments'][0]['stock_relevance'],'주식 판단 재료')
 
     def test_failed_unchanged_rank_waits_while_background_readings_keep_progressing(self):
         reading,saved=self.seed_saved_rank()
@@ -1177,7 +1243,7 @@ class IntelligenceTest(unittest.TestCase):
         _,first=self.seed_saved_rank()
         self.engine.rank_key='force-refresh'
         clock=ai.time.time()
-        with patch('intelligence.time.time',return_value=clock),patch.object(self.engine,'call',return_value={'ranking':[rank_row('unknown')]}) as call:
+        with patch('intelligence.time.time',return_value=clock),patch.object(self.engine,'call',return_value={'ranking':[order_row('unknown')]}) as call:
             failed=self.engine.cycle([ARTICLE])
             waiting=self.engine.cycle([ARTICLE])
         call.assert_called_once()
@@ -1240,7 +1306,7 @@ class IntelligenceTest(unittest.TestCase):
     def test_finished_article_is_published_before_waiting_for_the_next_article(self):
         articles=[ARTICLE,{**ARTICLE,'id':'b','url':ARTICLE['url']+'b'}]
         reading={**ANALYZED,'event_id':'event-a','article_id':ARTICLE['id'],'source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
-        with patch.object(self.engine,'reading',side_effect=[reading,AssertionError('두 번째 기사 추론 대기')]) as read,patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1','확인한 계약')]}):
+        with patch.object(self.engine,'reading',side_effect=[reading,AssertionError('두 번째 기사 추론 대기')]) as read,patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[order_row('E1','확인한 계약')]}):
             result=self.engine.cycle(articles)
         self.assertEqual(read.call_count,1)
         self.assertEqual(result['queue']['pending'],1)
@@ -1288,7 +1354,7 @@ class IntelligenceTest(unittest.TestCase):
             ids=[e['event_id'] for e in payload['events']]
             self.assertTrue(all(len(i)<=3 for i in ids))
             self.assertEqual(set(rule['items']['properties']['event_id']['enum']),set(ids))
-            return {'ranking':[rank_row(i) for i in reversed(ids)]}
+            return {'ranking':[order_row(i) for i in reversed(ids)]}
         with patch.object(self.engine,'screen',return_value=GATE),patch.object(self.engine,'reading',side_effect=lambda a,anchors: next(r for r in readings if r['article_id']==a['id'])),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',side_effect=provider):
             for _ in articles:
                 result=self.engine.cycle(articles)
@@ -1298,7 +1364,7 @@ class IntelligenceTest(unittest.TestCase):
     def test_ranking_uses_original_evidence_instead_of_generated_financial_claims(self):
         reading={**ANALYZED,'summary':'순이익 9999억원 증가 확정','event_title':'허구의 이익 증가',
                  'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
-        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call:
+        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[order_row('E1')]}) as call:
             self.engine.cycle([ARTICLE])
         event=call.call_args.args[1]['events'][0]
         self.assertNotIn('summary',event)
@@ -1309,11 +1375,11 @@ class IntelligenceTest(unittest.TestCase):
 
     def test_rank_cache_ignores_history_changes_but_tracks_sources_and_market(self):
         reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
-        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine.queue,'history',side_effect=[[],[{'summary':'이력 추가'}]]),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call:
+        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine.queue,'history',side_effect=[[],[{'summary':'이력 추가'}]]),patch.object(self.engine,'call',return_value={'ranking':[order_row('E1')]}) as call:
             self.engine.cycle([ARTICLE]);self.engine.cycle([ARTICLE])
         self.assertEqual(call.call_count,1)
         changed={**reading,'evidence':['공급 계약 금액을 4000억원으로 정정했다.']}
-        with patch.object(self.engine.queue,'readings',return_value=([changed],[dict(GATE,event_id='e')])),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call:
+        with patch.object(self.engine.queue,'readings',return_value=([changed],[dict(GATE,event_id='e')])),patch.object(self.engine,'call',return_value={'ranking':[order_row('E1')]}) as call:
             self.engine.cycle([ARTICLE])
             self.engine.last_market={**self.engine.last_market,'observations':[{'code':'SPY','change_percent':-2}]}
             self.engine.cycle([ARTICLE])
@@ -1360,7 +1426,7 @@ class IntelligenceTest(unittest.TestCase):
 
     def test_failed_reranking_cannot_reuse_reasons_from_different_evidence_or_market(self):
         reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
-        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}):
+        with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[order_row('E1')]}):
             self.engine.cycle([ARTICLE])
         for changed in (True,False):
             fact={**reading,'evidence':['계약 금액을 4000억원으로 정정했다.']} if changed else reading
@@ -1374,7 +1440,7 @@ class IntelligenceTest(unittest.TestCase):
 
     def test_changed_facts_replace_previous_state_before_slow_ranking_finishes(self):
         old={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
-        with patch.object(ai,'STATE',{}),patch.object(self.engine,'reading',return_value=old),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1','이전 계약 근거')]}):
+        with patch.object(ai,'STATE',{}),patch.object(self.engine,'reading',return_value=old),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[order_row('E1','이전 계약 근거')]}):
             initial=self.engine.cycle([ARTICLE])
             ai.STATE.update(initial)
             changed={**ARTICLE,'title':'한빛에너지 계약 변경'}
@@ -1396,19 +1462,19 @@ class IntelligenceTest(unittest.TestCase):
             self.assertEqual(result['events'][0]['summary'],'새 변경 사실')
             self.assertEqual(result['ranking'],[])
 
-    def test_final_source_review_can_remove_a_false_positive_without_filling_the_briefing(self):
+    def test_ordering_reclassification_is_rejected_without_overwriting_the_source_screen(self):
         reading={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at']}
         rejected={**rank_row('E1'),'stock_relevance':'배경·상품 안내','reason':'주식 실적 변화 없는 상품 조건 안내'}
         with patch.object(self.engine,'reading',return_value=reading),patch.object(self.engine,'screen',return_value=GATE),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rejected]}) as call:
             first=self.engine.cycle([ARTICLE]);second=self.engine.cycle([ARTICLE])
         self.assertEqual(first['ranking'],[])
-        self.assertEqual(first['assessments'][0]['stock_relevance'],'배경·상품 안내')
-        self.assertFalse(first['ranking_stale'])
-        self.assertFalse(first['ranking_partial'])
+        self.assertEqual(first['assessments'][0]['stock_relevance'],'주식 판단 재료')
+        self.assertTrue(first['ranking_stale'])
+        self.assertTrue(first['ranking_partial'])
         self.assertEqual(second['ranking'],[])
         call.assert_called_once()
 
-    def test_candidate_limit_cannot_be_reported_as_complete_and_rejections_count_as_reviewed(self):
+    def test_candidate_limit_cannot_be_reported_as_complete_after_independent_screening(self):
         articles=[{**ARTICLE,'id':str(i),'url':ARTICLE['url']+str(i)} for i in range(16)]
         readings=[{**ANALYZED,'event_id':a['id'],'article_id':a['id'],'source_url':a['url'],'published_at':a['published_at']} for a in articles]
         gates=[dict(GATE,event_id=a['id']) for a in articles]
@@ -1416,7 +1482,6 @@ class IntelligenceTest(unittest.TestCase):
         readings[14]['published_at']='2026-11-09T00:00:00Z'
         readings[15]['published_at']='2026-11-12T00:00:00Z'
         rows=[rank_row('E'+str(i)) for i in range(1,13)]
-        rows[-1]['stock_relevance']='배경·상품 안내'
         with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=(readings,gates)),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'rank',return_value=rows) as rank:
             first=self.engine.cycle(articles)
             second=self.engine.cycle(articles)
@@ -1429,7 +1494,7 @@ class IntelligenceTest(unittest.TestCase):
             self.assertEqual(result['coverage']['eligible_events'],13)
             self.assertEqual(result['coverage']['reviewed_events'],12)
             self.assertEqual(result['coverage']['unreviewed_events'],1)
-            self.assertEqual(len(result['ranking']),11)
+            self.assertEqual(len(result['ranking']),12)
 
     def priority_candidates(self):
         articles=[{**ARTICLE,'id':str(i),'url':ARTICLE['url']+str(i)} for i in range(14)]
@@ -1538,7 +1603,7 @@ class IntelligenceTest(unittest.TestCase):
              'published_at':ARTICLE['published_at'],'read_policy_version':ai.READ_VERSION}
         self.engine.queue.enqueue([{'article':ARTICLE}])
         self.engine.queue.complete(self.engine.queue.claim(),old,{**GATE,'screen_policy_version':'old-policy'})
-        with patch.object(self.engine,'reading',return_value=old),patch.object(self.engine,'screen',side_effect=ValueError('temporary failure')),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call,patch('intelligence.market_snapshot',return_value={'observations':[]}):
+        with patch.object(self.engine,'reading',return_value=old),patch.object(self.engine,'screen',side_effect=ValueError('temporary failure')),patch.object(self.engine,'call',return_value={'ranking':[order_row('E1')]}) as call,patch('intelligence.market_snapshot',return_value={'observations':[]}):
             result=self.engine.cycle([ARTICLE])
         self.assertEqual(result['ranking'],[])
         call.assert_not_called()
@@ -1549,7 +1614,7 @@ class IntelligenceTest(unittest.TestCase):
              'published_at':ARTICLE['published_at'],'read_policy_version':'old-reader'}
         self.engine.queue.enqueue([{'article':ARTICLE}])
         self.engine.queue.complete(self.engine.queue.claim(),old,GATE)
-        with patch.object(self.engine,'reading',side_effect=ValueError('temporary failure')) as read,patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}) as call,patch('intelligence.market_snapshot',return_value={'observations':[]}):
+        with patch.object(self.engine,'reading',side_effect=ValueError('temporary failure')) as read,patch.object(self.engine,'call',return_value={'ranking':[order_row('E1')]}) as call,patch('intelligence.market_snapshot',return_value={'observations':[]}):
             result=self.engine.cycle([ARTICLE])
         read.assert_called_once()
         call.assert_not_called()
@@ -1561,7 +1626,7 @@ class IntelligenceTest(unittest.TestCase):
         current={**ANALYZED,'event_id':'e','article_id':'a','source_url':ARTICLE['url'],'published_at':ARTICLE['published_at'],'summary':'현재 요약'}
         old={**current,'article_id':'b','summary':'이전 잘못된 요약','read_policy_version':'old-reader'}
         gates=[dict(GATE,event_id='e'),dict(GATE,event_id='e',stock_relevance='배경·상품 안내')]
-        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=([current,old],gates)),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[rank_row('E1')]}):
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine.queue,'readings',return_value=([current,old],gates)),patch('intelligence.market_snapshot',return_value={'observations':[]}),patch.object(self.engine,'call',return_value={'ranking':[order_row('E1')]}):
             result=self.engine.cycle([ARTICLE])
         self.assertEqual(result['events'][0]['summary'],'현재 요약')
         self.assertEqual(len(result['events'][0]['articles']),1)

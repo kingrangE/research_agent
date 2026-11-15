@@ -48,7 +48,7 @@ def evaluate_pairwise(engine,dataset):
         runs=[]
         for ids in ([higher,lower],[lower,higher]):
             labels={f'E{i+1}':case_id for i,case_id in enumerate(ids)}
-            events=[{'event_id':label,'evidence':[cases[case_id]['body']],'published_at':as_of,'first_published_at':as_of} for label,case_id in labels.items()]
+            events=[{'event_id':label,'evidence':cases[case_id]['evidence'],'published_at':as_of,'first_published_at':as_of} for label,case_id in labels.items()]
             row={'labels':labels,'inputs':events,'valid':False,'actual':None,'output':None}
             try:
                 output=engine.call('rank',{'task':PAIR_POLICY,'as_of':as_of,'events':events,'market':{'observations':[]}},output_schema)
@@ -117,39 +117,67 @@ def evaluate(engine, dataset, clusters_only=False, readings_only=False):
 
 
 def ranking_cases(dataset):
-    cases=[{'id':c['id'],'body':c['summary'],'expected':c['expected']} for c in dataset['equity_screening']]
+    cases=[{'id':c['id'],'body':c['summary'],'evidence':c.get('evidence',[c['summary']]),'expected':c['expected']} for c in dataset['equity_screening']]
     readings={c['id']:c for c in dataset.get('readings',[])}
-    cases.extend({'id':c['id'],'body':readings[c['id']]['body'],'expected':c['expected']} for c in dataset.get('ranking_readings',[]))
+    cases.extend({'id':c['id'],'body':readings[c['id']]['body'],'evidence':[readings[c['id']]['body']],'expected':c['expected']} for c in dataset.get('ranking_readings',[]))
     if not cases or any(not isinstance(c['id'],str) or not c['id'] for c in cases) or len({c['id'] for c in cases})!=len(cases):
         raise ValueError('순위 평가 자료 없음·중복')
     if any(not isinstance(c['body'],str) or len(c['body'])<8 or c['expected'] not in RELEVANCE for c in cases):
         raise ValueError('순위 평가 본문·기대 분류 오류')
+    if any(not isinstance(c['evidence'],list) or not c['evidence'] or any(not isinstance(q,str) or not 8<=len(q)<=500 or q not in c['body'] for q in c['evidence']) for c in cases):
+        raise ValueError('순위 평가 원문 인용 오류')
     return cases
+
+
+def screen_inputs(engine,events):
+    assessments,errors={},{}
+    for label,event in events.items():
+        try:
+            result=engine.screen({'evidence':event['evidence']})
+            if not isinstance(result,dict) or result.get('stock_relevance') not in RELEVANCE:
+                raise ValueError('선별 결과 오류')
+            assessments[label]=result
+        except Exception as error:
+            errors[label]=type(error).__name__
+    return assessments,errors
+
+
+def ranking_checks(labels,assessments,ordered):
+    checks=[]
+    for label,case in labels.items():
+        actual=assessments.get(label,{}).get('stock_relevance')
+        classified=actual==case['expected']
+        checks.append({'id':case['id'],'event_id':label,'expected':case['expected'],'actual':actual,
+            'screened':label in assessments,'reviewed':label in ordered,'classification_pass':classified,
+            'pass':classified and (actual!='주식 판단 재료' or label in ordered),
+            'eligibility_pass':actual in RELEVANCE and (actual=='주식 판단 재료')==(case['expected']=='주식 판단 재료')})
+    return checks
 
 
 def evaluate_ranking(engine,dataset):
     cases=ranking_cases(dataset)
     as_of=datetime.now(timezone.utc).isoformat()
     labels={f'E{i+1}':c for i,c in enumerate(cases)}
-    events=[{'event_id':label,'evidence':[c['body']],'published_at':as_of,'first_published_at':as_of} for label,c in labels.items()]
+    events={label:{'event_id':label,'evidence':c['evidence'],'published_at':as_of,'first_published_at':as_of} for label,c in labels.items()}
     market={'observations':[],'limitations':'가상 평가용 시장 관측 없음. 실제 시황 재현 아님.'}
     before=engine.usage();started=time.monotonic();rows=[];error=None
+    assessments,screen_errors=screen_inputs(engine,events)
+    eligible=[{**events[label],'stock_relevance':'주식 판단 재료'} for label,a in assessments.items() if a['stock_relevance']=='주식 판단 재료']
     try:
-        rows=validate_ranking({'ranking':engine.rank(events,market)},set(labels))
+        if eligible:
+            rows=validate_ranking({'ranking':engine.rank(eligible,market)},{e['event_id'] for e in eligible})
     except Exception as failure:
         error=type(failure).__name__
     actual={r['event_id']:r for r in rows} if not error else {}
-    checks=[{'id':c['id'],'event_id':label,'expected':c['expected'],'actual':actual.get(label,{}).get('stock_relevance'),
-             'pass':actual.get(label,{}).get('stock_relevance')==c['expected']} for label,c in labels.items()]
-    for check in checks:
-        check['eligibility_pass']=check['actual'] in RELEVANCE and (check['actual']=='주식 판단 재료')==(check['expected']=='주식 판단 재료')
+    checks=ranking_checks(labels,assessments,actual)
     after=engine.usage()
     for row in checks:print(engine.model,row,flush=True)
-    return {'model':engine.model,'provider':engine.provider,'valid':error is None,'error':error,
-            'checks':checks,'passed':sum(c['pass'] for c in checks),'eligibility_passed':sum(c['eligibility_pass'] for c in checks),'total':len(checks),'ranking':rows,'inputs':events,'market':market,
+    return {'model':engine.model,'provider':engine.provider,'valid':error is None and not screen_errors,'error':error or ('screening_failed' if screen_errors else None),
+            'checks':checks,'passed':sum(c['pass'] for c in checks),'eligibility_passed':sum(c['eligibility_pass'] for c in checks),'total':len(checks),
+            'screened':len(assessments),'screening':assessments,'screen_errors':screen_errors,'ordered':len(actual),'ranking':rows,'inputs':events,'market':market,
             'seconds':round(time.monotonic()-started,2),'call_delta':after.get('calls_today',0)-before.get('calls_today',0),
             'output_tokens_delta':after.get('output_tokens',0)-before.get('output_tokens',0),'usage':after,
-            'limitations':'개발자 가상 자료의 최종 순위 경로만 검증. 수집·본문 읽기·적합성은 실행하지 않고 시장 관측도 비워 둠. 전문가 정답·독립 일반화·투자 성과 평가 아님.'}
+            'limitations':'개발자 가상 자료의 독립 선별 후 통과 사건만 정렬한다. 선별 실패는 미확인으로 남기며 정렬 성공으로 채우지 않는다. 수집·본문 읽기·실제 시장은 평가하지 않음. 선별 요청과 최종 정렬 요청을 포함하며 캐시는 재사용한다. 전문가 정답·독립 일반화·투자 성과 평가 아님.'}
 
 
 def evaluate_window_ranking(engine,dataset):
@@ -159,11 +187,13 @@ def evaluate_window_ranking(engine,dataset):
         raise ValueError('12개 초과 후보와 유효한 중요 자료 기대값 필요')
     as_of=datetime.now(timezone.utc).isoformat()
     labels={f'E{i+1}':c for i,c in enumerate(cases)}
-    events={label:{'event_id':label,'evidence':[c['body']],'published_at':as_of,'first_published_at':as_of} for label,c in labels.items()}
+    events={label:{'event_id':label,'evidence':c['evidence'],'published_at':as_of,'first_published_at':as_of} for label,c in labels.items()}
     market={'observations':[],'limitations':'가상 비교용 시장 관측 없음. 실제 시황 재현 아님.'}
+    initial_usage=engine.usage();assessments,screen_errors=screen_inputs(engine,events);screen_usage=engine.usage()
+    eligible=[label for label,a in assessments.items() if a['stock_relevance']=='주식 판단 재료']
     runs=[]
     for strategy in ('first12','windows','windows_reversed'):
-        order=list(events)[:12] if strategy=='first12' else list(reversed(events)) if strategy=='windows_reversed' else list(events)
+        order=eligible[:12] if strategy=='first12' else list(reversed(eligible)) if strategy=='windows_reversed' else eligible[:]
         before=engine.usage();started=time.monotonic();known={};windows=[];error=None
         end=len(order)
         try:
@@ -171,12 +201,9 @@ def evaluate_window_ranking(engine,dataset):
                 start=max(0,end-12)
                 ids=order[start:end]
                 local={f'E{i+1}':event_id for i,event_id in enumerate(ids)}
-                rows=validate_ranking({'ranking':engine.rank([{**events[event_id],'event_id':label} for label,event_id in local.items()],market)},set(local))
+                rows=validate_ranking({'ranking':engine.rank([{**events[event_id],'event_id':label,'stock_relevance':'주식 판단 재료'} for label,event_id in local.items()],market)},set(local))
                 rows=[{**r,'event_id':local[r['event_id']]} for r in rows]
-                model_rows=rows
-                # Excluded rows must not consume the overlap reserved for material candidates.
-                rows=sorted(rows,key=lambda r:r['stock_relevance']!='주식 판단 재료')
-                windows.append({'inputs':ids,'labels':local,'model_ranking':model_rows,'ranking':rows})
+                windows.append({'inputs':ids,'labels':local,'ranking':rows})
                 known.update({r['event_id']:r for r in rows})
                 order[start:end]=[r['event_id'] for r in rows]
                 if start==0:break
@@ -184,23 +211,21 @@ def evaluate_window_ranking(engine,dataset):
         except Exception as failure:
             error=type(failure).__name__
         rows=[known[i] for i in order if i in known]
-        top=[labels[r['event_id']]['id'] for r in rows if r['stock_relevance']=='주식 판단 재료'][:8]
-        checks=[{'id':c['id'],'expected':c['expected'],'actual':known.get(label,{}).get('stock_relevance'),
-                 'reviewed':label in known,'pass':known.get(label,{}).get('stock_relevance')==c['expected']} for label,c in labels.items()]
-        for check in checks:
-            check['eligibility_pass']=check['actual'] in RELEVANCE and (check['actual']=='주식 판단 재료')==(check['expected']=='주식 판단 재료')
+        top=[labels[r['event_id']]['id'] for r in rows][:8]
+        checks=ranking_checks(labels,assessments,known)
         after=engine.usage()
-        result={'strategy':strategy,'valid':error is None,'error':error,'windows':windows,'ranking':rows,'checks':checks,
-                'reviewed':len(known),'total':len(cases),'passed':sum(c['pass'] for c in checks),'eligibility_passed':sum(c['eligibility_pass'] for c in checks),'top8':top,
+        result={'strategy':strategy,'valid':error is None and not screen_errors,'error':error or ('screening_failed' if screen_errors else None),'windows':windows,'ranking':rows,'checks':checks,
+                'reviewed':len(known),'eligible':len(eligible),'total':len(cases),'passed':sum(c['pass'] for c in checks),'eligibility_passed':sum(c['eligibility_pass'] for c in checks),'top8':top,
                 'critical_hits':sum(c in top for c in critical),'critical_total':len(critical),
                 'seconds':round(time.monotonic()-started,2),'call_delta':after.get('calls_today',0)-before.get('calls_today',0),
                 'input_tokens_delta':after.get('input_tokens',0)-before.get('input_tokens',0),
                 'output_tokens_delta':after.get('output_tokens',0)-before.get('output_tokens',0)}
         runs.append(result)
         print(engine.model,{k:result[k] for k in ('strategy','valid','reviewed','total','passed','eligibility_passed','critical_hits','seconds','call_delta')},flush=True)
-    return {'model':engine.model,'provider':engine.provider,'runs':runs,'inputs':events,'market':market,
-            'window_size':12,'step':4,'top_k':8,'retention_policy':'eligible-first-v1',
-            'priority_checks':critical,'limitations':'실험 전용. 앞 12개와 창 크기 12·이동 4의 뒤→앞 비교 및 입력 역순을 검사한다. 다음 비교에는 판단 재료를 먼저 넘기며 해당 집합 안의 모델 순서는 유지한다. 원래 응답과 인계 순서를 함께 기록한다. 화면과 같은 상위 8개 중요 자료 회수는 개발자 가상 기대값이며 전역 최적 순위·전문가 정확도·투자 성과를 보장하지 않는다. 실패한 회차는 전체 검토 성공으로 취급하지 않는다. 운영 순위는 변경하지 않는다.'}
+    return {'model':engine.model,'provider':engine.provider,'runs':runs,'inputs':events,'market':market,'screening':assessments,'screen_errors':screen_errors,
+            'screened':len(assessments),'screening_call_delta':screen_usage.get('calls_today',0)-initial_usage.get('calls_today',0),
+            'window_size':12,'step':4,'top_k':8,'retention_policy':'screened-candidates-only-v2',
+            'priority_checks':critical,'limitations':'실험 전용. 독립 선별을 한 번 수행하고 통과 사건에만 앞 12개·창 크기 12·이동 4·역순 정렬을 적용한다. 제외 자료는 창을 차지하지 않는다. 검토 수는 정렬 수이며 전체 선별 수와 구분한다. 선별 오류는 미확인, 실패한 정렬은 미검토로 남긴다. 개발자 기대값 대조이며 전문가 정확도·전역 최적 순위·투자 성과를 보장하지 않는다. 운영 순위는 변경하지 않는다.'}
 
 
 def evaluate_equity(engine,dataset):
@@ -227,7 +252,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset',default='tests/fixtures/model_eval.json')
     stage=parser.add_mutually_exclusive_group()
     stage.add_argument('--equity-only',action='store_true',help='주식 판단 재료와 상품 안내의 구분만 검증')
-    stage.add_argument('--ranking-only',action='store_true',help='운영과 같은 최종 순위 경로의 분류만 격리 검증')
+    stage.add_argument('--ranking-only',action='store_true',help='독립 적합성 판정 후 통과 사건의 최종 정렬을 격리 검증')
     stage.add_argument('--window-ranking-only',action='store_true',help='12개 초과 후보의 겹치는 묶음 비교와 입력 순서 편향을 실험')
     stage.add_argument('--pairwise-only',action='store_true',help='판단 재료 쌍의 상대 우선순위와 위치 교환 일관성만 격리 검증')
     stage.add_argument('--clusters-only',action='store_true',help='운영 본문 읽기 경로에서 사건 연결만 격리 검증')
