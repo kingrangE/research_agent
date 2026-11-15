@@ -126,6 +126,60 @@ class AnalysisStoreTest(unittest.TestCase):
         self.assertEqual(other.summary()['done'],1)
         self.assertEqual(other.summary()['retrying'],1)
 
+    def test_explicit_compatible_review_keeps_exact_prior_result_without_marking_it_new(self):
+        a=self.article(1)
+        reading={'event_id':'event','article_id':'1','summary':'계약 체결','read_policy_version':'read-v1','analyzed_at':'original'}
+        gate={'screen_policy_version':'old','stock_relevance':'주식 판단 재료','assessed_at':'original'}
+        self.store.enqueue([{'article':a,'body':'보관 본문','body_version':'body-v1'}])
+        self.store.complete(self.store.claim(),reading,gate)
+        expected=self.store.readings([a])
+        self.store.enqueue_reviews([a],'new','read-v1')
+        self.assertEqual(self.store.readings([a]),([],[]))
+        compatibility={('read-v1','old')}
+        self.assertEqual(self.store.readings([a],review_compatibility=compatibility),expected)
+        self.assertEqual(self.store.readings([a],review_compatibility={('read-v2','old')}),([],[]))
+        job=self.store.claim();self.store.retry(job,'temporary failure')
+        other=Store(self.path,'test-model-v1')
+        self.assertEqual(other.readings([a],review_compatibility=compatibility),expected)
+        self.assertEqual(Store(self.path,'other-model').readings([a],review_compatibility=compatibility),([],[]))
+        self.assertEqual(other.summary()['done'],1)
+        newer={**a,'_version_at':'2026-11-11T01:00:00Z'}
+        self.store.enqueue([{'article':newer,'body':'새 본문','body_version':'new-body'}])
+        self.assertEqual(self.store.readings([newer],review_compatibility=compatibility),([],[]))
+        self.store.enqueue([{'article':{**a,'title':'새 계약 조건'},'body':'새 본문','body_version':'body-v2'}])
+        self.assertEqual(self.store.readings([{**a,'title':'새 계약 조건'}],review_compatibility=compatibility),([],[]))
+
+    def test_compatible_review_never_skips_a_newer_completed_rejection(self):
+        a=self.article(1);reading={'event_id':'event','article_id':'1','read_policy_version':'read-v1'}
+        self.store.enqueue([{'article':a}]);self.store.complete(self.store.claim(),reading,{'screen_policy_version':'old','stock_relevance':'주식 판단 재료'})
+        self.store.enqueue_reviews([a],'newer','read-v1')
+        self.store.complete(self.store.claim(),reading,{'screen_policy_version':'newer','stock_relevance':'배경·상품 안내'})
+        self.store.enqueue_reviews([a],'future','read-v1')
+        self.assertEqual(self.store.readings([a],review_compatibility={('read-v1','old')}),([],[]))
+        kept=self.store.readings([a],review_compatibility={('read-v1','newer')})
+        self.assertEqual(kept[1][0]['stock_relevance'],'배경·상품 안내')
+        with self.store.db() as db:
+            db.execute("UPDATE analysis_jobs SET result=? WHERE status='pending'",(json.dumps({**reading,'summary':'다른 원문 사실'}),))
+        self.assertEqual(self.store.readings([a],review_compatibility={('read-v1','newer')}),([],[]))
+
+    def test_compatible_priority_backfill_only_reviews_retained_readings(self):
+        articles=[self.article(i) for i in range(3)]
+        for a,relevance in zip(articles,('주식 판단 재료','배경·상품 안내','연결 미확인')):
+            self.store.enqueue([{'article':a}])
+            self.store.complete(self.store.claim(),{'event_id':a['id'],'article_id':a['id'],'read_policy_version':'read-v1'},
+                                {'screen_policy_version':'old','stock_relevance':relevance})
+        compatibility={('read-v1','old')}
+        self.store.enqueue_reviews(articles,'new','read-v1',review_compatibility=compatibility)
+        self.store.enqueue_reviews(articles,'new','read-v1',review_compatibility=compatibility)
+        self.assertEqual(self.store.summary()['pending'],1)
+        self.assertEqual(len(self.store.readings(articles,review_compatibility=compatibility)[0]),3)
+        # New reading criteria still require the previous exclusions to be reviewed.
+        self.store.enqueue_reviews(articles[1:],'new','read-v2',review_compatibility={('read-v2','old')})
+        self.assertEqual(self.store.summary()['pending'],2)
+        # Without an explicit compatibility declaration, normal review behavior remains.
+        self.store.enqueue_reviews(articles[2:],'future','read-v1')
+        self.assertEqual(self.store.summary()['pending'],3)
+
     def test_reading_only_policy_change_keeps_the_old_result_and_reviews_once(self):
         a=self.article(1,published_at='1970-01-01T00:15:00Z')
         old={'event_id':'event','article_id':'1','summary':'이전 요약','published_at':a['published_at'],'read_policy_version':'read-old'}

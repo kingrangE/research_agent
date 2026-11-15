@@ -152,15 +152,18 @@ class Store:
                 latest[row['article_id']] = (version,row)
         return {key:value[1] for key,value in latest.items()}
 
-    def enqueue_reviews(self, articles, policy, reading_policy):
+    def enqueue_reviews(self, articles, policy, reading_policy, review_compatibility=()):
         latest=self._latest(articles)
         with self.db() as db:
             for article in articles:
                 row=latest.get(article['id'])
                 if row is None or row['status']!='done':
                     continue
-                if (json.loads(row['assessment']).get('screen_policy_version')==policy
-                        and json.loads(row['result']).get('read_policy_version')==reading_policy):
+                assessment=json.loads(row['assessment'])
+                versions=(json.loads(row['result']).get('read_policy_version'),assessment.get('screen_policy_version'))
+                if versions==(reading_policy,policy):
+                    continue
+                if versions in review_compatibility and assessment.get('stock_relevance') in ('배경·상품 안내','연결 미확인'):
                     continue
                 key='screen-review:'+sha256(json.dumps([row['job_key'],policy,reading_policy]).encode()).hexdigest()
                 db.execute('''INSERT OR IGNORE INTO analysis_jobs
@@ -170,9 +173,23 @@ class Store:
                      row['body'],row['published_epoch'],time.time(),row['result']))
                 break
 
-    def readings(self, articles, limit=None):
+    def readings(self, articles, limit=None, review_compatibility=()):
         latest=self._latest(articles)
-        selected = [latest[a['id']] for a in articles if a['id'] in latest and latest[a['id']]['status']=='done'][:limit]
+        selected=[]
+        with self.db() as db:
+            for article in articles:
+                row=latest.get(article['id'])
+                if row and row['status']!='done' and review_compatibility and row['job_key'].startswith('screen-review:') and row['result']:
+                    previous=db.execute('''SELECT * FROM analysis_jobs WHERE namespace=? AND article_id=?
+                        AND status='done' AND id<? AND url=? AND title=? AND body_version=? AND article=? AND result=?
+                        ORDER BY id DESC LIMIT 1''',(self.namespace,row['article_id'],row['id'],row['url'],row['title'],
+                        row['body_version'],row['article'],row['result'])).fetchone()
+                    if previous and (json.loads(previous['result']).get('read_policy_version'),
+                                     json.loads(previous['assessment']).get('screen_policy_version')) in review_compatibility:
+                        row=previous
+                if row and row['status']=='done':
+                    selected.append(row)
+        selected=selected[:limit]
         return [json.loads(row['result']) for row in selected], [dict(json.loads(row['assessment']),event_id=row['event_id']) for row in selected]
 
     def anchors(self, article, reading_policy, limit=6):
