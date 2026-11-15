@@ -661,3 +661,19 @@ test('source bound ranking does not repeat its quote as model interpretation', (
   assert.ok(!modelNote.includes('코스피가 급락'));
   assert.ok(run(`articleHTML(data.articles[0],0)`).includes('원문 근거'));
 });
+
+
+test('event link review exposes pending and deferred scope without claiming all duplicates are resolved', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{event_linking:{pairs:3,reviewed_pairs:1,matched_pairs:1,blocked_pairs:1,pending_pairs:1,deferred_groups:2,errors:['ValueError']}}};render()`);
+  const html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('대기 1쌍'));
+  assert.ok(html.includes('보류한 제목 2개'));
+  assert.ok(html.includes('일부 연결 검토 실패'));
+  assert.ok(html.includes('제목이 다른 중복까지 찾은 결과가 아닙니다'));
+  const history=run(`eventHistoryHTML({linked_event_ids:['a','b'],link_reviewed_at:'2026-11-15T00:00:00Z',history:[{summary:'원래 사실'}]})`);
+  assert.ok(history.includes('같은 제목의 별도 사건을 모델이 연결'));
+  assert.ok(history.includes('원문별 분석과 최초 발행 시각은 보존'));
+  run(`delete data.intelligence.event_linking;render()`);
+  assert.ok(!run(`$('#source-view').innerHTML`).includes('같은 제목 사건 · 연결 재검토'));
+});

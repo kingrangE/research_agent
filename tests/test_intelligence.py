@@ -612,6 +612,150 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(engine.extract_reading.call_args_list[1].args[2],cases[1]['anchors'])
         engine.rank.assert_not_called()
 
+    def reconciliation_pair(self):
+        return [{**copy.deepcopy(ANALYZED),'event_id':'e'+str(i),'article_id':'a'+str(i),
+                 'article_title':'같은 계약 보도','source_url':'https://example.com/'+str(i),
+                 'published_at':f'2026-11-11T0{i}:00:00Z','first_published_at':f'2026-11-11T0{i}:00:00Z'} for i in (1,2)]
+
+    def test_reconciliation_is_source_bound_cached_and_does_not_rewrite_facts(self):
+        pair=self.reconciliation_pair();original=copy.deepcopy(pair)
+        with patch.object(self.engine,'call',return_value={'same_event':True}) as call:
+            links,status=self.engine.reconcile_events(pair)
+        self.assertEqual(links['e2']['event_id'],'e1')
+        self.assertEqual(status['matched_pairs'],1)
+        self.assertEqual(pair,original)
+        call.assert_called_once()
+        other=ai.Engine(self.engine.path)
+        with patch.object(other,'call') as call:
+            again,_=other.reconcile_events(list(reversed(pair)))
+        call.assert_not_called();self.assertEqual(again,links)
+        version=copy.deepcopy(pair);version[1]['body_version']='new-version'
+        with patch.object(other,'call') as call:
+            stale,status=other.reconcile_events(version,allow_review=False)
+        self.assertEqual(stale,{});self.assertEqual(status['pending_pairs'],1);call.assert_not_called()
+        with patch.dict(os.environ,{'LLM_MODEL':'different-model'}):different=ai.Engine(self.engine.path)
+        with patch.object(different,'call') as call:
+            stale,status=different.reconcile_events(pair,allow_review=False)
+        self.assertEqual(stale,{});self.assertEqual(status['pending_pairs'],1);call.assert_not_called()
+        changed=copy.deepcopy(pair);changed[1]['evidence']=['한빛에너지는 계약 금액을 4000억원으로 공시했다.']
+        with patch.object(other,'call') as call:
+            stale,status=other.reconcile_events(changed,allow_review=False)
+        self.assertEqual(stale,{})
+        self.assertEqual(status['pending_pairs'],1)
+        call.assert_not_called()
+        with patch.object(other,'call',return_value={'same_event':False}):
+            negative,_=other.reconcile_events(changed)
+        self.assertEqual(negative,{})
+        with other.db() as db:self.assertEqual(db.execute('SELECT count(*) FROM event_links').fetchone()[0],2)
+
+    def test_reconciliation_abstains_on_invalid_reply_and_preserves_retry(self):
+        pair=self.reconciliation_pair();clock=ai.time.time()
+        with patch('intelligence.time.time',return_value=clock),patch.object(self.engine,'call',return_value={'same_event':1}) as call:
+            links,status=self.engine.reconcile_events(pair)
+            self.assertEqual(links,{})
+            self.assertEqual(status['pending_pairs'],1)
+            self.assertTrue(status['errors'])
+            self.engine.reconcile_events(pair)
+        call.assert_called_once()
+        with patch('intelligence.time.time',return_value=clock+60),patch.object(self.engine,'call',return_value={'same_event':False}) as call:
+            links,status=self.engine.reconcile_events(pair)
+        call.assert_called_once();self.assertEqual(links,{})
+        self.assertEqual(status['pending_pairs'],0)
+        with patch.object(self.engine,'call') as call:self.engine.reconcile_events(pair)
+        call.assert_not_called()
+
+    def test_reconciliation_defers_larger_groups_and_blocks_changed_state(self):
+        pair=self.reconciliation_pair();pair[1]['certainty']='부인'
+        with patch.object(self.engine,'call') as call:
+            links,status=self.engine.reconcile_events(pair)
+        call.assert_not_called();self.assertEqual(links,{})
+        self.assertEqual(status['blocked_pairs'],1)
+        pair=self.reconciliation_pair();pair.append({**pair[1],'event_id':'e3','article_id':'a3'})
+        with patch.object(self.engine,'call') as call:
+            links,status=self.engine.reconcile_events(pair)
+        call.assert_not_called();self.assertEqual(links,{})
+        self.assertEqual(status['deferred_groups'],1)
+
+    def test_reconciliation_budget_and_existing_multi_article_groups_remain_explicit(self):
+        first=self.reconciliation_pair()
+        second=[{**e,'event_id':'other-'+e['event_id'],'article_title':'다른 동일 제목'} for e in first]
+        with patch.object(self.engine,'call',return_value={'same_event':False}) as call:
+            links,status=self.engine.reconcile_events(first+second)
+        call.assert_called_once();self.assertEqual(links,{})
+        self.assertEqual(status['reviewed_pairs'],1);self.assertEqual(status['pending_pairs'],1)
+        many=copy.deepcopy(first);many[0]['articles']=[{'id':'x'},{'id':'y'}]
+        with patch.object(self.engine,'call') as call:
+            links,status=self.engine.reconcile_events(many)
+        call.assert_not_called();self.assertEqual(links,{})
+        self.assertEqual(status['deferred_groups'],1)
+
+    def test_reconciliation_defers_busy_work_and_rejects_damaged_or_changed_policy_cache(self):
+        pair=self.reconciliation_pair()
+        with patch.object(self.engine,'call') as call:
+            links,status=self.engine.reconcile_events(pair,allow_review=False)
+        call.assert_not_called();self.assertEqual(status['pending_pairs'],1)
+        with patch.object(self.engine,'call',return_value={'same_event':True}):self.engine.reconcile_events(pair)
+        with self.engine.db() as db:
+            saved=json.loads(db.execute('SELECT payload FROM event_links').fetchone()[0]);saved['same_event']='true'
+            db.execute('UPDATE event_links SET payload=?',(json.dumps(saved),))
+        with patch.object(self.engine,'call') as call:
+            links,status=self.engine.reconcile_events(pair,allow_review=False)
+        self.assertEqual(links,{});self.assertEqual(status['pending_pairs'],1);call.assert_not_called()
+        with patch.object(self.engine,'call',return_value={'same_event':True}):self.engine.reconcile_events(pair)
+        with patch.object(ai,'LINK_VERSION','next'),patch.object(self.engine,'call') as call:
+            links,status=self.engine.reconcile_events(pair,allow_review=False)
+        call.assert_not_called();self.assertEqual(links,{})
+        with patch.object(ai,'LINK_POLICY',ai.LINK_POLICY+' 새 기준'),patch.object(self.engine,'call') as call:
+            links,status=self.engine.reconcile_events(pair,allow_review=False)
+        call.assert_not_called();self.assertEqual(links,{})
+        future=copy.deepcopy(pair);future[1]['source_version_at']='2026-11-12T00:00:00Z'
+        with patch.object(self.engine,'call') as call:self.assertEqual(self.engine.reconcile_events(future)[0],{})
+        call.assert_not_called()
+        corrected=copy.deepcopy(pair);corrected[1]['event_title']='계약 금액 정정'
+        with patch.object(self.engine,'call') as call:
+            links,status=self.engine.reconcile_events(corrected)
+        call.assert_not_called();self.assertEqual(status['blocked_pairs'],1)
+
+    def test_cycle_projects_reconciled_events_and_preserves_original_ids_and_history(self):
+        pair=self.reconciliation_pair();articles=[]
+        for r in pair:
+            a={**ARTICLE,'id':r['article_id'],'title':r['article_title'],'url':r['source_url'],'published_at':r['published_at']}
+            self.engine.queue.enqueue([{'article':a}]);self.engine.queue.complete(self.engine.queue.claim(),r,GATE);articles.append(a)
+        def provider(task,payload,output_schema):
+            return {'same_event':True} if task=='link' else {'ranking':[e['event_id'] for e in payload['events']]}
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine,'call',side_effect=provider),patch('intelligence.market_snapshot',return_value={'observations':[]}):
+            result=self.engine.cycle(articles)
+        self.assertEqual(len(result['events']),1)
+        e=result['events'][0];self.assertEqual(e['event_id'],'e1')
+        self.assertEqual(e['linked_event_ids'],['e1','e2'])
+        self.assertEqual({a['original_event_id'] for a in e['articles']},{'e1','e2'})
+        self.assertEqual({h['event_id'] for h in e['history']},{'e1','e2'})
+        self.assertEqual(e['first_published_at'],pair[0]['published_at'])
+        self.assertEqual(len(result['ranking']),1)
+        with self.engine.queue.db() as db:self.assertEqual({r[0] for r in db.execute('SELECT event_id FROM analysis_jobs')},{'e1','e2'})
+        other=ai.Engine(self.engine.path)
+        with patch.object(other.queue,'claim',return_value=None),patch.object(other,'call') as call:
+            restored=other.cycle(articles)
+        call.assert_not_called();self.assertEqual(restored['ranking'],result['ranking'])
+        self.assertEqual(restored['ranked_at'],result['ranked_at'])
+
+    def test_reconciliation_cannot_refresh_the_age_of_an_old_reprinted_event(self):
+        pair=self.reconciliation_pair();articles=[]
+        old={**ARTICLE,'id':'old-source','url':'https://example.com/old','published_at':'2026-11-09T00:00:00Z'}
+        self.engine.queue.enqueue([{'article':old}])
+        self.engine.queue.complete(self.engine.queue.claim(),{**pair[0],'article_id':old['id'],'source_url':old['url'],'published_at':old['published_at']},GATE)
+        for r in pair:
+            a={**ARTICLE,'id':r['article_id'],'title':r['article_title'],'url':r['source_url'],'published_at':r['published_at']}
+            self.engine.queue.enqueue([{'article':a}]);self.engine.queue.complete(self.engine.queue.claim(),r,GATE);articles.append(a)
+        with patch.object(self.engine.queue,'claim',return_value=None),patch.object(self.engine,'call',return_value={'same_event':True}) as call:
+            result=self.engine.cycle(articles)
+        self.assertEqual(result['event_linking']['matched_pairs'],1)
+        self.assertEqual(result['events'][0]['first_published_at'],old['published_at'])
+        self.assertEqual(result['events'][0]['recency_status'],'old')
+        self.assertEqual(result['ranking'],[])
+        self.assertEqual(result['coverage']['eligible_events'],0)
+        self.assertEqual([c.args[0] for c in call.call_args_list],['link'])
+
     def test_shared_rank_service_rejects_invalid_ids_before_calling_the_model(self):
         with patch.object(self.engine,'call') as call:
             self.assertEqual(self.engine.rank([],{}),[])
