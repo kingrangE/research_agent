@@ -809,3 +809,14 @@ test('trade detail keeps additional duty separate from unknown total and unconfi
  assert.ok(html.includes('제품·지역·실제 노출 대조 전'));
  assert.ok(html.includes('HTSUS 8542.31.00'));
 });
+
+test('daily reactions show immutable input prices and never label a missing abnormal return as zero',()=>{
+ const run=ui();
+ const html=run(`reactionsHTML({runs:[{market:'US',symbol:'AAPL',basis:'public',event_time:'2026-11-11T00:00:00Z',status:'calculated',benchmark:'SPY',benchmark_kind:'ETF_proxy_not_index',windows:[{name:'event_day',raw_return:0.01,abnormal_return:null,volume_change:null,turnover_change:null,status:'observed_with_quality_limits',includes_pre_event_movement:true,input_prices:[{series:'stock',day:'2026-11-11',closePrice:'100',currency:'USD',revision:3,response_id:4}]}],model:{samples:5,status:'insufficient_estimation'},version:'daily-reaction-v1',run_id:'abc'}]})`);
+ assert.ok(html.includes('1.00%'));
+ assert.ok(html.includes('미산정'));
+ assert.ok(!html.includes('0.00%'));
+ assert.ok(html.includes('장중 기사 이전 움직임이 포함'));
+ assert.ok(html.includes('ETF 대용 자료'));
+ assert.ok(html.includes('/api/history?response_id=4'));
+});

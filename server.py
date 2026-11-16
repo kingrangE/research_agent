@@ -30,6 +30,7 @@ import event_facts
 import macro_events
 import fx_data
 import trade_events
+import event_reactions
 from analysis_store import epoch, CURRENT_EVENT_SECONDS
 
 ROOT = Path(__file__).resolve().parent
@@ -287,6 +288,15 @@ def demo_snapshot():
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path == '/api/reactions':
+            params=parse_qs(urlsplit(self.path).query)
+            try:
+                result=event_reactions.snapshot(params.get('article_id',[None])[0],params.get('run_id',[None])[0])
+            except (ValueError,TypeError):
+                self.respond(b'{"error":"Invalid reaction query"}','application/json',400)
+                return
+            self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == '/api/trade-measures':
             try:
                 result=trade_events.snapshot(parse_qs(urlsplit(self.path).query).get('as_of',[None])[0])
