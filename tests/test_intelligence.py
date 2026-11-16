@@ -1098,7 +1098,7 @@ class IntelligenceTest(unittest.TestCase):
 
     def test_response_json_success_is_not_an_analysis_schema_success_and_legacy_is_unknown(self):
         with self.engine.db() as db:
-            db.execute('INSERT INTO attempts(day,task,model,status,duration_seconds) VALUES(?,?,?,?,?)',(ai.now()[:10],'read',self.engine.model,'received',1))
+            db.execute('INSERT INTO attempts(day,task,model,status,duration_seconds,scope) VALUES(?,?,?,?,?,?)',(ai.now()[:10],'read',self.engine.model,'received',1,self.engine.client.usage_scope))
         timing=self.engine.usage()['timings'][0]
         self.assertEqual(timing['response_checked'],0)
         response=MagicMock()
@@ -1113,16 +1113,18 @@ class IntelligenceTest(unittest.TestCase):
         cases=[{'choices':[]},
                {'choices':[{'finish_reason':'length','message':{'content':'{}'}}]},
                {'choices':[{'finish_reason':'stop','message':{'refusal':'blocked','content':'{}'}}]}]
+        with patch.dict(os.environ,{'LLM_PROVIDER':'gemini','GEMINI_API_KEY':'test-only','LLM_DAILY_CALL_LIMIT':'10'}):
+            engine=ai.Engine(Path(self.temp.name)/'cloud-failures.sqlite3')
         for payload in cases:
             response=MagicMock()
             response.__enter__.return_value.read.return_value=json.dumps({**payload,'usage':{'prompt_tokens':20,'completion_tokens':5}}).encode()
-            with patch.object(self.engine,'provider','gemini'),patch('intelligence.urlopen',return_value=response) as request:
-                self.assertRaises((ValueError,IndexError),self.engine.call,'read',{},ai.READ_SCHEMA)
+            with patch('intelligence.urlopen',return_value=response) as request:
+                self.assertRaises((ValueError,IndexError),engine.call,'read',{},ai.READ_SCHEMA)
             request.assert_called_once()
-        timing=self.engine.usage()['timings'][0]
+        timing=engine.usage()['timings'][0]
         self.assertEqual(timing['response_failed'],3)
-        self.assertEqual(self.engine.usage()['input_tokens'],60)
-        self.assertEqual(self.engine.usage()['output_tokens'],15)
+        self.assertEqual(engine.usage()['input_tokens'],60)
+        self.assertEqual(engine.usage()['output_tokens'],15)
 
     def test_legacy_usage_migration_preserves_counts_without_fabricated_timings(self):
         with self.engine.db() as db:
@@ -1130,8 +1132,10 @@ class IntelligenceTest(unittest.TestCase):
             db.execute('CREATE TABLE attempts(id INTEGER PRIMARY KEY,day TEXT,task TEXT,model TEXT,input_tokens INTEGER,output_tokens INTEGER,status TEXT)')
             db.execute('INSERT INTO attempts VALUES(1,?,?,?,?,?,?)',(ai.now()[:10],'read',self.engine.model,40,20,'received'))
         other=ai.Engine(self.engine.path)
-        self.assertEqual(other.usage()['calls_today'],1)
-        self.assertEqual(other.usage()['input_tokens'],40)
+        self.assertEqual(other.usage()['calls_today'],0)
+        self.assertEqual(other.usage()['legacy_calls_today'],1)
+        with other.db() as db:
+            self.assertEqual(tuple(db.execute('SELECT input_tokens,output_tokens,scope FROM attempts').fetchone()),(40,20,None))
         self.assertEqual(other.usage()['timings'],[])
 
     def test_cloud_daily_cap_still_counts_failures_after_restart(self):

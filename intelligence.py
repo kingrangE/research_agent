@@ -13,7 +13,8 @@ import sqlite3
 import threading
 import time
 from urllib.parse import urlsplit
-from urllib.request import Request, urlopen, HTTPRedirectHandler, build_opener
+from urllib.request import Request, HTTPRedirectHandler, build_opener
+from llm_provider import Provider, open_request as urlopen
 
 import stocks
 import relations
@@ -317,10 +318,11 @@ def market_snapshot():
 class Engine:
     def __init__(self, path=None):
         self.path = Path(path or ROOT / '.data' / 'analysis.sqlite3')
-        self.provider = os.environ.get('LLM_PROVIDER', 'ollama')
-        self.model = os.environ.get('LLM_MODEL', 'ax4-light:latest' if self.provider == 'ollama' else 'gemini-3.5-flash-lite')
-        self.key = os.environ.get('GEMINI_API_KEY', '')
-        self.enabled = os.environ.get('LLM_ENABLED') == '1' and (self.provider == 'ollama' or (self.provider == 'gemini' and bool(self.key)))
+        self.client = Provider.from_env()
+        self.provider = self.client.name
+        self.model = self.client.model
+        self.enabled = self.client.enabled
+        self.connection_scope = self.client.cache_scope
         self.daily_limit = None if self.provider == 'ollama' else max(1, min(5000, int(os.environ.get('LLM_DAILY_CALL_LIMIT', '200'))))
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.db() as db:
@@ -334,7 +336,9 @@ class Engine:
             db.execute('BEGIN IMMEDIATE')
             if 'duration_seconds' not in {row[1] for row in db.execute('PRAGMA table_info(attempts)')}:
                 db.execute('ALTER TABLE attempts ADD COLUMN duration_seconds REAL')
-        self.queue = analysis_store.Store(self.path, VERSION + ':' + GATE_VERSION + ':' + self.provider + ':' + self.model)
+            if 'scope' not in {row[1] for row in db.execute('PRAGMA table_info(attempts)')}:
+                db.execute('ALTER TABLE attempts ADD COLUMN scope TEXT')
+        self.queue = analysis_store.Store(self.path, VERSION + ':' + GATE_VERSION + ':' + self.provider + ':' + self.model + ':' + self.connection_scope)
         self.last_market = {}
         self.last_ranking = []
         self.ranked_sources = {}
@@ -396,13 +400,14 @@ class Engine:
 
     def usage(self):
         with self.db() as db:
-            row = db.execute('SELECT count(*),coalesce(sum(input_tokens),0),coalesce(sum(output_tokens),0) FROM attempts WHERE day=?', (now()[:10],)).fetchone()
-            measured = db.execute('SELECT task,status,duration_seconds FROM attempts WHERE model=? AND duration_seconds IS NOT NULL ORDER BY id DESC LIMIT 100',(self.model,)).fetchall()
+            row = db.execute('SELECT count(*),coalesce(sum(input_tokens),0),coalesce(sum(output_tokens),0) FROM attempts WHERE day=? AND scope=?', (now()[:10],self.client.usage_scope)).fetchone()
+            measured = db.execute('SELECT task,status,duration_seconds FROM attempts WHERE model=? AND scope=? AND duration_seconds IS NOT NULL ORDER BY id DESC LIMIT 100',(self.model,self.client.usage_scope)).fetchall()
+            legacy=db.execute('SELECT count(*) FROM attempts WHERE day=? AND scope IS NULL',(now()[:10],)).fetchone()[0]
         timings=[{'task':task,**analysis_store.timing_summary(r[2] for r in measured if r[0]==task),
             'failed':sum(r[0]==task and r[1]=='failed' for r in measured),
             'response_checked':sum(r[0]==task and r[1] in ('parsed','response_failed') for r in measured),
             'response_failed':sum(r[0]==task and r[1]=='response_failed' for r in measured)} for task in sorted({r[0] for r in measured})]
-        return {**dict(zip(('calls_today', 'input_tokens', 'output_tokens'), row)),'timings':timings}
+        return {**dict(zip(('calls_today', 'input_tokens', 'output_tokens'), row)),'legacy_calls_today':legacy,'timings':timings}
 
     def call(self, task, payload, output_schema):
         if not self.enabled:
@@ -411,22 +416,14 @@ class Engine:
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             if self.daily_limit is not None:
-                used = db.execute('SELECT count(*) FROM attempts WHERE day=?', (now()[:10],)).fetchone()[0]
+                used = db.execute('SELECT count(*) FROM attempts WHERE day=? AND scope=?', (now()[:10],self.client.usage_scope)).fetchone()[0]
                 if used >= self.daily_limit:
                     raise ValueError('일일 LLM 요청 한도 도달')
-            row = db.execute('INSERT INTO attempts(day,task,model,status) VALUES(?,?,?,?)', (now()[:10], task, self.model, 'attempted'))
+            row = db.execute('INSERT INTO attempts(day,task,model,status,scope) VALUES(?,?,?,?,?)', (now()[:10], task, self.model, 'attempted',self.client.usage_scope))
             call_id = row.lastrowid
         messages = [{'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False) + '\n응답 JSON Schema: ' + json.dumps(output_schema, ensure_ascii=False)}]
-        if self.provider == 'ollama':
-            endpoint = os.environ.get('OLLAMA_URL','http://127.0.0.1:11434').rstrip('/')+'/api/chat'
-            request = {'model': self.model, 'messages': messages, 'stream': False, 'format': output_schema,
-                       'options': {'temperature': 0, 'num_ctx': 16384, 'num_predict': {'read':1800,'screen':600,'rank':3000,'link':64}[task]}}
-            headers = {'Content-Type': 'application/json'}
-        else:
-            endpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions'
-            request = {'model': self.model, 'messages': messages, 'max_tokens': {'read':1800,'screen':600,'rank':3000,'link':64}[task],
-                       'response_format': {'type': 'json_schema', 'json_schema': {'name': task, 'strict': True, 'schema': output_schema}}}
-            headers = {'Authorization': f'Bearer {self.key}', 'Content-Type': 'application/json'}
+        endpoint, request, headers = self.client.request(task,self.model,messages,output_schema,
+            {'read':1800,'screen':600,'rank':3000,'link':64}[task])
         req = Request(endpoint, data=json.dumps(request).encode(), headers=headers)
         requested=time.monotonic()
         request_status='failed'
@@ -444,22 +441,11 @@ class Engine:
         try:
             if not isinstance(response,dict):
                 raise ValueError('모델 응답 객체 형식 오류')
-            if self.provider == 'ollama':
-                usage = {'prompt_tokens': response.get('prompt_eval_count', 0), 'completion_tokens': response.get('eval_count', 0)}
-            else:
-                usage = response.get('usage', {})
+            usage = self.client.usage(response)
             with self.db() as db:
                 db.execute('UPDATE attempts SET input_tokens=?,output_tokens=? WHERE id=?',
                            (usage.get('prompt_tokens', 0), usage.get('completion_tokens', 0), call_id))
-            if self.provider == 'ollama':
-                complete = response.get('done') and response.get('done_reason') == 'stop'
-                content = response.get('message', {}).get('content', '')
-            else:
-                choice = response['choices'][0]
-                complete = choice.get('finish_reason') == 'stop' and not choice['message'].get('refusal')
-                content = choice['message'].get('content', '')
-            if not complete:
-                raise ValueError('모델 응답 미완료·거절')
+            content = self.client.content(response)
             output=json.loads(content)
         except (ValueError,TypeError,KeyError,IndexError,AttributeError):
             with self.db() as db:
@@ -489,7 +475,7 @@ class Engine:
         return text
 
     def reading_key(self, article, body, policy=None):
-        return sha256((VERSION + (policy or READ_VERSION) + self.provider + self.model + article['url'] + article['title'] + body + article.get('_body_version','')).encode()).hexdigest()
+        return sha256((VERSION + (policy or READ_VERSION) + self.provider + self.model + self.connection_scope + article['url'] + article['title'] + body + article.get('_body_version','')).encode()).hexdigest()
 
     def extract_reading(self, body, article, anchors):
         passages=source_passages(body)
@@ -597,7 +583,7 @@ class Engine:
         passages=[p for quote in quotes for p in source_passages(quote)]
         passages=[{'id':i+1,'text':p['text']} for i,p in enumerate(passages)]
         payload={'task':GATE_POLICY,'source_passages':passages}
-        key = sha256(json.dumps([GATE_VERSION,SCREEN_VERSION,self.provider,self.model,payload],sort_keys=True).encode()).hexdigest()
+        key = sha256(json.dumps([GATE_VERSION,SCREEN_VERSION,self.provider,self.model,self.connection_scope,payload],sort_keys=True).encode()).hexdigest()
         with self.db() as db:
             row = db.execute('SELECT payload FROM screens WHERE cache_key=?',(key,)).fetchone()
         if row:
@@ -718,7 +704,7 @@ class Engine:
 
     def cycle(self, articles):
         if not self.enabled:
-            return {'status': 'disabled', 'message': 'LLM 미연결 · 로컬 모델과 LLM_ENABLED 설정 필요', 'events': [], 'ranking': [], 'market': {}, 'model': self.model, 'updated_at': None}
+            return {'status': 'disabled', 'message': 'LLM 미연결 · '+self.client.missing_configuration, 'events': [], 'ranking': [], 'market': {}, 'model': self.model, 'updated_at': None}
         errors = []
         self.queue.enqueue([{'article':article} for article in articles])
         review_compatibility={(READ_VERSION,p) for p in screen_policies()}
