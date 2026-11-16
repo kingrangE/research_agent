@@ -317,8 +317,26 @@ async function openBusiness(code) {
     if(!response.ok) throw new Error();
     const result=await response.json();
     if(request!==historyRequest || !$('#detail-dialog').open) return;
-    $('#detail').innerHTML=`<div class="detail-top"><h2 id="detail-title">${escape(result.memberships[0]?.security.name || code)} · 사업 근거</h2><button data-close aria-label="상세 닫기">×</button></div><div class="detail-content">${result.memberships.map(m=>`<section class="detail-overview"><h3>${escape(m.activity)}</h3><p>${escape(m.subject.name)} · ${escape(m.security.instrument)} · ${escape(m.issuer_path || '발행사 사업 노출')}</p><p>${escape(m.claim_status)} · ${escape(m.validity_note || '')}</p>${m.evidence.map(s=>`<details><summary>${escape(s.title)}</summary><p>${s.excerpt_type==='source_fragment' ? '원문 구절' : '검토된 사업 요약'}: ${escape(s.excerpt)}</p><p>공개 ${escape(s.published_on || '미확인')} · 검토 ${escape(s.checked_on)}</p>${safeLink(s.url) ? `<a href="${escape(safeLink(s.url))}" target="_blank" rel="noopener noreferrer">출처 ↗</a>` : ''}</details>`).join('')}</section>`).join('') || '<p>기준일에 확인 가능한 소속이 없습니다.</p>'}</div>`;
+    $('#detail').innerHTML=`<div class="detail-top"><h2 id="detail-title">${escape(result.memberships[0]?.security.name || code)} · 사업 근거</h2><button data-close aria-label="상세 닫기">×</button></div><div class="detail-content"><button data-supply-code="${escape(code)}">이 종목의 공급·계약 근거</button>${result.memberships.map(m=>`<section class="detail-overview"><h3>${escape(m.activity)}</h3><p>${escape(m.subject.name)} · ${escape(m.security.instrument)} · ${escape(m.issuer_path || '발행사 사업 노출')}</p><p>${escape(m.claim_status)} · ${escape(m.validity_note || '')}</p>${m.evidence.map(s=>`<details><summary>${escape(s.title)}</summary><p>${s.excerpt_type==='source_fragment' ? '원문 구절' : '검토된 사업 요약'}: ${escape(s.excerpt)}</p><p>공개 ${escape(s.published_on || '미확인')} · 검토 ${escape(s.checked_on)}</p>${safeLink(s.url) ? `<a href="${escape(safeLink(s.url))}" target="_blank" rel="noopener noreferrer">출처 ↗</a>` : ''}</details>`).join('')}</section>`).join('') || '<p>기준일에 확인 가능한 소속이 없습니다.</p>'}</div>`;
   } catch {if(request===historyRequest) $('#detail').innerHTML='<div class="detail-top"><h2 id="detail-title">조회 실패</h2><button data-close aria-label="상세 닫기">×</button></div><p>사업 근거를 확인할 수 없습니다.</p>';}
+}
+function supplyHTML(result) {
+  if(result.version==='legacy') return '<p>원본 사전 모드 · 제품·기간 검증 미적용</p>';
+  return `<p>기준 ${escape(result.as_of)} · ${escape(result.version)} · 개별 사건의 손익 영향 미산정</p>${result.claims.map(c=>`<section class="detail-overview"><h3>${escape(c.parties.map(p=>p.entity+' ('+p.role+')').join(' ↔ '))}</h3><dl class="event-facts">${[['제품',c.product],['세대',c.generation || '미확인'],['발표 단계',c.status],['종류',c.kind],['이번 사건 연결',c.event_link_status==='blocked' ? '차단' : '조건부']].map(([k,v])=>`<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl><p>${escape(c.note)}</p><p>${escape([...c.blocked_reasons,...c.required_checks].join(' · '))}</p>${c.evidence.map(s=>`<details><summary>${escape(s.title)}</summary><blockquote>${escape(s.excerpt)}</blockquote><p>공개 ${escape(s.published_on || '미확인')} · 검토 ${escape(s.checked_on)}</p>${safeLink(s.url) ? `<a href="${escape(safeLink(s.url))}" target="_blank" rel="noopener noreferrer">원출처 ↗</a>` : ''}</details>`).join('')}</section>`).join('') || '<p>검토된 거래 경로가 없습니다.</p>'}`;
+}
+async function openSupply(code='') {
+  if(mode!=='live') return;
+  const request=++historyRequest;detailId=null;
+  $('#detail').innerHTML='<div class="detail-top"><h2 id="detail-title">공급·계약 근거</h2><button data-close aria-label="상세 닫기">×</button></div>';
+  $('#detail-dialog').showModal();
+  try {
+    const params=new URLSearchParams({as_of:$('#business-asof').value || ''});if(code) params.set('code',code);
+    const response=await fetch('/api/supply?'+params,{signal:AbortSignal.timeout(15000)});
+    if(!response.ok) throw new Error();
+    const result=await response.json();
+    if(request!==historyRequest || !$('#detail-dialog').open) return;
+    $('#detail').innerHTML=`<div class="detail-top"><h2 id="detail-title">공급·계약 근거</h2><button data-close aria-label="상세 닫기">×</button></div><div class="detail-content">${supplyHTML(result)}</div>`;
+  } catch {if(request===historyRequest) $('#detail').innerHTML='<div class="detail-top"><h2 id="detail-title">조회 실패</h2><button data-close aria-label="상세 닫기">×</button></div><p>관계 근거를 확인할 수 없습니다.</p>';}
 }
 function historyQualityHTML(history) {
   const labels={complete:'요청 구간 수집 완료',partial:'추가 수집 필요',error:'수집 오류',running:'진행 중'};
@@ -413,6 +431,8 @@ document.addEventListener('click', event => {
   if (button.dataset.save) toggleSave(button.dataset.save);
   if (button.dataset.stock) openStock(button.dataset.article, button.dataset.stock);
   if (button.dataset.businessCode) openBusiness(button.dataset.businessCode);
+  if (button.hasAttribute('data-supply-all')) openSupply();
+  if (button.dataset.supplyCode) openSupply(button.dataset.supplyCode);
   if (button.dataset.historySymbol) openHistory(button.dataset.historyMarket,button.dataset.historySymbol,button.dataset.historyAdjusted);
   if (button.hasAttribute('data-close-stock')) $('#stock-dialog').close();
   if (button.dataset.detail) { renderDetail(button.dataset.detail); if (!$('#detail-dialog').open) $('#detail-dialog').showModal(); }

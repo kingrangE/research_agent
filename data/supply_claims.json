@@ -1,0 +1,330 @@
+{
+  "version": "reviewed-v1",
+  "migration_parent": "2026-11-15.2",
+  "migration_digest": "717258b68a41e9df7a95950d1c5a12349ebd236b69f8d3f9b0669f57eafd9236",
+  "sources": {
+    "openai_amd": {
+      "title": "AMD–OpenAI: GPU 인프라 공급 계약",
+      "url": "https://newsroom.amd.com/news/amd-and-openai-announce-strategic-partnership-to-d/",
+      "published_on": "2025-10-06",
+      "type": "company",
+      "checked_on": "2026-11-16",
+      "excerpt": "deploy 6 gigawatts of AMD GPUs"
+    },
+    "openai_broadcom": {
+      "title": "OpenAI–Broadcom: AI 가속기·네트워크 공동 개발 및 공급",
+      "url": "https://openai.com/index/openai-and-broadcom-announce-strategic-collaboration/",
+      "published_on": "2025-10-13",
+      "type": "company",
+      "checked_on": "2026-11-16",
+      "excerpt": "signed a term sheet"
+    },
+    "sds_openai": {
+      "title": "삼성SDS: OpenAI 리셀러 계약 체결",
+      "url": "https://www.samsungsds.com/kr/news/openai-251223.html",
+      "published_on": "2025-12-23",
+      "type": "company",
+      "checked_on": "2026-11-16",
+      "excerpt": "리셀러 파트너 계약"
+    },
+    "hynix_tsmc": {
+      "title": "SK하이닉스–TSMC: HBM4 기술 협력 MOU",
+      "url": "https://news.skhynix.com/en/sk-hynix-partners-with-tsmc-to-strengthen-hbm-technological-leadership/",
+      "published_on": "2024-04-19",
+      "type": "company",
+      "checked_on": "2026-11-16",
+      "excerpt": "MOU to collaborate on HBM4"
+    },
+    "samsung_nvidia": {
+      "title": "NVIDIA–삼성: HBM·파운드리·AI 팩토리 협력",
+      "url": "https://nvidianews.nvidia.com/news/samsung-ai-factory",
+      "published_on": "2025-10-30",
+      "type": "company",
+      "checked_on": "2026-11-16",
+      "excerpt": "next-generation HBM and custom solutions"
+    },
+    "anthropic_aws": {
+      "title": "Anthropic–Amazon: 투자 및 최대 5GW 컴퓨팅 계약 확대",
+      "url": "https://www.anthropic.com/news/anthropic-amazon-compute",
+      "published_on": "2026-04-20",
+      "type": "company",
+      "checked_on": "2026-11-16",
+      "excerpt": "secure up to 5 gigawatts"
+    },
+    "anthropic_equity": {
+      "title": "Anthropic–Amazon: 투자 및 최대 5GW 컴퓨팅 계약 확대",
+      "url": "https://www.anthropic.com/news/anthropic-amazon-compute",
+      "published_on": "2026-04-20",
+      "type": "company",
+      "checked_on": "2026-11-16",
+      "excerpt": "Amazon is investing $5 billion"
+    },
+    "naver_parent": {
+      "title": "NAVER 주요 계열사",
+      "url": "https://www.navercorp.com/company/affiliates",
+      "published_on": null,
+      "checked_on": "2026-11-16",
+      "excerpt": "네이버클라우드"
+    }
+  },
+  "claims": [
+    {
+      "id": "amd_openai",
+      "transaction_id": "amd_openai",
+      "parties": [
+        {
+          "entity": "openai",
+          "role": "customer"
+        },
+        {
+          "entity": "amd",
+          "role": "provider"
+        }
+      ],
+      "legal_identity": "exact_contracting_entity_unverified",
+      "product": "gpu",
+      "generation": "MI450",
+      "region": null,
+      "status": "announced_contract",
+      "kind": "supply",
+      "security_codes": [
+        "AMD.O"
+      ],
+      "sources": [
+        "openai_amd"
+      ],
+      "valid_from": null,
+      "valid_to": null,
+      "amount": null,
+      "supersedes": null,
+      "disputes": null,
+      "note": "다세대 GPU 계약 중 초기 MI450 배치 범위 · 추가 주문·유효 종료 미확인"
+    },
+    {
+      "id": "broadcom_openai",
+      "transaction_id": "broadcom_openai",
+      "parties": [
+        {
+          "entity": "openai",
+          "role": "customer"
+        },
+        {
+          "entity": "broadcom",
+          "role": "provider"
+        }
+      ],
+      "legal_identity": "exact_contracting_entity_unverified",
+      "product": "custom_accelerator",
+      "generation": null,
+      "region": null,
+      "status": "planned",
+      "kind": "supply",
+      "security_codes": [
+        "AVGO.O"
+      ],
+      "sources": [
+        "openai_broadcom"
+      ],
+      "valid_from": null,
+      "valid_to": null,
+      "amount": null,
+      "supersedes": null,
+      "disputes": null,
+      "note": "공동 개발·term sheet · 전체 배치 완료 또는 당기 매출 아님"
+    },
+    {
+      "id": "sds_openai",
+      "transaction_id": "sds_openai",
+      "parties": [
+        {
+          "entity": "openai",
+          "role": "licensor"
+        },
+        {
+          "entity": "samsung_sds",
+          "role": "reseller"
+        }
+      ],
+      "legal_identity": "exact_contracting_entity_unverified",
+      "product": "enterprise_ai",
+      "generation": "ChatGPT Enterprise",
+      "region": "KR",
+      "status": "announced_contract",
+      "kind": "distribution",
+      "security_codes": [
+        "018260"
+      ],
+      "sources": [
+        "sds_openai"
+      ],
+      "valid_from": null,
+      "valid_to": null,
+      "amount": null,
+      "supersedes": null,
+      "disputes": null,
+      "note": "국내 리셀러 계약 · 고객 구매·마진 미확인"
+    },
+    {
+      "id": "hynix_tsmc",
+      "transaction_id": "hynix_tsmc",
+      "parties": [
+        {
+          "entity": "sk_hynix",
+          "role": "participant"
+        },
+        {
+          "entity": "tsmc",
+          "role": "participant"
+        }
+      ],
+      "legal_identity": "exact_contracting_entity_unverified",
+      "product": "memory",
+      "generation": "HBM4",
+      "region": null,
+      "status": "mou",
+      "kind": "technology",
+      "security_codes": [
+        "000660",
+        "TSM"
+      ],
+      "sources": [
+        "hynix_tsmc"
+      ],
+      "valid_from": null,
+      "valid_to": null,
+      "amount": null,
+      "supersedes": null,
+      "disputes": null,
+      "note": "HBM4 기술 MOU · 확정 발주 아님"
+    },
+    {
+      "id": "nvidia_samsung",
+      "transaction_id": "nvidia_samsung",
+      "parties": [
+        {
+          "entity": "nvidia",
+          "role": "participant"
+        },
+        {
+          "entity": "samsung",
+          "role": "participant"
+        }
+      ],
+      "legal_identity": "exact_contracting_entity_unverified",
+      "product": "semiconductor",
+      "generation": null,
+      "region": null,
+      "status": "planned",
+      "kind": "technology",
+      "security_codes": [
+        "NVDA.O",
+        "005930"
+      ],
+      "sources": [
+        "samsung_nvidia"
+      ],
+      "valid_from": null,
+      "valid_to": null,
+      "amount": null,
+      "supersedes": null,
+      "disputes": null,
+      "note": "HBM·파운드리·AI 팩토리 협력 · 개별 제품 주문 미확인"
+    },
+    {
+      "id": "anthropic_compute",
+      "transaction_id": "anthropic_compute",
+      "parties": [
+        {
+          "entity": "anthropic",
+          "role": "customer"
+        },
+        {
+          "entity": "amazon",
+          "role": "provider"
+        }
+      ],
+      "legal_identity": "exact_contracting_entity_unverified",
+      "product": "cloud_compute",
+      "generation": "Trainium2-4",
+      "region": null,
+      "status": "announced_contract",
+      "kind": "supply",
+      "security_codes": [
+        "AMZN.O"
+      ],
+      "sources": [
+        "anthropic_aws"
+      ],
+      "valid_from": null,
+      "valid_to": null,
+      "amount": null,
+      "supersedes": null,
+      "disputes": null,
+      "note": "컴퓨팅 약정 · 실제 가동·매출 인식 시점 별도"
+    },
+    {
+      "id": "anthropic_investment",
+      "transaction_id": "anthropic_investment",
+      "parties": [
+        {
+          "entity": "amazon",
+          "role": "investor"
+        },
+        {
+          "entity": "anthropic",
+          "role": "investee"
+        }
+      ],
+      "legal_identity": "exact_contracting_entity_unverified",
+      "product": "equity",
+      "generation": null,
+      "region": null,
+      "status": "investment",
+      "kind": "investment",
+      "security_codes": [
+        "AMZN.O"
+      ],
+      "sources": [
+        "anthropic_equity"
+      ],
+      "valid_from": null,
+      "valid_to": null,
+      "amount": null,
+      "supersedes": null,
+      "disputes": null,
+      "note": "지분 투자 발표 · 컴퓨팅 구매 약정과 별도 거래"
+    },
+    {
+      "id": "naver_ownership",
+      "transaction_id": "naver_ownership",
+      "parties": [
+        {
+          "entity": "naver",
+          "role": "parent"
+        },
+        {
+          "entity": "naver_cloud",
+          "role": "subsidiary"
+        }
+      ],
+      "legal_identity": "exact_contracting_entity_unverified",
+      "product": "ownership",
+      "generation": null,
+      "region": null,
+      "status": "ownership",
+      "kind": "ownership",
+      "security_codes": [
+        "035420"
+      ],
+      "sources": [
+        "naver_parent"
+      ],
+      "valid_from": null,
+      "valid_to": null,
+      "amount": null,
+      "supersedes": null,
+      "disputes": null,
+      "note": "사업 자회사와 상장 모회사 노출 · 지분 비율·사업 가치 미산정"
+    }
+  ]
+}

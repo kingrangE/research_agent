@@ -25,6 +25,7 @@ import news_ingestion
 import data_product
 import market_history
 import business_ontology
+import supply
 from analysis_store import epoch, CURRENT_EVENT_SECONDS
 
 ROOT = Path(__file__).resolve().parent
@@ -282,6 +283,16 @@ def demo_snapshot():
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path == '/api/supply':
+            params=parse_qs(urlsplit(self.path).query)
+            try:
+                fields=('as_of','code','product','generation','region','stage','version')
+                result=supply.snapshot(**{k:params[k][0] for k in fields if k in params})
+            except (ValueError,TypeError):
+                self.respond(b'{"error":"Invalid supply query"}','application/json',400)
+                return
+            self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == '/api/business':
             params=parse_qs(urlsplit(self.path).query)
             try:

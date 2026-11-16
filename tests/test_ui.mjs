@@ -49,6 +49,15 @@ test('business scope shows distinct business evidence and never falls back after
   assert.ok(run(`$('#business-content').innerHTML`).includes('최신 자료로 대신하지 않습니다'));
 });
 
+test('supply evidence exposes conditions and escapes parties without inventing beneficiaries', () => {
+  const run=ui();
+  const html=run(`supplyHTML({version:'reviewed-v1',as_of:'2026-11-16',claims:[{parties:[{entity:'<company>',role:'provider'}],product:'HBM',generation:'HBM4',status:'mou',kind:'technology',event_link_status:'conditional',note:'발주 미확인',blocked_reasons:[],required_checks:['유효 종료 미확인'],evidence:[{title:'source',excerpt:'<script>',url:'javascript:bad'}]}]})`);
+  assert.ok(html.includes('조건부'));
+  assert.ok(html.includes('손익 영향 미산정'));
+  assert.ok(html.includes('&lt;company&gt;'));
+  assert.ok(!html.includes('href="javascript:'));
+});
+
 test('stock card escapes names and reasons and distinguishes inferred candidates', () => {
   const run = ui();
   const html = run(`stocksHTML({related_stocks:[{code:'003470',name:'<img src=x>',relation:'business',reason:'<script>alert(1)</script>'}]},true)`);
