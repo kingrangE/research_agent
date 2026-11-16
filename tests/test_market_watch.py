@@ -23,3 +23,19 @@ class MarketWatchTest(unittest.TestCase):
             self.assertFalse(t['eligible']);self.assertIsNone(t['mean_percent'])
             self.assertEqual(t['flat'],0)
         with self.assertRaises(ValueError):market_watch.snapshot('XX')
+
+    def test_candidates_require_market_context_and_remove_duplicate_members(self):
+        def recent(code,now):
+            return {'status':'ok','change_percent':0 if code=='SPY' else 1}
+        with patch('market_watch.prices.recent',side_effect=recent):
+            r=market_watch.snapshot('US')
+        selected=market_watch.candidates(r)
+        self.assertTrue(selected)
+        self.assertLessEqual(len(selected),5)
+        seen=set()
+        for item in selected:
+            codes={s['code'] for s in item['stocks']}
+            self.assertLessEqual(len(codes&seen)/len(codes),.5)
+            seen.update(codes)
+        r['benchmark']['recent']={'status':'pending','change_percent':None}
+        self.assertEqual(market_watch.candidates(r),[])

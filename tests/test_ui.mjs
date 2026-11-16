@@ -864,7 +864,9 @@ test('consumer home hides service metrics and keeps ordering honest',()=>{
   const run=ui();
   run(`data={product_mode:'data',articles:[],sources:[]};render()`);
   assert.equal(run(`$('#stats').hidden`),true);
-  assert.equal(run(`$('#page-title').textContent`),'지금 볼 뉴스');
+  assert.equal(run(`$('#page-title').textContent`),'지금 시장');
+  assert.equal(run(`$('.reading-section').hidden`),true);
+  assert.ok(run(`$('#market-view').innerHTML`).includes('지금 주목할 테마·종목'));
   assert.ok(run(`$('#list-status').textContent`).includes('최신순'));
   assert.ok(!run(`$('#page-description').textContent`).includes('분석'));
   run(`view='sources';render()`);
@@ -943,4 +945,14 @@ test('live movement response cannot overwrite a different article',async()=>{
  await run(`loadPriceMovement('a')`);
  assert.equal(run(`$('#price-movement').innerHTML`),undefined);
  assert.equal(run('movementLoading'),false);
+});
+
+test('market home names the subject, shows whole-group average and keeps amounts in detail',()=>{
+  const run=ui();
+  const html=run(`view='briefing';mode='live';data={product_mode:'data'};marketData={tracked:4,as_of:'2026-11-16T15:00:00Z',candidates:[{id:'power',name:'전력 <기기>',kind:'theme',mean_percent:1.2,observed:3,tracked:4,up:2,down:1,reason:'같은 시간 ETF +0.1%',stocks:[{code:'A',name:'A사',recent:{change_percent:2}}]}]};marketOrder=['power'];marketSelection='power';renderMarket();$('#market-view').innerHTML`);
+  assert.ok(html.includes('평균 +1.20%'));
+  assert.ok(html.includes('관측 3/4종목'));
+  assert.ok(html.includes('전력 &lt;기기&gt;'));
+  assert.ok(html.includes('최근 5분'));
+  assert.ok(!html.includes('선택한 움직임'));
 });
