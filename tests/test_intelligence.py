@@ -1964,6 +1964,30 @@ class IntelligenceTest(unittest.TestCase):
                 self.assertEqual(self.engine.screen(READING)['stock_relevance'],'주식 판단 재료')
             call.assert_called_once()
 
+    def test_product_policy_rechecks_old_positive_gate_without_reading_or_changing_source_facts(self):
+        reading={**ANALYZED,'event_id':'product','article_id':ARTICLE['id'],'article_title':ARTICLE['title'],
+                 'source_url':ARTICLE['url'],'published_at':ARTICLE['published_at'],'analyzed_at':'2026-11-11T01:00:00Z'}
+        old={**GATE,'priority':75,'screen_policy_version':'source-passages-v5-information-basis'}
+        self.engine.queue.enqueue([{'article':ARTICLE}]);original=self.engine.queue.claim()
+        self.engine.queue.complete(original,reading,old)
+        with patch.object(self.engine.queue,'claim',return_value=None):
+            pending=self.engine.cycle([ARTICLE])
+        self.assertEqual(pending['coverage']['screen_pending_events'],1)
+        self.assertEqual(pending['assessments'],[])
+        self.assertEqual(pending['events'][0]['analyzed_at'],reading['analyzed_at'])
+        excluded={**GATE,'driver':ai.DRIVERS[4],'change_basis':ai.CHANGE_BASES[4],'impact_evidence':'',
+                  'stock_relevance':'배경·상품 안내','priority':5}
+        with patch.object(self.engine,'reading',side_effect=AssertionError('reuse original source facts')),patch.object(self.engine,'screen',return_value=excluded),patch.object(self.engine,'rank') as rank:
+            done=self.engine.cycle([ARTICLE])
+        rank.assert_not_called()
+        self.assertEqual(done['ranking'],[])
+        self.assertEqual(done['assessments'][0]['stock_relevance'],'배경·상품 안내')
+        self.assertEqual(done['events'][0]['analyzed_at'],reading['analyzed_at'])
+        with self.engine.queue.db() as db:
+            saved=db.execute('SELECT result,assessment FROM analysis_jobs WHERE id=?',(original['id'],)).fetchone()
+            self.assertEqual(json.loads(saved['result'])['analyzed_at'],reading['analyzed_at'])
+            self.assertEqual(json.loads(saved['assessment']),old)
+
     def test_information_policy_review_preserves_source_facts_without_approving_old_screens(self):
         self.assertEqual(ai.screen_policies(),(ai.SCREEN_VERSION,))
         for index,label in enumerate(('주식 판단 재료','연결 미확인','배경·상품 안내')):
