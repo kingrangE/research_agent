@@ -119,12 +119,15 @@ def load_inputs(article_id,market,symbol,benchmark=None,basis='public',adjusted=
     proposals=event_facts.snapshot([article_id])['proposals']
     event=next((p for p in proposals if p['axis']),None)
     if not event:raise ValueError('분류된 사건 제안 없음')
+    event_time=event.get('published_at') if basis=='public' else event.get('available_at')
     with h.db() as db:
         calendar={r['day']:{**json.loads(r['payload']),'response_id':r['response_id']} for r in db.execute('SELECT * FROM calendars WHERE market=?',(market,))}
+    after=[p for p in sessions(calendar,market) if event_time and h.timestamp(p['close'])>h.timestamp(event_time)]
+    until=after[min(1,len(after)-1)]['day'] if after else h.timestamp(event_time).astimezone(h.ZoneInfo(h.ZONES[market])).date().isoformat() if event_time else None
     return {'event':{k:event.get(k) for k in ('article_id','event_id','source_key','rule_version','published_at','available_at','review_status','url')},
         'market':market,'symbol':symbol,'benchmark':benchmark,'basis':basis,'adjusted':adjusted,'as_of':moment.isoformat(),
-        'stock_prices':h.observations(market,symbol,adjusted),
-        'benchmark_prices':h.observations(market,benchmark,adjusted if market=='US' else False),'calendar':calendar}
+        'stock_prices':h.observations(market,symbol,adjusted,until=until),
+        'benchmark_prices':h.observations(market,benchmark,adjusted if market=='US' else False,until=until),'calendar':calendar}
 
 
 def schema(db):

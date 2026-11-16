@@ -1,5 +1,5 @@
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
 import tempfile
@@ -36,6 +36,16 @@ class HistoryTest(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         p=patch.object(h,'PATH',Path(temp.name)/'market.sqlite3')
         p.start(); self.addCleanup(p.stop)
+
+    def test_historical_cutoff_precedes_recent_row_limit(self):
+        with h.db() as db:
+            rows=[('2020-01-02','100')]+[((datetime(2025,1,1)+timedelta(days=i)).date().isoformat(),'105') for i in range(401)]
+            for day,close in rows:
+                h.save_page(db,'KR','005930',False,{},page([candle(day=day,close=close)]),'2020-01-01','2026-11-13')
+        rows=h.observations('KR','005930',until='2020-01-03')
+        self.assertEqual([r['day'] for r in rows],['2020-01-02'])
+        self.assertEqual(len(h.observations('KR','005930')),400)
+        self.assertRaises(ValueError,h.observations,'KR','005930',until='bad')
 
     def test_revision_replay_and_unchanged_reimport(self):
         a=page([candle()])

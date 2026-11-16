@@ -108,8 +108,8 @@ def load_inputs(as_of=None,membership_basis='as_of'):
         with h.db() as db:
             calendar={r['day']:{**json.loads(r['payload']),'response_id':r['response_id']} for r in db.execute('SELECT * FROM calendars WHERE market=?',(market,))}
         codes={m['security']['provider_symbol']:m['code'] for m in knowledge['memberships'] if m['security']['country']==market}
-        markets[market]={'calendar':calendar,'benchmark':benchmark,'benchmark_prices':h.observations(market,benchmark),
-                         'prices':{code:h.observations(market,symbol) for symbol,code in codes.items()}}
+        markets[market]={'calendar':calendar,'benchmark':benchmark,'benchmark_prices':h.observations(market,benchmark,until=moment.astimezone(h.ZoneInfo(h.ZONES[market])).date().isoformat()),
+                         'prices':{code:h.observations(market,symbol,until=moment.astimezone(h.ZoneInfo(h.ZONES[market])).date().isoformat()) for symbol,code in codes.items()}}
     return {'as_of':moment.isoformat(),'membership_basis':membership_basis,'business':knowledge,'markets':markets}
 
 

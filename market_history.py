@@ -357,14 +357,15 @@ def coverage(market=None, symbol=None):
         'corporate_actions':'unavailable','jobs':jobs,'series':series}
 
 
-def observations(market,symbol,adjusted=False):
+def observations(market,symbol,adjusted=False,until=None):
     identity(market,symbol)
+    if until is not None:date.fromisoformat(until)
     if not PATH.exists():
         return []
     with db() as connection:
-        rows = connection.execute('''SELECT b.* FROM bars b WHERE market=? AND symbol=? AND adjusted=?
+        rows = connection.execute('''SELECT b.* FROM bars b WHERE market=? AND symbol=? AND adjusted=? AND (? IS NULL OR day<=?)
             AND id=(SELECT max(id) FROM bars WHERE market=b.market AND symbol=b.symbol AND adjusted=b.adjusted AND day=b.day)
-            ORDER BY day DESC LIMIT 400''',(market,symbol,int(adjusted))).fetchall()
+            ORDER BY day DESC LIMIT 400''',(market,symbol,int(adjusted),until,until)).fetchall()
     return [{**json.loads(r['payload']),'revision':r['id'],'response_id':r['response_id'],
              'observed_at':r['observed_at'],'last_seen':r['last_seen']} for r in rows]
 
