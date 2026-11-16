@@ -1,0 +1,10 @@
+{
+  "version": "event-corpus-v1",
+  "sha256": "cc5341c76074d7aafc17a2ddef99d938b564a3a6f762a14ac6cc58edf172728c",
+  "splits": {
+    "final": "2ce059cce1a48125eb024efa80d17c105d9f1999b03f4139c7e541966708f5fd",
+    "validation": "79f3a04df3209837057abec343290be9ba0e2b52dc05f68db7ff7610a466a491",
+    "development": "787385fa6c6537d3728016daf83b21f5243f69490b185820e322c1ab04c1f25c",
+    "excluded": "4fc587e9d4f1acb3d32f545f5154c326517c01cdec50ec274518ef2f398a689b"
+  }
+}
