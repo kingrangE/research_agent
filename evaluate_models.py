@@ -232,18 +232,25 @@ def evaluate_equity(engine,dataset):
     cases=dataset['equity_screening']
     checks=[]
     for case in cases:
-        row={'id':case['id'],'expected':case['expected'],'pass':False}
+        row={'id':case['id'],'expected':case['expected'],'pass':False,'eligibility_pass':False}
         try:
+            if case['expected'] not in RELEVANCE:
+                raise ValueError('선별 평가 기대 분류 오류')
             output=engine.screen({'event_title':case['id'],'summary':case['summary'],'entities':[],
                 'certainty':'확정','amount':'본문 확인','timing':'당일·수일','evidence':case.get('evidence',[case['summary']])})
-            row.update(actual=output['stock_relevance'],output=output,
-                       **{'pass':output['stock_relevance']==case['expected']})
+            actual=output.get('stock_relevance')
+            if actual not in RELEVANCE:
+                raise ValueError('선별 평가 응답 분류 오류')
+            row.update(actual=actual,output=output,
+                       **{'pass':actual==case['expected'],
+                          'eligibility_pass':(actual=='주식 판단 재료')==(case['expected']=='주식 판단 재료')})
         except Exception as error:
             row['error']=type(error).__name__
         checks.append(row)
         print(engine.model,{k:v for k,v in row.items() if k!='output'},flush=True)
     return {'model':engine.model,'provider':engine.provider,'checks':checks,
-            'passed':sum(c['pass'] for c in checks),'total':len(checks),'usage':engine.usage()}
+            'passed':sum(c['pass'] for c in checks),'eligibility_passed':sum(c['eligibility_pass'] for c in checks),
+            'total':len(checks),'usage':engine.usage()}
 
 
 if __name__ == '__main__':

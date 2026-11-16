@@ -913,6 +913,23 @@ class IntelligenceTest(unittest.TestCase):
         self.assertEqual(engine.screen.call_args_list[0].args[0]['evidence'],actual['evidence'])
         self.assertEqual(engine.screen.call_args_list[1].args[0]['evidence'],[legacy['summary']])
 
+    def test_equity_evaluation_separates_label_and_eligibility_and_never_credits_failed_exclusions(self):
+        engine=MagicMock(model='test',provider='ollama')
+        engine.screen.side_effect=[{'stock_relevance':'연결 미확인'},ValueError('no response'),
+                                  {'stock_relevance':'주식 판단 재료'},{'stock_relevance':'연결 미확인'},
+                                  {'stock_relevance':'알 수 없는 라벨'}]
+        labels=['배경·상품 안내','배경·상품 안내','주식 판단 재료','주식 판단 재료','배경·상품 안내','잘못된 기대 분류']
+        cases=[{'id':str(i),'summary':'검증용 원문 근거입니다.','expected':label} for i,label in enumerate(labels)]
+        with patch('builtins.print'):
+            result=evaluate_equity(engine,{'equity_screening':cases})
+        self.assertEqual(result['passed'],1)
+        self.assertEqual(result['eligibility_passed'],2)
+        self.assertEqual([c['eligibility_pass'] for c in result['checks']],[True,False,True,False,False,False])
+        self.assertEqual(result['checks'][1]['error'],'ValueError')
+        self.assertEqual(result['checks'][4]['error'],'ValueError')
+        self.assertEqual(result['checks'][5]['error'],'ValueError')
+        self.assertEqual(engine.screen.call_count,5)
+
     def test_equity_evaluator_isolates_screening_and_continues_after_failure(self):
         engine=MagicMock(model='test',provider='ollama')
         engine.screen.side_effect=[ValueError('bad quote'),{'stock_relevance':'주식 판단 재료'}]
