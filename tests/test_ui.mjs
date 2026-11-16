@@ -38,6 +38,17 @@ test('history quality escapes provider errors and never implies missing values a
   assert.ok(html.includes('거래대금·과거 거래정지·기업행동 이력은 미확보'));
 });
 
+test('business scope shows distinct business evidence and never falls back after historical query failure', async () => {
+  const run=ui({fetch:async()=>{throw new Error('offline');}});
+  const html=run(`businessHTML({as_of:'2026-11-16',unique_issuers:1,unique_securities:1,themes:[{id:'power',name:'전력',include:'변압기',exclude:'소비자',countries:{KR:1,US:0}}],memberships:[{theme:'power',code:'<bad>',kind:'business',security:{name:'<script>'}}]})`);
+  assert.ok(html.includes('사업 근거'));
+  assert.ok(html.includes('&lt;script&gt;'));
+  run(`view='business';$('#business-asof').value='2020-01-01';data={articles:[],business:{themes:[],memberships:[],as_of:'2026-11-16'}}`);
+  await run('loadBusiness()');
+  run('render()');
+  assert.ok(run(`$('#business-content').innerHTML`).includes('최신 자료로 대신하지 않습니다'));
+});
+
 test('stock card escapes names and reasons and distinguishes inferred candidates', () => {
   const run = ui();
   const html = run(`stocksHTML({related_stocks:[{code:'003470',name:'<img src=x>',relation:'business',reason:'<script>alert(1)</script>'}]},true)`);

@@ -1,0 +1,855 @@
+{
+  "version": "business-ontology-v1",
+  "reviewed_on": "2026-11-16",
+  "themes": [
+    {
+      "id": "ai_software",
+      "name": "AI·소프트웨어",
+      "subthemes": [
+        "기반모델",
+        "기업 소프트웨어",
+        "클라우드"
+      ],
+      "include": "제품·서비스를 개발·판매·운영하는 사업 근거",
+      "exclude": "단순 AI 도입·기사 언급"
+    },
+    {
+      "id": "semiconductor",
+      "name": "반도체",
+      "subthemes": [
+        "가속기",
+        "메모리",
+        "파운드리",
+        "패키징",
+        "장비·소재"
+      ],
+      "include": "반도체 설계·제조·공정·장비의 사업 근거",
+      "exclude": "AI 고객이라는 이유만의 반도체 소속"
+    },
+    {
+      "id": "data_center",
+      "name": "데이터센터",
+      "subthemes": [
+        "운영",
+        "구축",
+        "서버",
+        "네트워크",
+        "냉각"
+      ],
+      "include": "시설 운영·구축 또는 명시적인 센터용 장비 사업",
+      "exclude": "클라우드·AI라는 단어만의 시설 운영 추정"
+    },
+    {
+      "id": "power",
+      "name": "전력 인프라",
+      "subthemes": [
+        "발전",
+        "변압기",
+        "전선",
+        "송배전"
+      ],
+      "include": "전력 생산·변환·송배전 제품·설비 사업",
+      "exclude": "전력 소비 기업이라는 이유만의 소속"
+    }
+  ],
+  "entities": [
+    {
+      "id": "issuer_035420",
+      "name": "NAVER",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_017670",
+      "name": "SK텔레콤",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_018260",
+      "name": "삼성SDS",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_005930",
+      "name": "삼성전자",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_000660",
+      "name": "SK하이닉스",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_NVDA_O",
+      "name": "엔비디아",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_AMD_O",
+      "name": "AMD",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_AVGO_O",
+      "name": "브로드컴",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_TSM",
+      "name": "TSMC ADR",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_MSFT_O",
+      "name": "마이크로소프트",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_AMZN_O",
+      "name": "아마존",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_GOOGL_O",
+      "name": "알파벳 Class A",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_010120",
+      "name": "LS ELECTRIC",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_267260",
+      "name": "HD현대일렉트릭",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_ETN",
+      "name": "Eaton",
+      "kind": "issuer"
+    },
+    {
+      "id": "issuer_GEV",
+      "name": "GE Vernova",
+      "kind": "issuer"
+    },
+    {
+      "id": "naver_cloud",
+      "name": "NAVER Cloud",
+      "kind": "operating_entity"
+    }
+  ],
+  "securities": [
+    {
+      "code": "035420",
+      "issuer_id": "issuer_035420",
+      "country": "KR",
+      "name": "NAVER",
+      "instrument": "common",
+      "provider_symbol": "035420"
+    },
+    {
+      "code": "017670",
+      "issuer_id": "issuer_017670",
+      "country": "KR",
+      "name": "SK텔레콤",
+      "instrument": "common",
+      "provider_symbol": "017670"
+    },
+    {
+      "code": "018260",
+      "issuer_id": "issuer_018260",
+      "country": "KR",
+      "name": "삼성SDS",
+      "instrument": "common",
+      "provider_symbol": "018260"
+    },
+    {
+      "code": "005930",
+      "issuer_id": "issuer_005930",
+      "country": "KR",
+      "name": "삼성전자",
+      "instrument": "common",
+      "provider_symbol": "005930"
+    },
+    {
+      "code": "000660",
+      "issuer_id": "issuer_000660",
+      "country": "KR",
+      "name": "SK하이닉스",
+      "instrument": "common",
+      "provider_symbol": "000660"
+    },
+    {
+      "code": "NVDA.O",
+      "issuer_id": "issuer_NVDA_O",
+      "country": "US",
+      "name": "엔비디아",
+      "instrument": "common",
+      "provider_symbol": "NVDA"
+    },
+    {
+      "code": "AMD.O",
+      "issuer_id": "issuer_AMD_O",
+      "country": "US",
+      "name": "AMD",
+      "instrument": "common",
+      "provider_symbol": "AMD"
+    },
+    {
+      "code": "AVGO.O",
+      "issuer_id": "issuer_AVGO_O",
+      "country": "US",
+      "name": "브로드컴",
+      "instrument": "common",
+      "provider_symbol": "AVGO"
+    },
+    {
+      "code": "TSM",
+      "issuer_id": "issuer_TSM",
+      "country": "US",
+      "name": "TSMC ADR",
+      "instrument": "ADR",
+      "provider_symbol": "TSM"
+    },
+    {
+      "code": "MSFT.O",
+      "issuer_id": "issuer_MSFT_O",
+      "country": "US",
+      "name": "마이크로소프트",
+      "instrument": "common",
+      "provider_symbol": "MSFT"
+    },
+    {
+      "code": "AMZN.O",
+      "issuer_id": "issuer_AMZN_O",
+      "country": "US",
+      "name": "아마존",
+      "instrument": "common",
+      "provider_symbol": "AMZN"
+    },
+    {
+      "code": "GOOGL.O",
+      "issuer_id": "issuer_GOOGL_O",
+      "country": "US",
+      "name": "알파벳 Class A",
+      "instrument": "Class A common",
+      "provider_symbol": "GOOGL"
+    },
+    {
+      "code": "010120",
+      "issuer_id": "issuer_010120",
+      "country": "KR",
+      "name": "LS ELECTRIC",
+      "instrument": "common",
+      "provider_symbol": "010120"
+    },
+    {
+      "code": "267260",
+      "issuer_id": "issuer_267260",
+      "country": "KR",
+      "name": "HD현대일렉트릭",
+      "instrument": "common",
+      "provider_symbol": "267260"
+    },
+    {
+      "code": "ETN",
+      "issuer_id": "issuer_ETN",
+      "country": "US",
+      "name": "Eaton",
+      "instrument": "common",
+      "provider_symbol": "ETN"
+    },
+    {
+      "code": "GEV",
+      "issuer_id": "issuer_GEV",
+      "country": "US",
+      "name": "GE Vernova",
+      "instrument": "common",
+      "provider_symbol": "GEV"
+    }
+  ],
+  "sources": {
+    "naver_ai": {
+      "title": "NAVER: HyperCLOVA X 및 기업용 AI 서비스 공개",
+      "url": "https://navercorp.com/media/pressReleasesDetail?seq=31256",
+      "published_on": "2023-08-24",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "NAVER Cloud의 HyperCLOVA X·CLOVA Studio·기업용 AI",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "naver_parent": {
+      "title": "NAVER 주요 계열사: NAVER Cloud",
+      "url": "https://www.navercorp.com/company/affiliates",
+      "published_on": null,
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "NAVER Cloud의 HyperCLOVA X·CLOVA Studio·기업용 AI",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "skt_llm": {
+      "title": "SKT: 독자 AI 파운데이션 모델 컨소시엄",
+      "url": "https://news.sktelecom.com/214233",
+      "published_on": "2025-08-04",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "독자 파운데이션 모델·AI 인프라",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "sds_platform": {
+      "title": "삼성SDS: FabriX·Brity AI 플랫폼과 기업 AI 전환",
+      "url": "https://www.samsungsds.com/en/news/ces2026-260112.html",
+      "published_on": "2026-01-12",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "FabriX·Brity·OpenAI 기업용 서비스 유통·통합",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "sds_openai": {
+      "title": "삼성SDS: OpenAI 리셀러 계약 체결",
+      "url": "https://www.samsungsds.com/kr/news/openai-251223.html",
+      "published_on": "2025-12-23",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "FabriX·Brity·OpenAI 기업용 서비스 유통·통합",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "samsung_nvidia": {
+      "title": "NVIDIA–삼성: HBM·파운드리·AI 팩토리 협력",
+      "url": "https://nvidianews.nvidia.com/news/samsung-ai-factory",
+      "published_on": "2025-10-30",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "AI용 메모리·파운드리",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "samsung_broadcom": {
+      "title": "삼성전자–Broadcom: 메모리·파운드리 협력 MOU",
+      "url": "https://news.samsung.com/global/samsung-electronics-and-broadcom-expand-strategic-collaboration-across-memory-and-foundry-technologies",
+      "published_on": "2026-07-25",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "AI용 메모리·파운드리",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "hynix_nvidia": {
+      "title": "SK하이닉스–NVIDIA: 차세대 AI 메모리 장기 기술 협력",
+      "url": "https://news.skhynix.com/en/multi-year-tech-partnership-with-nvidia/",
+      "published_on": "2026-06-08",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "HBM 및 AI 컴퓨팅용 메모리",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "hynix_tsmc": {
+      "title": "SK하이닉스–TSMC: HBM4 기술 협력 MOU",
+      "url": "https://news.skhynix.co.kr/skhynix-tsmc-hbm4-mou/",
+      "published_on": "2024-04-19",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "HBM 및 AI 컴퓨팅용 메모리",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "openai_nvidia": {
+      "title": "OpenAI: NVIDIA 투자 및 컴퓨팅 협력 확대",
+      "url": "https://openai.com/index/scaling-ai-for-everyone/",
+      "published_on": "2026-02-27",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "GPU 기반 AI 학습·추론 인프라",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "openai_amd": {
+      "title": "AMD–OpenAI: GPU 인프라 공급 계약",
+      "url": "https://newsroom.amd.com/news/amd-and-openai-announce-strategic-partnership-to-d/",
+      "published_on": "2025-10-06",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "Instinct AI GPU",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "openai_broadcom": {
+      "title": "OpenAI–Broadcom: AI 가속기·네트워크 공동 개발 및 공급",
+      "url": "https://openai.com/index/openai-and-broadcom-announce-strategic-collaboration/",
+      "published_on": "2025-10-13",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "맞춤형 AI 가속기·이더넷 네트워크",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "anthropic_tpu": {
+      "title": "Anthropic–Google·Broadcom: TPU 컴퓨팅 계약",
+      "url": "https://www.anthropic.com/news/google-broadcom-partnership-compute",
+      "published_on": "2026-04-06",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "Google Cloud·TPU·Gemini",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "tsmc_report": {
+      "title": "TSMC 2025 연차보고서: 파운드리·첨단 패키징과 NYSE ADS",
+      "url": "https://pr.tsmc.com/english/news/3300",
+      "published_on": "2026-04-16",
+      "type": "filing",
+      "checked_on": "2026-11-11",
+      "excerpt": "첨단 파운드리·CoWoS 등 패키징",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "ms_openai": {
+      "title": "Microsoft–OpenAI 수정 계약: 비독점 IP·주요 클라우드·주주 관계",
+      "url": "https://blogs.microsoft.com/blog/2026/04/27/the-next-phase-of-the-microsoft-openai-partnership/",
+      "published_on": "2026-04-27",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "Azure·OpenAI 기술 사용 및 기업 AI 서비스",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "anthropic_aws": {
+      "title": "Anthropic–Amazon: 투자 및 최대 5GW 컴퓨팅 계약 확대",
+      "url": "https://www.anthropic.com/news/anthropic-amazon-compute",
+      "published_on": "2026-04-20",
+      "type": "company",
+      "checked_on": "2026-11-11",
+      "excerpt": "AWS·Trainium·Bedrock",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "ubs_framework": {
+      "title": "UBS: AI enabling, intelligence and application layers",
+      "url": "https://www.ubs.com/global/en/investor-relations/press-releases/overview-news-display-ndp/en-20240618-ai-investment.html",
+      "published_on": "2024-06-18",
+      "type": "research",
+      "checked_on": "2026-11-11",
+      "excerpt": "Google Cloud·TPU·Gemini",
+      "excerpt_type": "reviewed_paraphrase",
+      "migration_basis": "reviewed relation registry 2026-11-15.2"
+    },
+    "skt_dc": {
+      "title": "SKT 가산 AIDC·GPUaaS",
+      "url": "https://news.sktelecom.com/209322",
+      "published_on": "2025-01-13",
+      "checked_on": "2026-11-16",
+      "excerpt": "가산 AI 데이터센터",
+      "excerpt_type": "source_fragment",
+      "type": "company"
+    },
+    "sds_dc": {
+      "title": "삼성SDS 구미 AI 데이터센터 착공",
+      "url": "https://www.samsungsds.com/en/news/gm-261104.html",
+      "published_on": "2026-11-04",
+      "checked_on": "2026-11-16",
+      "excerpt": "AI Data Center in Gumi",
+      "excerpt_type": "source_fragment",
+      "type": "company"
+    },
+    "ms_dc": {
+      "title": "Microsoft 2025 Annual Report",
+      "url": "https://www.microsoft.com/investor/reports/ar25/index.html",
+      "published_on": null,
+      "checked_on": "2026-11-16",
+      "excerpt": "global network of datacenters",
+      "excerpt_type": "source_fragment",
+      "type": "company"
+    },
+    "aws_dc": {
+      "title": "Amazon 2025 Form 10-K",
+      "url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872426000004/amzn-20251231.htm",
+      "published_on": "2026-02-06",
+      "checked_on": "2026-11-16",
+      "excerpt": "investments in technology infrastructure",
+      "excerpt_type": "source_fragment",
+      "type": "filing"
+    },
+    "ls_power": {
+      "title": "LS ELECTRIC 데이터센터 배전 사업",
+      "url": "https://nahp.ls-electric.com/markets/data-center",
+      "published_on": null,
+      "checked_on": "2026-11-16",
+      "excerpt": "integrated power distribution solution",
+      "excerpt_type": "source_fragment",
+      "type": "company"
+    },
+    "hd_power": {
+      "title": "HD현대일렉트릭 공식 제품·IR",
+      "url": "https://www.hd-hyundaielectric.com/elect/en/index.jsp",
+      "published_on": null,
+      "checked_on": "2026-11-16",
+      "excerpt": "Power Transformer",
+      "excerpt_type": "source_fragment",
+      "type": "company"
+    },
+    "etn_power": {
+      "title": "Eaton 2025 Form 10-K",
+      "url": "https://www.sec.gov/Archives/edgar/data/1551182/000155118226000007/etn-20251231.htm",
+      "published_on": null,
+      "checked_on": "2026-11-16",
+      "excerpt": "Electrical sector",
+      "excerpt_type": "source_fragment",
+      "type": "filing"
+    },
+    "gev_power": {
+      "title": "GE Vernova 공식 사업·주식 FAQ",
+      "url": "https://www.gevernova.com/investors/faq",
+      "published_on": null,
+      "checked_on": "2026-11-16",
+      "excerpt": "upgrading the existing power grid",
+      "excerpt_type": "source_fragment",
+      "type": "company"
+    },
+    "ls_identity": {
+      "title": "금감원 영문 기업정보 LS ELECTRIC",
+      "url": "https://englishdart.fss.or.kr/dsbc001/selectPopup.ax?selectKey=00105855",
+      "published_on": null,
+      "checked_on": "2026-11-16",
+      "excerpt": "010120",
+      "excerpt_type": "source_fragment",
+      "type": "company"
+    }
+  },
+  "memberships": [
+    {
+      "id": "035420:ai",
+      "subject_id": "naver_cloud",
+      "code": "035420",
+      "theme": "ai_software",
+      "activity": "NAVER Cloud의 HyperCLOVA X·CLOVA Studio·기업용 AI",
+      "sources": [
+        "naver_ai",
+        "naver_parent"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed",
+      "issuer_path": "NAVER Cloud → NAVER 모회사 노출 · 직접 상장 아님"
+    },
+    {
+      "id": "017670:ai",
+      "subject_id": "issuer_017670",
+      "code": "017670",
+      "theme": "ai_software",
+      "activity": "독자 파운데이션 모델·AI 인프라",
+      "sources": [
+        "skt_llm"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "018260:ai",
+      "subject_id": "issuer_018260",
+      "code": "018260",
+      "theme": "ai_software",
+      "activity": "FabriX·Brity·OpenAI 기업용 서비스 유통·통합",
+      "sources": [
+        "sds_platform",
+        "sds_openai"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "005930:semi",
+      "subject_id": "issuer_005930",
+      "code": "005930",
+      "theme": "semiconductor",
+      "activity": "AI용 메모리·파운드리",
+      "sources": [
+        "samsung_nvidia",
+        "samsung_broadcom"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "000660:semi",
+      "subject_id": "issuer_000660",
+      "code": "000660",
+      "theme": "semiconductor",
+      "activity": "HBM 및 AI 컴퓨팅용 메모리",
+      "sources": [
+        "hynix_nvidia",
+        "hynix_tsmc"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "NVDA.O:semi",
+      "subject_id": "issuer_NVDA_O",
+      "code": "NVDA.O",
+      "theme": "semiconductor",
+      "activity": "GPU 기반 AI 학습·추론 인프라",
+      "sources": [
+        "openai_nvidia"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "AMD.O:semi",
+      "subject_id": "issuer_AMD_O",
+      "code": "AMD.O",
+      "theme": "semiconductor",
+      "activity": "Instinct AI GPU",
+      "sources": [
+        "openai_amd"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "AVGO.O:semi",
+      "subject_id": "issuer_AVGO_O",
+      "code": "AVGO.O",
+      "theme": "semiconductor",
+      "activity": "맞춤형 AI 가속기·이더넷 네트워크",
+      "sources": [
+        "openai_broadcom",
+        "anthropic_tpu"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "TSM:semi",
+      "subject_id": "issuer_TSM",
+      "code": "TSM",
+      "theme": "semiconductor",
+      "activity": "첨단 파운드리·CoWoS 등 패키징",
+      "sources": [
+        "tsmc_report"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "MSFT.O:ai",
+      "subject_id": "issuer_MSFT_O",
+      "code": "MSFT.O",
+      "theme": "ai_software",
+      "activity": "Azure·OpenAI 기술 사용 및 기업 AI 서비스",
+      "sources": [
+        "ms_openai"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "AMZN.O:ai",
+      "subject_id": "issuer_AMZN_O",
+      "code": "AMZN.O",
+      "theme": "ai_software",
+      "activity": "AWS·Trainium·Bedrock",
+      "sources": [
+        "anthropic_aws"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "GOOGL.O:ai",
+      "subject_id": "issuer_GOOGL_O",
+      "code": "GOOGL.O",
+      "theme": "ai_software",
+      "activity": "Google Cloud·TPU·Gemini",
+      "sources": [
+        "anthropic_tpu",
+        "ubs_framework"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "017670:data_center",
+      "subject_id": "issuer_017670",
+      "code": "017670",
+      "theme": "data_center",
+      "activity": "가산 AIDC와 GPUaaS 운영",
+      "sources": [
+        "skt_dc"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "018260:data_center",
+      "subject_id": "issuer_018260",
+      "code": "018260",
+      "theme": "data_center",
+      "activity": "구미 AI 데이터센터 구축·기존 센터 운영 경험",
+      "sources": [
+        "sds_dc"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "MSFT.O:data_center",
+      "subject_id": "issuer_MSFT_O",
+      "code": "MSFT.O",
+      "theme": "data_center",
+      "activity": "Azure 글로벌 데이터센터 기반 서비스",
+      "sources": [
+        "ms_dc"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "AMZN.O:data_center",
+      "subject_id": "issuer_AMZN_O",
+      "code": "AMZN.O",
+      "theme": "data_center",
+      "activity": "AWS 기술 인프라 투자·운영",
+      "sources": [
+        "aws_dc"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "010120:power",
+      "subject_id": "issuer_010120",
+      "code": "010120",
+      "theme": "power",
+      "activity": "배전·전력 공급 설비",
+      "sources": [
+        "ls_power",
+        "ls_identity"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "267260:power",
+      "subject_id": "issuer_267260",
+      "code": "267260",
+      "theme": "power",
+      "activity": "전력용 변압기·송배전 설비",
+      "sources": [
+        "hd_power"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "ETN:power",
+      "subject_id": "issuer_ETN",
+      "code": "ETN",
+      "theme": "power",
+      "activity": "전력 관리·배전 솔루션",
+      "sources": [
+        "etn_power"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    },
+    {
+      "id": "GEV:power",
+      "subject_id": "issuer_GEV",
+      "code": "GEV",
+      "theme": "power",
+      "activity": "발전·전력망 설비",
+      "sources": [
+        "gev_power"
+      ],
+      "kind": "business",
+      "valid_from": null,
+      "valid_to": null,
+      "reviewed_on": "2026-11-16",
+      "revenue_share": null,
+      "status": "reviewed"
+    }
+  ]
+}

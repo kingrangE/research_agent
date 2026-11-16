@@ -187,16 +187,19 @@ function render() {
   if(dataProduct && sort==='context') sort='latest';
   $('#sort option[value="context"]').disabled=Boolean(dataProduct);
   const articles = data?.articles || [], themes = [...(data?.themes || [])].sort((a,b)=>b.count-a.count), statuses = data?.sources || [];
-  const labels = {briefing:'오늘의 브리핑',feed:'전체 자료',saved:'저장한 자료',sources:'수집 현황'};
+  const labels = {briefing:'오늘의 브리핑',feed:'전체 자료',saved:'저장한 자료',sources:'수집 현황',business:'테마·기업 근거'};
   document.querySelectorAll('[data-view]').forEach(button=>{button.classList.toggle('active', button.dataset.view === view); button.setAttribute('aria-current', button.dataset.view === view ? 'page' : 'false'); });
   $('#page-label').textContent = labels[view];
-  $('#page-title').textContent = {briefing:'지금, 어떤 종목을 봐야 할까요?',feed:'전체 자료',saved:'저장한 자료',sources:'수집·분석 현황'}[view];
+  if(view==='business') $('#page-description').textContent='기업의 사업 소속과 원출처를 기준일별로 확인하세요.';
+  $('#page-title').textContent = {briefing:'지금, 어떤 종목을 봐야 할까요?',feed:'전체 자료',saved:'저장한 자료',sources:'수집·분석 현황',business:'테마·기업 근거'}[view];
   $('#page-description').textContent = {briefing:'관련 종목을 찾고, 사건의 영향과 다음 확인 사항을 살펴보세요.',feed:'누적 기사를 최신순으로 살펴보고 날짜·언론사·검색어로 직접 골라보세요.',saved:'이 브라우저에 저장한 자료입니다. 실제 수집과 가상 시나리오는 따로 보관해요.',sources:'수집 성공 여부와 마지막으로 자료를 받은 시각을 확인할 수 있어요.'}[view];
   $('#nav-count').textContent = mode==='live' ? data?.archive?.articles ?? articles.length : articles.length;
   $('#saved-count').textContent = saved.filter(a=>a.mode === mode).length;
   $('#stats').hidden = view === 'saved';
-  $('.context-column').hidden = view === 'sources';
-  $('.reading-section').hidden = view === 'sources'; $('#source-view').hidden = view !== 'sources';
+  $('.context-column').hidden = ['sources','business'].includes(view);
+  $('.reading-section').hidden = ['sources','business'].includes(view); $('#source-view').hidden = view !== 'sources';
+  $('#business-view').hidden=view!=='business';
+  $('#business-content').innerHTML=mode!=='live' ? '<p>실제 수집 모드에서 사업 근거를 확인하세요.</p>' : businessLoading ? '<p>선택한 기준일의 사업 근거 조회 중</p>' : businessError ? `<p>${escape(businessError)}</p>` : businessHTML(businessData || data?.business);
   $('#sort').value = sort;
   $('#sort').disabled = view==='feed' && mode==='live';
   const archiveView=view==='feed' && mode==='live';
@@ -230,7 +233,7 @@ function render() {
   $('#mode-label').textContent = mode === 'demo' ? '가상 시나리오' : '실시간 투자 브리핑';
   if(dataProduct) {
     $('#mode-label').textContent='근거 데이터 · AI 미사용';
-    $('#page-title').textContent={briefing:'새 자료와 근거를 확인하세요',feed:'전체 자료',saved:'저장한 자료',sources:'수집·데이터 품질 현황'}[view];
+    $('#page-title').textContent={briefing:'새 자료와 근거를 확인하세요',feed:'전체 자료',saved:'저장한 자료',sources:'수집·데이터 품질 현황',business:'테마·기업 근거'}[view];
     $('#page-description').textContent='원문과 수집 시각을 확인하세요. 사건 판정과 투자 추천은 미적용입니다.';
     $('#list-caption').textContent=archiveView ? '누적 기사 · 최신순 · 미분류·본문 부족 자료도 모두 보관합니다.' : '최신성 기준 · 제목 키워드 분류 · AI 분석·추천 미사용';
     $('.method-note p').textContent='기사·수집 시각·원문 버전을 확인하는 데이터 제품입니다. 테마 연결·사건 통계는 검증된 범위부터 추가합니다.';
@@ -285,6 +288,37 @@ function render() {
 }
 function timingCheckHTML(item) {
   return item?.timing_original ? `<p class="detail-meta">원문에서 대조하지 못한 모델 시점: ${escape(item.timing_original)} · 사건 시점은 미확인으로 표시했습니다.</p>` : '';
+}
+let businessData=null,businessRequest=0,businessError='',businessLoading=false;
+function businessHTML(result) {
+  if(!result) return '<p>사업 근거를 확인하고 있습니다.</p>';
+  return `<p>기준 ${escape(result.as_of)} · 기업 ${escape(result.unique_issuers)}개 · 증권 ${escape(result.unique_securities)}개</p>${result.themes.map(t=>`<section class="source-detail"><h2>${escape(t.name)}</h2><p>포함: ${escape(t.include)}<br>제외: ${escape(t.exclude)}</p><p>국내 ${escape(t.countries.KR)}개 · 미국 ${escape(t.countries.US)}개</p><div class="stock-chips">${result.memberships.filter(m=>m.theme===t.id).map(m=>`<button class="stock-chip" data-business-code="${escape(m.code)}">${escape(m.security.name)} · ${m.kind==='business' ? '사업 근거' : '시장 호명'}</button>`).join('') || '<p>해당 기준일의 검토 근거가 없습니다.</p>'}</div></section>`).join('')}`;
+}
+async function loadBusiness() {
+  if(mode!=='live') return;
+  const request=++businessRequest;businessLoading=true;businessError='';render();
+  try {
+    const response=await fetch('/api/business?'+new URLSearchParams({as_of:$('#business-asof').value || ''}),{signal:AbortSignal.timeout(15000)});
+    if(!response.ok) throw new Error();
+    const result=await response.json();
+    if(request!==businessRequest) return;
+    businessData=result;businessLoading=false;render();
+  } catch {
+    if(request===businessRequest) {businessLoading=false;businessData=null;businessError='기준일 근거 조회 실패 · 최신 자료로 대신하지 않습니다.';render();}
+  }
+}
+async function openBusiness(code) {
+  if(mode!=='live') return;
+  const request=++historyRequest;detailId=null;
+  $('#detail').innerHTML='<div class="detail-top"><h2 id="detail-title">사업 근거 조회</h2><button data-close aria-label="상세 닫기">×</button></div>';
+  $('#detail-dialog').showModal();
+  try {
+    const response=await fetch('/api/business?'+new URLSearchParams({code,as_of:$('#business-asof').value || ''}),{signal:AbortSignal.timeout(15000)});
+    if(!response.ok) throw new Error();
+    const result=await response.json();
+    if(request!==historyRequest || !$('#detail-dialog').open) return;
+    $('#detail').innerHTML=`<div class="detail-top"><h2 id="detail-title">${escape(result.memberships[0]?.security.name || code)} · 사업 근거</h2><button data-close aria-label="상세 닫기">×</button></div><div class="detail-content">${result.memberships.map(m=>`<section class="detail-overview"><h3>${escape(m.activity)}</h3><p>${escape(m.subject.name)} · ${escape(m.security.instrument)} · ${escape(m.issuer_path || '발행사 사업 노출')}</p><p>${escape(m.claim_status)} · ${escape(m.validity_note || '')}</p>${m.evidence.map(s=>`<details><summary>${escape(s.title)}</summary><p>${s.excerpt_type==='source_fragment' ? '원문 구절' : '검토된 사업 요약'}: ${escape(s.excerpt)}</p><p>공개 ${escape(s.published_on || '미확인')} · 검토 ${escape(s.checked_on)}</p>${safeLink(s.url) ? `<a href="${escape(safeLink(s.url))}" target="_blank" rel="noopener noreferrer">출처 ↗</a>` : ''}</details>`).join('')}</section>`).join('') || '<p>기준일에 확인 가능한 소속이 없습니다.</p>'}</div>`;
+  } catch {if(request===historyRequest) $('#detail').innerHTML='<div class="detail-top"><h2 id="detail-title">조회 실패</h2><button data-close aria-label="상세 닫기">×</button></div><p>사업 근거를 확인할 수 없습니다.</p>';}
 }
 function historyQualityHTML(history) {
   const labels={complete:'요청 구간 수집 완료',partial:'추가 수집 필요',error:'수집 오류',running:'진행 중'};
@@ -378,6 +412,7 @@ document.addEventListener('click', event => {
   if (button.hasAttribute('data-archive-prev') && !archiveLoading && archiveCursors.length) {archiveCursor=archiveCursors.pop();loadArchive();}
   if (button.dataset.save) toggleSave(button.dataset.save);
   if (button.dataset.stock) openStock(button.dataset.article, button.dataset.stock);
+  if (button.dataset.businessCode) openBusiness(button.dataset.businessCode);
   if (button.dataset.historySymbol) openHistory(button.dataset.historyMarket,button.dataset.historySymbol,button.dataset.historyAdjusted);
   if (button.hasAttribute('data-close-stock')) $('#stock-dialog').close();
   if (button.dataset.detail) { renderDetail(button.dataset.detail); if (!$('#detail-dialog').open) $('#detail-dialog').showModal(); }
@@ -390,6 +425,7 @@ $('#refresh').addEventListener('click', async()=>{if (await load()) toast('최�
 $('#show-sources').addEventListener('click',()=>{view='sources'; render(); window.scrollTo({top:0,behavior:'smooth'});});
 $('#search').addEventListener('input',event=>{query=event.target.value; renderList();clearTimeout(archiveSearchTimer);archiveSearchTimer=setTimeout(()=>loadArchive(true),300);});
 for (const [selector,update] of [['#archive-source',v=>archiveSource=v],['#archive-since',v=>archiveSince=v],['#archive-until',v=>archiveUntil=v]]) $(selector).addEventListener('change',event=>{update(event.target.value);loadArchive(true);});
+$('#business-asof').addEventListener('change',loadBusiness);
 $('#sort').addEventListener('change',event=>{sort=event.target.value; briefingExpanded=false;render();});
 $('#detail-dialog').addEventListener('click',event=>{if (event.target === $('#detail-dialog')) { const rect=event.target.getBoundingClientRect(); if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom) {event.target.close();detailId=null;} }});
 $('#stock-dialog').addEventListener('click',event=>{if (event.target === $('#stock-dialog')) {const r=event.target.getBoundingClientRect(); if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) event.target.close();}});

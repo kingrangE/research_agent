@@ -24,6 +24,7 @@ import archive
 import news_ingestion
 import data_product
 import market_history
+import business_ontology
 from analysis_store import epoch, CURRENT_EVENT_SECONDS
 
 ROOT = Path(__file__).resolve().parent
@@ -178,6 +179,7 @@ def snapshot():
             "stock_status": stock_status, "quote_interval": stocks.QUOTE_TTL, "intelligence": analysis, "archive": archive.summary(),
             "collection":portal,
             'history':market_history.coverage(),
+            'business':business_ontology.snapshot() if data_mode() else None,
             "method": "근거 데이터 모드 · 제목 키워드 분류 · AI 분석·추천 미사용" if data_mode() else "기본 추천은 주식 적합성을 검토한 사건의 모델 순위. 전체 자료의 최신성 점수는 별도 유지. 국내·미국 종목 연결과 공개 근거를 제공하며 실적·가격 반영 정도는 추가 확인 필요."}
 
 
@@ -280,6 +282,15 @@ def demo_snapshot():
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path == '/api/business':
+            params=parse_qs(urlsplit(self.path).query)
+            try:
+                result=business_ontology.snapshot(params.get('as_of',[None])[0],params.get('theme',[None])[0],params.get('code',[None])[0])
+            except (ValueError,TypeError):
+                self.respond(b'{"error":"Invalid business query"}','application/json',400)
+                return
+            self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == '/api/history':
             params=parse_qs(urlsplit(self.path).query)
             try:
