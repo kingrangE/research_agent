@@ -147,10 +147,14 @@ function readingHTML(article) {
   return `${representativeNote}<section class="detail-overview"><div class="overview-heading"><h3>핵심 사건</h3><span class="certainty-badge">모델 요약 · 검수 전</span></div><p class="event-summary">${escape(e.summary)}</p><dl class="event-facts">${[['사건 상태',e.certainty],['유형',e.event_type],['규모',e.amount],['시점 · 기사 기준',e.timing]].map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value || '미확인')}</dd></div>`).join('')}</dl></section><div class="detail-decision-grid"><section class="decision-tile"><h3>${proof ? '원문 근거' : excluded ? '추천 제외 · 모델 해석' : '주식 영향 · 모델 해석'}</h3><p>${proof ? `<q>${escape(proof)}</q>` : escape(assessment?.reason || '아직 주식 영향 검토를 완료하지 않았습니다.')}</p><span class="assessment-label">${escape(recencyLabel(e) || assessment?.stock_relevance || '판단 대기')}${rankingExpired() ? ' · 갱신 지연' : ''}</span></section><section class="decision-tile next-check"><h3>다음 확인 · 모델 제안</h3><p>${escape(excluded ? '전체 자료로 보관 중입니다. 주식에 전달되는 구체적인 새 사실이 있는지 확인하세요.' : assessment?.watch_for || '원문의 새 사실과 관련 기업의 실적·가격 반영 여부를 확인하세요.')}</p></section></div>`;
 }
 function eventFactsHTML(e) {
-  const stages={unknown:'미확인',planned:'계획·검토',mou:'MOU',announced:'발표',approved:'승인',execution:'실행',cancelled:'취소',denied:'부인'};
+  const stages={unknown:'미확인',planned:'계획·검토',mou:'MOU',announced:'발표',approved:'승인',execution:'실행',cancelled:'취소',denied:'부인',deferred:'유예·집행 중단',exempt:'예외'};
   return `<section class="detail-overview"><div class="overview-heading"><h3>원문에서 찾은 사건 제안</h3><span>${e.review_status==='reviewed' ? `${escape(e.reviewer_kind)} 검토 기록` : '규칙 추출 · 검수 전'}</span></div><dl class="event-facts">${[['사건 축',e.axis || '미분류'],['유형',e.event_type],['상태',stages[e.stage] || e.stage],['금액 표기',(e.amounts || []).map(a=>a.raw).join(' / ') || '미확인'],['당사자 후보',(e.actors || []).map(a=>a.name).join(' · ') || '미확인']].map(([k,v])=>`<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>${e.details ? macroDetailsHTML(e.details) : ''}${(e.evidence || []).map(p=>`<blockquote>${escape(p.quote)}</blockquote>`).join('')}<details><summary>사건·규칙 이력 정보</summary><p>사건 ${escape(e.event_id)} · 기준 ${escape(e.rule_version)} · 처리 ${escape(dateTime(e.processed_at))}</p><p>기사 공개 ${escape(dateTime(e.published_at))} · 포털 표시 ${escape(dateTime(e.portal_display_at))} · 최초 수집 ${escape(dateTime(e.first_seen_at))}</p><p>기업은 이름이 등장한 후보이며 법적 당사자·수혜를 확정하지 않습니다. ${escape(e.source_quality==='body_title_binding_unverified' ? '보관 본문과 현재 제목의 일치 미검증' : '제목에서 추출한 제안')}</p><p>관련 사건 ${escape((e.related_event_ids || []).join(' · ') || '미확인')}</p>${(e.source_history || []).map(v=>`<p>${escape(v.stage)} · ${escape(v.article_title)} · ${escape(dateTime(v.source_version_at))}</p>`).join('')}${(e.review_history || []).map(r=>`<p>${escape(r.action)} · ${escape(r.reviewer_kind)} ${escape(r.reviewer)} · ${escape(r.reason)} · ${escape(dateTime(r.applied_at))}</p>`).join('')}</details></section>`;
 }
 function macroDetailsHTML(d) {
+  if(d.kind==='trade') {
+    const rows=[['조치 상태',({proposed:'제안·검토',withdrawn:'철회 보도',deferred:'유예·집행 중단',exempt:'제품별 예외',denied:'부인',in_force_reported:'시행 보도',finalized_reported:'확정 보도',announcement_reported:'발표 보도',finalized:'최종 조치'})[d.regulatory_stage] || d.regulatory_stage || '미확인'],['발표 주체 국가',d.issuer_country || '미확인'],['원산지',d.origin_country || '미확인'],['도착 국가',d.destination_country || '미확인'],['제품',(d.products || [d.product]).filter(Boolean).join(' · ') || '미확인'],['분류 코드',(d.classification_codes || []).map(c=>c.scheme+' '+c.code).join(' / ') || '미확인'],['세율 표기',(d.rates || []).map(r=>r.value+'% · '+r.basis).join(' / ') || '미확인'],['전체 합산 세율','미산정'],['효력일',d.effective_at ? dateTime(d.effective_at) : d.effective_date || '미확인'],['기업 직접 영향','제품·지역·실제 노출 대조 전']];
+    return `<dl class="event-facts">${rows.map(([k,v])=>`<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>${d.conflicting_conditions ? '<p>복수 제품·날짜가 있어 적용 조건 검토가 필요합니다.</p>' : ''}<p>언론 보도·검토한 공식 자료이며 현행 법령 전체나 기업 손익을 확정하지 않습니다.</p><button data-trade>공식 조치·후속 변경 근거</button>`;
+  }
   if(d.kind==='fx') {
     const rows=[['통화쌍',d.base_currency && d.quote_currency ? d.base_currency+'/'+d.quote_currency : '미확인'],['호가 단위',d.unit || '미확인'],['이전 값',d.previous_value ?? '미확인'],['새 값',d.new_value ?? '미확인'],['변화량',d.delta ?? '미확인'],['변화율',d.change_percent!=null ? d.change_percent+'%' : '미확인'],['원화 방향',{weak:'약세',strong:'강세',unchanged:'변화 없음'}[d.won_strength] || '미확인'],['비교 구간',{previous_close:'전일 종가 대비 보도',intraday:'장중 보도'}[d.observation_window] || '시각 미확인']];
     return `<dl class="event-facts">${rows.map(([k,v])=>`<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl><p>기사의 주장입니다. API 관측 시각·호가 기준과 대조 전이며 기업 수혜 방향은 미확정입니다.</p><button data-fx>환율 관측·기업 노출 근거</button>`;
@@ -158,6 +162,21 @@ function macroDetailsHTML(d) {
   const verified={official_registry:'공식 결정문',matched_official_values:'공식 수치 대조',matched_values_publication_time_unverified:'수치 일치 · 공개 시각 미확인',official_unverified:'공식 대조 미확인'};
   const rows=[['국가·통화',[d.country,d.currency].filter(Boolean).join(' · ') || '미확인'],['발표 기관',d.authority || '미확인'],['금리 기준',d.instrument || '미확인'],['만기',d.tenor_years ? d.tenor_years+'년' : '미확인'],['이전 수준',d.previous_level?.length ? d.previous_level.join('~')+'%' : '미확인'],['새 수준',d.new_level?.length ? d.new_level.join('~')+'%' : '미확인'],['변화량',(d.changes || []).map(c=>c.basis_points!=null ? c.basis_points+' bp' : (c.raw || '미확인')+' · 방향 미확인').join(' / ') || '미확인'],['공식 자료',verified[d.verification] || '미확인'],['결정일',d.decision_date || '미확인'],['효력 시각',d.effective_at ? dateTime(d.effective_at) : d.effective_date ? d.effective_date+' · 시각 미확인' : '미확인'],['기대 대비 변화',d.surprise_bp==null ? '사전 기대 자료 미확보 · 미산정' : d.surprise_bp+' bp']];
   return `<dl class="event-facts">${rows.map(([k,v])=>`<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>${d.numeric_conflict ? '<p>원문 수치가 상충합니다. 확정 값으로 사용하지 않습니다.</p>' : ''}${safeLink(d.reference_url || d.url) ? `<a href="${escape(safeLink(d.reference_url || d.url))}" target="_blank" rel="noopener noreferrer">공식 결정문 ↗</a>` : ''}`;
+}
+async function openTrade() {
+  if(mode!=='live') return;
+  const request=++historyRequest;detailId=null;
+  $('#detail').innerHTML='<div class="detail-top"><h2 id="detail-title">관세·규제 근거</h2><button data-close aria-label="상세 닫기">×</button></div>';
+  if(!$('#detail-dialog').open) $('#detail-dialog').showModal();
+  try {
+    const asOf=$('#business-asof').value;
+    const query=asOf ? '?as_of='+encodeURIComponent(asOf+'T00:00:00+09:00') : '';
+    const response=await fetch('/api/trade-measures'+query,{signal:AbortSignal.timeout(15000)});
+    if(!response.ok) throw new Error();
+    const r=await response.json();
+    if(request!==historyRequest || !$('#detail-dialog').open) return;
+    $('#detail').innerHTML=`<div class="detail-top"><h2 id="detail-title">관세·규제 공식 근거</h2><button data-close aria-label="상세 닫기">×</button></div><div class="detail-content"><p>${escape(r.scope)} · 기준 ${escape(r.as_of || '전체 등록 이력')}</p>${r.measures.map(d=>`<section class="detail-overview"><h3>${escape(d.product)} · ${escape(({proposed:'제안·검토',finalized:'최종 조치',finalized_not_yet_effective:'확정 · 효력 발생 전',in_force_by_recorded_schedule:'등록된 효력일 도래 · 집행 미검증',expired_by_recorded_schedule:'등록된 종료일 경과',exempt:'제품별 예외',deferred:'집행 중단 지시'})[d.status_as_of] || d.status_as_of)}</h3>${macroDetailsHTML({kind:'trade',...d})}<details><summary>원문·예외·후속 변경</summary><blockquote>${escape(d.quote)}</blockquote><p>공개일 ${escape(d.published_date)} · 시각 미확인 · 에이전트 검토</p><p>${escape(d.notes)}</p><p>후속 변경 ${(d.followups || []).map(escape).join(' · ') || '등록 없음'}</p><a href="${escape(safeLink(d.url))}" target="_blank" rel="noopener noreferrer">공식 자료 ↗</a></details></section>`).join('')}${r.notes.map(n=>`<p>${escape(n)}</p>`).join('')}</div>`;
+  } catch {if(request===historyRequest) $('#detail').innerHTML='<h2>관세·규제 근거 조회 실패</h2><button data-close>닫기</button>';}
 }
 async function openFX() {
   if(mode!=='live') return;
@@ -472,6 +491,7 @@ document.addEventListener('click', event => {
   if (button.dataset.stock) openStock(button.dataset.article, button.dataset.stock);
   if (button.dataset.businessCode) openBusiness(button.dataset.businessCode);
   if (button.hasAttribute('data-supply-all')) openSupply();
+  if (button.hasAttribute('data-trade')) openTrade();
   if (button.hasAttribute('data-fx')) openFX();
   if (button.hasAttribute('data-official-rates')) openRateReferences();
   if (button.dataset.supplyCode) openSupply(button.dataset.supplyCode);

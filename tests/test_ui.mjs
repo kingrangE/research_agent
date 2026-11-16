@@ -799,3 +799,13 @@ test('FX details preserve quote units and missing values without using policy-ra
  assert.ok(!html.includes('0.001%'));
  assert.ok(html.includes('API 관측 시각·호가 기준과 대조 전'));
 });
+
+test('trade detail keeps additional duty separate from unknown total and unconfirmed company effects',()=>{
+ const run=ui();
+ const html=run(`macroDetailsHTML({kind:'trade',regulatory_stage:'deferred',origin_country:'CN',products:['semiconductor'],classification_codes:[{scheme:'HTSUS',code:'8542.31.00'}],rates:[{value:'50',basis:'additional'}]})`);
+ assert.ok(html.includes('50% · additional'));
+ assert.ok(html.includes('전체 합산 세율'));
+ assert.ok(html.includes('미산정'));
+ assert.ok(html.includes('제품·지역·실제 노출 대조 전'));
+ assert.ok(html.includes('HTSUS 8542.31.00'));
+});

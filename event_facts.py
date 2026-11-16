@@ -13,11 +13,12 @@ import archive
 import business_ontology
 import relations
 import macro_events
+import trade_events
 from analysis_store import epoch
 
 PATH=Path(__file__).resolve().parent/'.data'/'event_facts.sqlite3'
-RULE_VERSION='event-rules-v3'
-STAGES={'unknown','planned','mou','announced','approved','execution','cancelled','denied'}
+RULE_VERSION='event-rules-v4'
+STAGES={'unknown','planned','mou','announced','approved','execution','cancelled','denied','deferred','exempt'}
 
 
 def encode(value):
@@ -76,21 +77,32 @@ def extract(article,body=None,body_version=None):
     headline_rate=macro_events.rates(title)
     if headline_rate and not (headline_rate['details']['direction'] or headline_rate['details']['new_level'] or headline_rate['details']['changes'] or headline_rate['stage'] in ('planned','denied')):headline_rate=None
     headline_fx=macro_events.fx(title)
+    headline_trade=trade_events.extract(title)
+    trade_reference=trade_events.official(article['url'],body or '')
     reference=macro_events.official(article['url'],body or '')
     primary=bool(headline_fact or (entities(title) and re.search(r'투자|증설|건설|착공|구축|발주|수주|계약',title)))
     if re.search(r'피소|소송|고소|쇼크|급등|급락|코스피|코스닥|뉴욕증시',title):primary=False
     if re.search(r'투자\s*(?:적기|기회|매력|전략)|투자금.{0,10}(?:썰물|유출|유입)|수혜주|추천주',title):primary=False
     if re.search(r'투자의견|목표주가|목표가(?:[^가-힣]|$)|목표가(?:유지|상향|하향)',title):primary=False
     if not headline_fact and re.search(r'주식|주가|목표가|투자의견|ETF|수익률',title,re.I):primary=False
-    classifiers=([macro_events.fx] if headline_fx else [])+([macro_events.rates] if headline_rate else [])+([infra] if primary else [])
+    classifiers=([trade_events.extract] if headline_trade else [])+([macro_events.fx] if headline_fx else [])+([macro_events.rates] if headline_rate else [])+([infra] if primary else [])
     if reference:
         match=macro_events.reference_match(reference,body)
         chosen=('body',match,macro_events.from_official(reference))
+    if trade_reference and not chosen:
+        quote=trade_reference['details']['quote']
+        match=re.search(re.escape(quote),body)
+        chosen=('body',match,trade_reference)
     for section in (() if chosen else ('body','title')):
         for match in re.finditer(r'.+?(?:\n|[。!?]|(?<![0-9])\.(?![0-9])|$)',sections[section],re.S):
             for classifier in classifiers:
                 facts=classifier(match.group())
                 if not facts:continue
+                if facts['axis']=='tariff' and headline_trade:
+                    h,c=headline_trade['details'],facts['details']
+                    if h['products'] and c['products'] and set(h['products'])!=set(c['products']):continue
+                    if h['origin_country'] and c['origin_country'] and h['origin_country']!=c['origin_country']:continue
+                    if facts['stage']!=headline_trade['stage']:continue
                 if facts['axis']=='fx' and headline_fx:
                     if facts['product']!=headline_fx['product'] or facts['stage']!=headline_fx['stage']:continue
                 if facts['axis']=='rates' and headline_rate:
