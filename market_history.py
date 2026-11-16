@@ -328,9 +328,13 @@ def coverage(market=None, symbol=None):
         jobs,series = [],[]
     else:
         with db() as connection:
+            calendars={}
+            def calendar_for(market,since,until):
+                if market not in calendars:calendars[market]=calendar_snapshot(connection,market)
+                return {day:row for day,row in calendars[market].items() if since<=day<=until}
             jobs = [json.loads(r[0]) for r in connection.execute('SELECT payload FROM jobs')]
             for job in jobs:
-                calendar = calendar_snapshot(connection,job['market'],job['since'],job['until'])
+                calendar = calendar_for(job['market'],job['since'],job['until'])
                 days = {r[0] for r in connection.execute('SELECT DISTINCT day FROM bars WHERE market=? AND symbol=? AND adjusted=? AND day BETWEEN ? AND ?',
                     (job['market'],job['symbol'],int(job['adjusted']),job['since'],job['until']))}
                 meta=connection.execute("SELECT payload FROM responses WHERE market=? AND symbol=? AND kind='security' ORDER BY id DESC LIMIT 1",(job['market'],job['symbol'])).fetchone()
@@ -349,7 +353,7 @@ def coverage(market=None, symbol=None):
                     AND id=(SELECT max(id) FROM bars WHERE market=b.market AND symbol=b.symbol AND adjusted=b.adjusted AND day=b.day) ORDER BY day''',
                     (row['market'],row['symbol'],row['adjusted'])).fetchall()
                 days = {json.loads(x[0])['day'] for x in current}
-                known = calendar_snapshot(connection,row['market'],row['first'],row['last'])
+                known = calendar_for(row['market'],row['first'],row['last'])
                 meta = connection.execute("SELECT id,payload,observed_at FROM responses WHERE market=? AND symbol=? AND kind='security' ORDER BY id DESC LIMIT 1",(row['market'],row['symbol'])).fetchone()
                 security = json.loads(meta['payload'])['result'][0] if meta else None
                 item.update(missing_open_days=[day for day,v in known.items() if v['regular_open'] and day not in days],

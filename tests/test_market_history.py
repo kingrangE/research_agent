@@ -169,6 +169,17 @@ class HistoryTest(unittest.TestCase):
         self.assertFalse(h.revisions_current('KR','005930',old))
         self.assertIsNone(h.revisions_current('KR','005930',[]))
 
+    def test_coverage_resolves_each_market_calendar_once_per_request(self):
+        with h.db() as db:
+            h.save_page(db,'KR','005930',False,{},page([candle()]),'2026-11-01','2026-11-10')
+            for i in range(2):
+                job={'market':'KR','symbol':'005930','adjusted':False,'since':'2026-11-01','until':'2026-11-10','prices_complete':True}
+                db.execute('INSERT INTO jobs VALUES(?,?)',(str(i),h.encode(job)))
+        with patch.object(h,'calendar_snapshot',wraps=h.calendar_snapshot) as snapshot:
+            result=h.coverage()
+        self.assertEqual(len(result['jobs']),2)
+        self.assertEqual(snapshot.call_count,1)
+
     def test_history_http_routes_only_read_saved_data_and_validate_queries(self):
         from unittest.mock import Mock
         import server
