@@ -31,6 +31,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
+      TOSS_CLIENT_ID: ${TOSS_CLIENT_ID:-}
+      TOSS_CLIENT_SECRET: ${TOSS_CLIENT_SECRET:-}
     command: ["python", "-u", "server.py", "--product-mode", "${PRODUCT_MODE:-data}", "--host", "0.0.0.0"]
     ports:
       - "127.0.0.1:8765:8765"

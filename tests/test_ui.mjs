@@ -27,6 +27,17 @@ test('data product uses sources without AI ranking and rejects unknown evidence 
   assert.ok(run(`evidenceHTML({rule_version:'future'})`).includes('지원하지 않는 근거 버전'));
 });
 
+test('history quality escapes provider errors and never implies missing values are flat returns', () => {
+  const run=ui();
+  const html=run(`historyQualityHTML({configured:false,usage:'개인용',series:[{market:'US',symbol:'<bad>',adjusted:0,first:'2026-11-06',last:'2026-11-13',days:6,versions:7,calendar_days_checked:8,missing_open_days:['2026-11-09']}],jobs:[{market:'US',symbol:'AAPL',status:'error',error:'<script>private</script>'}]})`);
+  assert.ok(html.includes('연결 대기'));
+  assert.ok(html.includes('&lt;bad&gt;'));
+  assert.ok(html.includes('&lt;script&gt;'));
+  assert.ok(!html.includes('<script>'));
+  assert.ok(html.includes('가격 누락 1일'));
+  assert.ok(html.includes('거래대금·과거 거래정지·기업행동 이력은 미확보'));
+});
+
 test('stock card escapes names and reasons and distinguishes inferred candidates', () => {
   const run = ui();
   const html = run(`stocksHTML({related_stocks:[{code:'003470',name:'<img src=x>',relation:'business',reason:'<script>alert(1)</script>'}]},true)`);

@@ -254,6 +254,7 @@ function render() {
   $('#sources').innerHTML = statuses.map(s=>`<div class="source-row"><span class="source-logo">H</span><div class="source-info">${escape(s.name)}<small>${s.status === 'demo' ? '가상 수집원' : s.last_success ? `${escape(ago(s.last_success))} 수집 · ${s.count}건` : s.error ? '연결 확인 필요' : '첫 수집 대기 중'}</small></div><span class="source-status ${escape(s.status)}">${{ok:'정상',stale:'이전 자료',error:'실패',demo:'예시'}[s.status] || '대기'}</span></div>`).join('') || '<p class="panel-description">공개 피드에 연결하고 있어요.</p>';
   $('#source-view').innerHTML = statuses.map(s=>`<div class="source-detail"><h3>${escape(s.name)}</h3><span class="source-status ${escape(s.status)}">${{ok:'정상 수집',stale:'수집 실패 · 마지막 성공 자료 유지',error:'수집 실패',demo:'가상 시나리오'}[s.status] || '대기'}</span><p>자료 ${s.count}건 · 마지막 성공: ${s.last_success ? escape(dateTime(s.last_success)) : '아직 없음'}${s.error ? `<br>${escape(s.error)}` : ''}</p>${safeLink(s.url) ? `<a href="${escape(safeLink(s.url))}" target="_blank" rel="noopener noreferrer">공개 RSS 확인 ↗</a>` : ''}</div>`).join('') + '<div class="source-detail"><h3>네이버 증권 리포트</h3><span class="source-status stale">자동 수집 미연결 · 원문 링크 제공</span><p>현재 페이지가 별도 요청으로 자료를 불러와 이번 시제품에는 자동 수집을 연결하지 않았습니다. 본문과 PDF를 분석한 결과는 제공하지 않습니다.</p><a href="https://stock.naver.com/research" target="_blank" rel="noopener noreferrer">리포트 원문 사이트 ↗</a></div><div class="source-detail"><h3>선별 방식</h3><p>발행 직후 최신성 50점에서 첫 60분 동안 25점까지 선형 감소하고, 이후 시간당 1점씩 최저 0점까지 감소합니다. 자료 유형에 따른 가점은 없습니다. 주제 분류는 필터용이며 점수에 반영하지 않습니다. 한국경제 RSS와 별도 작업자의 Npay 증권 전체 속보를 보관합니다. 포털의 여러 매체를 수집하는 것과 독립된 사실 교차 검증은 다릅니다. 관련 국내·미국 종목의 현재가·전일 대비 등락률은 Npay 증권에서 조회합니다. 환율·거래량과 주도주 판별은 미연결입니다.</p></div>';
   const stored=data?.archive;
+  if(mode==='live' && data?.history) $('#source-view').innerHTML += historyQualityHTML(data.history);
   const collection=data?.collection;
   if (collection) $('#source-view').innerHTML += `<div class="source-detail"><h3>포털 속보 · 날짜별 대조</h3><p>대상 날짜 ${escape(collection.day)} · 다음 확인 ${escape(collection.next_page)}페이지</p><p>최근 목록 확인 ${escape(dateTime(collection.last_success))} · 최근 전체 대조 ${collection.complete_at ? escape(dateTime(collection.complete_at)) : '진행 중'}</p>${collection.last_error ? `<p>수집 지연: ${escape(collection.last_error)}</p>` : ''}<p>상시 작업자는 10초 간격으로 확인하고 정기 복구는 5분 간격으로 실행하도록 설정했습니다. 원본의 반영 지연과 오류 대기 시간은 별도입니다. 전체 대조는 확인한 날짜의 포털 속보 목록 기준이며 모든 매체의 전문 확보를 뜻하지 않습니다.</p></div>`;
   $('#source-view').innerHTML += `<div class="source-detail"><h3>전체 수집 · 누적 보관</h3><p>수집과 보관에는 추천 적합성 필터를 적용하지 않습니다. 일반 금융 뉴스·상품 안내·행사도 함께 보관합니다.</p><p>기사 ${stored?.articles || 0}건 · RSS 기록 ${stored?.revisions || 0}개 · 공개 본문 ${stored?.bodies || 0}건 · 본문 대기 ${stored?.pending || 0}건 · 실패 ${stored?.errors || 0}건</p><p>${escape(data?.archive_error || stored?.message || '서버 재시작 후에도 보관 자료를 유지합니다. 전체 자료 메뉴에서 누적 보관 기사를 날짜·언론사·검색어로 조회할 수 있습니다.')}</p><p>본문은 추천 모델과 독립적으로 수집합니다. 공개 추출 내용만 지원하며 로그인·유료 전문은 보장하지 않습니다.</p></div>`;
@@ -284,6 +285,26 @@ function render() {
 }
 function timingCheckHTML(item) {
   return item?.timing_original ? `<p class="detail-meta">원문에서 대조하지 못한 모델 시점: ${escape(item.timing_original)} · 사건 시점은 미확인으로 표시했습니다.</p>` : '';
+}
+function historyQualityHTML(history) {
+  const labels={complete:'요청 구간 수집 완료',partial:'추가 수집 필요',error:'수집 오류',running:'진행 중'};
+  return `<section class="source-detail"><h3>과거 시세 · 토스증권</h3><p>${history.configured ? '인증 설정 있음 · 실제 수집 상태는 아래에서 확인' : '연결 대기 · API 설정 필요'}</p><p>${escape(history.usage)}</p>${(history.series || []).map(s=>`<div class="source-detail"><h4>${escape(s.market)} · ${escape(s.symbol)} · ${s.adjusted ? '수정주가' : '원시 가격'}</h4><p>${escape(s.first)} ~ ${escape(s.last)} · ${escape(s.days)}거래일 · ${escape(s.versions)}개 관측 버전</p><p>캘린더 확인 ${escape(s.calendar_days_checked)}일 · 확인된 개장일 중 가격 누락 ${escape(s.missing_open_days?.length ?? '미확인')}일</p><button data-history-market="${escape(s.market)}" data-history-symbol="${escape(s.symbol)}" data-history-adjusted="${s.adjusted ? 'true' : 'false'}">보관 일봉·출처 보기</button></div>`).join('') || '<p>아직 보관한 과거 시세가 없습니다.</p>'}${(history.jobs || []).map(j=>`<p>${escape(j.market)} ${escape(j.symbol)} ${escape(j.since)} ~ ${escape(j.until)}: ${escape(labels[j.status] || '미확인')} · 개장일 가격 누락 ${escape(j.missing_open_days?.length ?? '미확인')}일 · 캘린더 미확인 ${escape(j.calendar_unknown_days ?? '미확인')}일${j.error ? ` · ${escape(j.error)}` : ''}</p>`).join('')}<p class="detail-meta">거래대금·과거 거래정지·기업행동 이력은 미확보입니다. 미국 지수 원자료와 장중 반응 통계는 미지원입니다. SPY를 수집한 경우 미국 지수 자체가 아닌 ETF 비교 자료입니다.</p></section>`;
+}
+let historyRequest=0;
+async function openHistory(market,symbol,adjusted) {
+  const request=++historyRequest;
+  detailId=null;
+  $('#detail').innerHTML='<div class="detail-top"><h2 id="detail-title">과거 시세</h2><button data-close aria-label="상세 닫기">×</button></div><p>보관 자료 조회 중</p>';
+  $('#detail-dialog').showModal();
+  try {
+    const response=await fetch('/api/history?'+new URLSearchParams({market,symbol,adjusted}),{signal:AbortSignal.timeout(15000)});
+    if(!response.ok) throw new Error('조회 실패');
+    const result=await response.json();
+    if(request!==historyRequest || !$('#detail-dialog').open) return;
+    $('#detail').innerHTML=`<div class="detail-top"><h2 id="detail-title">${escape(market)} ${escape(symbol)} · 보관 일봉</h2><button data-close aria-label="상세 닫기">×</button></div><div class="detail-content"><p>정규화 기준 ${escape(result.coverage.policy_version)} · 가격은 원문 소수값 그대로 표시합니다.</p><table><caption>최근 최대 400거래일 · API 응답으로 원문 추적</caption><thead><tr><th>거래일</th><th>종가</th><th>거래량</th><th>출처</th></tr></thead><tbody>${result.observations.map(r=>`<tr><td>${escape(r.day)}${r.completion==='provisional' ? ' · 미완료 가능' : ''}</td><td>${escape(r.closePrice)} ${escape(r.currency)}</td><td>${escape(r.volume)}</td><td><a href="/api/history?response_id=${encodeURIComponent(r.response_id)}" target="_blank" rel="noopener noreferrer">원문 #${escape(r.response_id)}</a></td></tr>`).join('')}</tbody></table></div>`;
+  } catch {
+    if(request===historyRequest && $('#detail-dialog').open) $('#detail').innerHTML='<div class="detail-top"><h2 id="detail-title">조회 실패</h2><button data-close aria-label="상세 닫기">×</button></div><p>보관 시세를 확인할 수 없습니다. 이전 시세나 0으로 대신하지 않습니다.</p>';
+  }
 }
 function eventHistoryHTML(event) {
   if (!event?.history?.length) return '';
@@ -357,6 +378,7 @@ document.addEventListener('click', event => {
   if (button.hasAttribute('data-archive-prev') && !archiveLoading && archiveCursors.length) {archiveCursor=archiveCursors.pop();loadArchive();}
   if (button.dataset.save) toggleSave(button.dataset.save);
   if (button.dataset.stock) openStock(button.dataset.article, button.dataset.stock);
+  if (button.dataset.historySymbol) openHistory(button.dataset.historyMarket,button.dataset.historySymbol,button.dataset.historyAdjusted);
   if (button.hasAttribute('data-close-stock')) $('#stock-dialog').close();
   if (button.dataset.detail) { renderDetail(button.dataset.detail); if (!$('#detail-dialog').open) $('#detail-dialog').showModal(); }
   if (button.hasAttribute('data-close')) { $('#detail-dialog').close(); detailId=null; }
@@ -371,7 +393,7 @@ for (const [selector,update] of [['#archive-source',v=>archiveSource=v],['#archi
 $('#sort').addEventListener('change',event=>{sort=event.target.value; briefingExpanded=false;render();});
 $('#detail-dialog').addEventListener('click',event=>{if (event.target === $('#detail-dialog')) { const rect=event.target.getBoundingClientRect(); if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom) {event.target.close();detailId=null;} }});
 $('#stock-dialog').addEventListener('click',event=>{if (event.target === $('#stock-dialog')) {const r=event.target.getBoundingClientRect(); if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) event.target.close();}});
-$('#detail-dialog').addEventListener('close',()=>{detailId=null;});
+$('#detail-dialog').addEventListener('close',()=>{detailId=null;historyRequest++;});
 document.addEventListener('keydown',event=>{if(event.key === '/' && !['INPUT','TEXTAREA'].includes(document.activeElement.tagName) && !$('#detail-dialog').open && !$('#stock-dialog').open) {event.preventDefault(); $('#search').focus();}});
 $('#today').textContent=new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'short',timeZone:'Asia/Seoul'});
 render(); load();

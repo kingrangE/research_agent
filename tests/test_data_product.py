@@ -13,7 +13,7 @@ class DataProductTest(unittest.TestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         for p in (patch('archive.PATH', Path(temp.name)/'news.sqlite3'),
-                  patch.dict('os.environ', {'PRODUCT_MODE':'data'})):
+                  patch.dict('os.environ', {'PRODUCT_MODE':'data'}, clear=True)):
             p.start()
             self.addCleanup(p.stop)
         self.article = {'id':'a','url':'https://example.com/a','source_id':'naver','source':'포털',
