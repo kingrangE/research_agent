@@ -789,3 +789,13 @@ test('provider usage keeps unattributed historical calls separate',()=>{
  assert.ok(html.includes('현재 제공처 요청 2회'));
  assert.ok(html.includes('제공처 미상 과거 기록 99회 별도 보존'));
 });
+
+test('FX details preserve quote units and missing values without using policy-rate percent units',()=>{
+ const run=ui();
+ const html=run(`macroDetailsHTML({kind:'fx',base_currency:'KRW',quote_currency:'USD',unit:'USD per 1 KRW',previous_value:'0.001',new_value:null,change_percent:null,won_strength:'weak'})`);
+ assert.ok(html.includes('USD per 1 KRW'));
+ assert.ok(html.includes('약세'));
+ assert.ok(html.includes('미확인'));
+ assert.ok(!html.includes('0.001%'));
+ assert.ok(html.includes('API 관측 시각·호가 기준과 대조 전'));
+});

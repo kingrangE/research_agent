@@ -66,7 +66,7 @@ class Toss:
 
     def request(self, path, params=None, auth=False):
         # Fixed host and allowlisted read routes keep tokens away from arbitrary URLs/orders.
-        allowed = path in ('/api/v1/candles','/api/v1/stocks') or path in (
+        allowed = path in ('/api/v1/candles','/api/v1/stocks','/api/v1/exchange-rate') or path in (
             '/api/v1/market-calendar/KR','/api/v1/market-calendar/US',
             '/api/v1/market-indicators/KOSPI/candles','/api/v1/market-indicators/KOSDAQ/candles')
         if not (auth and path == '/oauth2/token') and not (not auth and allowed):
@@ -381,6 +381,7 @@ def source_response(response_id):
     result=dict(row)
     path = (f'/api/v1/market-calendar/{row["market"]}' if row['kind']=='calendar' else
             '/api/v1/stocks' if row['kind']=='security' else
+            '/api/v1/exchange-rate' if row['kind']=='fx' else
             f'/api/v1/market-indicators/{row["symbol"]}/candles' if row['symbol'] in INDICES else '/api/v1/candles')
     result['source_url']=BASE+path+'?'+urlencode(json.loads(row['params']))
     return result

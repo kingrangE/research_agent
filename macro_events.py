@@ -122,3 +122,50 @@ def compare_reference(details,article_time=None,forecast=False):
                 'verification':'matched_official_values' if r['published_at'] and article_time else 'matched_values_publication_time_unverified',
                 'official_published_at':r['published_at'],'effective_at':r['effective_at']}
     return details
+
+
+def fx(text):
+    """News claims only; a mentioned dollar investment is never an FX observation."""
+    direct=bool(re.search(r'USD\s*/\s*KRW|(?:원\s*[/·-]\s*달러|달러\s*[/·-]\s*원)\s*환율|1\s*달러당\s*원',text,re.I))
+    inverse=bool(re.search(r'KRW\s*/\s*USD|1\s*원당\s*달러',text,re.I))
+    won=re.search(r'원화\s*(강세|약세)',text)
+    if not (direct or inverse or won):return None
+    ambiguous=direct and inverse
+    pair=('KRW','USD') if inverse and not direct else ('USD','KRW') if direct and not inverse else (None,None)
+    up=bool(re.search(r'상승|급등|올랐|높아',text));down=bool(re.search(r'하락|급락|내렸|낮아',text))
+    direction='up' if up and not down else 'down' if down and not up else None
+    denied=bool(re.search(r'(?:상승|하락|강세|약세).{0,5}(?:않|없)|사실무근|부인',text))
+    forecast=bool(re.search(r'전망|예상|가능성|기대|관측|예측',text))
+    unit='달러' if inverse and not direct else '원'
+    value=r'([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)'
+    levels=re.search(value+r'\s*'+unit+r'\s*(?:에서|→|->)\s*'+value+r'\s*'+unit,text)
+    old=new=delta=percentage=None
+    if levels and pair[0] and not denied:
+        old=Decimal(levels[1].replace(',',''));new=Decimal(levels[2].replace(',',''))
+        if old<=0 or new<=0:old=new=None
+        else:
+            delta=new-old;percentage=delta/old*100
+            numeric='up' if delta>0 else 'down' if delta<0 else 'unchanged'
+            if direction and direction!=numeric:ambiguous=True
+            direction=numeric
+    if old is None and pair[0]:
+        level=re.search(value+r'\s*'+unit+r'(?:으로|로|에\s*(?:마감|출발)|을\s*기록)',text)
+        if level and Decimal(level[1].replace(',',''))>0:new=Decimal(level[1].replace(',',''))
+    if denied or ambiguous:direction=None
+    canonical_direction=({'up':'down','down':'up','unchanged':'unchanged'}.get(direction) if inverse and not direct else direction) if pair[0] else None
+    strength=('weak' if canonical_direction=='up' else 'strong' if canonical_direction=='down' else
+              'strong' if won and won[1]=='강세' else 'weak' if won else None)
+    if ambiguous or denied:strength=None
+    return {'axis':'fx','event_type':'fx_forecast' if forecast else 'fx_report','stage':'planned' if forecast else 'denied' if denied else 'announced',
+        'product':'/'.join(pair) if pair[0] else None,'details':{
+            'kind':'fx','base_currency':pair[0],'quote_currency':pair[1],
+            'unit':f'{pair[1]} per 1 {pair[0]}' if pair[0] else None,
+            'previous_value':decimal_text(old) if old is not None else None,
+            'new_value':decimal_text(new) if new is not None else None,
+            'delta':decimal_text(delta) if delta is not None and not ambiguous and not denied else None,
+            'change_percent':decimal_text(percentage) if percentage is not None and not ambiguous and not denied else None,
+            'direction':direction,'usd_krw_direction':canonical_direction if not ambiguous and not denied else None,
+            'won_strength':strength,'ambiguous_pair_or_direction':ambiguous,
+            'observation_window':'previous_close' if re.search(r'전일\s*대비|전장\s*대비',text) else 'intraday' if '장중' in text else None,
+            'quote_type':'unspecified_news_quote','verification':'news_claim_unverified','reference_comparison':None,
+            'observed_at':None,'previous_observed_at':None,'corporate_impact':None}}

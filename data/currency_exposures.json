@@ -1,0 +1,24 @@
+{
+  "version": "currency-exposure-v1",
+  "claims": [
+    {
+      "id": "msft-eur-debt-2025",
+      "code": "MSFT.O",
+      "currency": "EUR",
+      "exposure_type": "debt",
+      "hedge": "certain_debt_hedged_with_fx_forwards",
+      "net_exposure": null,
+      "amount": null,
+      "benefit_direction": null,
+      "period_end": "2025-06-30",
+      "known_from": "2026-11-16",
+      "publication_time": null,
+      "known_from_basis": "conservative_agent_review_date_not_original_publication",
+      "valid_until": null,
+      "reviewer_kind": "agent",
+      "quote": "Foreign currency risks related to certain Euro-denominated debt are hedged using foreign exchange forward contracts",
+      "url": "https://www.microsoft.com/investor/reports/ar25/index.html",
+      "scope": "EUR debt only; no evidence of USD/KRW net exposure from this claim"
+    }
+  ]
+}

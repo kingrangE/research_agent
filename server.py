@@ -28,6 +28,7 @@ import business_ontology
 import supply
 import event_facts
 import macro_events
+import fx_data
 from analysis_store import epoch, CURRENT_EVENT_SECONDS
 
 ROOT = Path(__file__).resolve().parent
@@ -285,6 +286,15 @@ def demo_snapshot():
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path == '/api/fx':
+            params=parse_qs(urlsplit(self.path).query)
+            try:
+                result=fx_data.snapshot(**{k:params[k][0] for k in ('base','quote','code','as_of') if k in params})
+            except (ValueError,TypeError):
+                self.respond(b'{"error":"Invalid FX query"}','application/json',400)
+                return
+            self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == '/api/rate-decisions':
             self.respond(json.dumps(macro_events.REFERENCES,ensure_ascii=False).encode(),'application/json; charset=utf-8')
             return
