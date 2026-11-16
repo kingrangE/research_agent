@@ -87,6 +87,13 @@ def report(data):
         if re.fullmatch('[a-f0-9]{64}',check.get('run_id','')) and check.get('corpus_fingerprint')==fingerprint(data) and frozen.exists() and fingerprint(json.loads(frozen.read_text()))==check['run_id']:
             result['latest_private_price_check']={k:check[k] for k in ('checked_at','source_verified_cases','verified_daily_return_cases','complete_coverage_cases','run_id','not_expert_or_second_reviewer','calendar_policy') if k in check}
             result['latest_private_price_check']['calendar_policy_current']=check.get('calendar_policy')==calendar_reference.POLICY
+    from evaluate_domain_challenges import run as domain_checks
+    checks=domain_checks()
+    result['domain_challenges']={k:checks[k] for k in ('version','samples','failed','real_event_accuracy','reviewer_kind')}
+    private=result.get('latest_private_price_check',{})
+    result['construction_goal_met']=bool(result['source_count_goal_met'] and checks['failed']==0 and private.get('calendar_policy_current') and private.get('source_verified_cases',0)>=len(data['cases']) and private.get('complete_coverage_cases',0)>=len(data['cases']))
+    result['annotation_scope']='명시된 주요 사건 구절의 단독 에이전트 개발 라벨 · 문서 전체 기업·인물의 완전한 정답이 아님'
+    result['open_requirements']=['독립 전문가·추가 검수와 한국어 포털·AI/소프트웨어 대표성 보강','사후 가격 관측과 당시 가용 정보의 구분','최종 성능·비교 탐색·조회 지연 검증']
     return result
 
 
