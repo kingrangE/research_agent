@@ -118,6 +118,32 @@ def get_body(url):
     return row[0] if row else None
 
 
+def provenance(urls):
+    """Read saved source versions without running analysis or fetching a new body."""
+    if not urls or not PATH.exists():
+        return {}
+    result = {}
+    with db() as connection:
+        for offset in range(0, len(urls), 200):
+            batch = urls[offset:offset+200]
+            marks = ','.join('?' for _ in batch)
+            rows = connection.execute(f'''SELECT url,fingerprint,payload,first_seen,first_observed FROM (
+                SELECT *,row_number() OVER(PARTITION BY url ORDER BY last_seen DESC,rowid DESC) n,
+                    min(first_seen) OVER(PARTITION BY url) first_observed FROM items
+                WHERE url IN ({marks})) WHERE n=1''', batch).fetchall()
+            for url, fingerprint, payload, first_seen, first_observed in rows:
+                original = json.loads(payload)
+                body = connection.execute('''SELECT v.id,v.fingerprint,v.observed_at,b.text FROM body_versions v
+                    JOIN bodies b ON b.url=v.url AND b.fingerprint=v.fingerprint
+                    WHERE v.url=? ORDER BY v.id DESC LIMIT 1''',(url,)).fetchone()
+                result[url] = {'title':original.get('title'), 'article_version':fingerprint,
+                    'first_seen_at':first_observed, 'article_version_seen_at':first_seen,
+                    'body_version':f'{body[0]}:{body[1]}' if body else None,
+                    'body_observed_at':body[2] if body else None,
+                    'body_excerpt':body[3][:500] if body else None}
+    return result
+
+
 def analysis_body(url, version):
     """Recover the exact saved analysis window, never the latest body as a substitute."""
     match=re.fullmatch(r'(?:([0-9]+):)?([0-9a-f]{64})',version) if isinstance(version,str) else None

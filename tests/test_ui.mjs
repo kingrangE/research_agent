@@ -14,6 +14,19 @@ function ui(extra={}) {
   return expression => vm.runInContext(expression, context);
 }
 
+test('data product uses sources without AI ranking and rejects unknown evidence versions', () => {
+  const run=ui();
+  run(`data={product_mode:'data',articles:[{id:'a',title:'기사',source:'원문',themes:[],score:25}],sources:[],intelligence:{status:'disabled',events:[],ranking:[]}};render()`);
+  assert.equal(run('filteredArticles().length'),1);
+  assert.ok(run(`$('#list-caption').textContent`).includes('AI 분석·추천 미사용'));
+  const html=run(`readingHTML({evidence:{rule_version:'article-evidence-v1',source_status:'title_only',classification_status:'unclassified',source_excerpt:'<script>',portal_display_at:'2026-11-16T00:00:00Z'}})`);
+  assert.ok(html.includes('포털 표시'));
+  assert.ok(html.includes('미분류'));
+  assert.ok(html.includes('&lt;script&gt;'));
+  assert.ok(!html.includes('본문 분석 대기'));
+  assert.ok(run(`evidenceHTML({rule_version:'future'})`).includes('지원하지 않는 근거 버전'));
+});
+
 test('stock card escapes names and reasons and distinguishes inferred candidates', () => {
   const run = ui();
   const html = run(`stocksHTML({related_stocks:[{code:'003470',name:'<img src=x>',relation:'business',reason:'<script>alert(1)</script>'}]},true)`);

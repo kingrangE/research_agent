@@ -31,7 +31,7 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
-    command: ["python", "-u", "server.py", "--analysis", "--host", "0.0.0.0"]
+    command: ["python", "-u", "server.py", "--product-mode", "${PRODUCT_MODE:-data}", "--host", "0.0.0.0"]
     ports:
       - "127.0.0.1:8765:8765"
     restart: unless-stopped

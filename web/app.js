@@ -136,6 +136,7 @@ function impactEvidence(event, assessment) {
   return typeof quote==='string' && quote.trim().length>=8 && quote.length<=500 && Array.isArray(event?.evidence) && event.evidence.some(text=>typeof text==='string' && text.includes(quote)) ? quote : '';
 }
 function readingHTML(article) {
+  if (article.evidence) return evidenceHTML(article.evidence);
   const e = eventFor(article);
   const assessment = (data?.intelligence?.assessments || data?.intelligence?.ranking)?.find(r=>r.event_id === e?.event_id);
   if (!e) return `<section class="detail-overview"><h3>본문 분석 대기</h3><p>아직 본문에서 확인한 사건 정보가 없습니다.</p><div class="detail-question">확인할 것 · ${escape(article.question || '원문에서 사건 당사자와 새 사실을 확인하세요.')}</div></section>`;
@@ -144,6 +145,12 @@ function readingHTML(article) {
   const representativeLink=safeLink(e.source_url);
   const representativeNote=e.article_id && e.article_id!==article.id ? `<p class="detail-meta">사건 대표 원문 기준${representativeLink ? ` · <a href="${escape(representativeLink)}" target="_blank" rel="noopener noreferrer">대표 원문 ↗</a>` : ''}</p>` : '';
   return `${representativeNote}<section class="detail-overview"><div class="overview-heading"><h3>핵심 사건</h3><span class="certainty-badge">모델 요약 · 검수 전</span></div><p class="event-summary">${escape(e.summary)}</p><dl class="event-facts">${[['사건 상태',e.certainty],['유형',e.event_type],['규모',e.amount],['시점 · 기사 기준',e.timing]].map(([label,value])=>`<div><dt>${label}</dt><dd>${escape(value || '미확인')}</dd></div>`).join('')}</dl></section><div class="detail-decision-grid"><section class="decision-tile"><h3>${proof ? '원문 근거' : excluded ? '추천 제외 · 모델 해석' : '주식 영향 · 모델 해석'}</h3><p>${proof ? `<q>${escape(proof)}</q>` : escape(assessment?.reason || '아직 주식 영향 검토를 완료하지 않았습니다.')}</p><span class="assessment-label">${escape(recencyLabel(e) || assessment?.stock_relevance || '판단 대기')}${rankingExpired() ? ' · 갱신 지연' : ''}</span></section><section class="decision-tile next-check"><h3>다음 확인 · 모델 제안</h3><p>${escape(excluded ? '전체 자료로 보관 중입니다. 주식에 전달되는 구체적인 새 사실이 있는지 확인하세요.' : assessment?.watch_for || '원문의 새 사실과 관련 기업의 실적·가격 반영 여부를 확인하세요.')}</p></section></div>`;
+}
+function evidenceHTML(e) {
+  if(e.rule_version!=='article-evidence-v1') return '<section class="detail-overview"><h3>근거 확인 불가</h3><p>지원하지 않는 근거 버전입니다.</p></section>';
+  const source={body_available:'제목·공개 추출 본문 보관',title_only:'제목만 보관 · 본문 미확보',source_missing:'대조 가능한 원문 버전 없음'};
+  const dates=[['기사 공개',e.published_at],['포털 표시',e.portal_display_at],['최초 수집',e.first_seen_at],['본문 관측',e.body_observed_at]];
+  return `<section class="detail-overview"><div class="overview-heading"><h3>자료 근거</h3><span>모델 미사용</span></div><dl class="event-facts"><div><dt>원자료</dt><dd>${escape(source[e.source_status] || '출처 부족')}</dd></div><div><dt>분류</dt><dd>${e.classification_status==='keyword_only' ? '제목 키워드 분류 · 사건 미판정' : '미분류'}</dd></div>${dates.map(([label,value])=>`<div><dt>${label}</dt><dd>${value ? escape(dateTime(value)) : '미확인'}</dd></div>`).join('')}</dl><details><summary>보관 원문·버전 보기</summary>${e.source_excerpt ? `<blockquote>${escape(e.source_excerpt)}</blockquote>` : '<p>원문 근거가 부족합니다.</p>'}${e.body_excerpt ? `<p>${escape(e.body_excerpt)}</p><p class="detail-meta">공개 추출 본문 앞부분입니다. 현재 제목과의 일치는 미검증이며 전문 전체를 보장하지 않습니다.</p>` : ''}<p class="detail-meta">기사 버전 ${escape(e.article_version || '미확인')} · 본문 버전 ${escape(e.body_version || '미확인')} · 기준 ${escape(e.rule_version)}</p></details><p class="detail-meta">사건 분석·투자 판단은 수행하지 않았습니다.</p></section>`;
 }
 
 function articleHTML(a, index) {
@@ -176,6 +183,9 @@ function renderList() {
   loadQuotes();
 }
 function render() {
+  const dataProduct=mode==='live' && data?.product_mode==='data';
+  if(dataProduct && sort==='context') sort='latest';
+  $('#sort option[value="context"]').disabled=Boolean(dataProduct);
   const articles = data?.articles || [], themes = [...(data?.themes || [])].sort((a,b)=>b.count-a.count), statuses = data?.sources || [];
   const labels = {briefing:'오늘의 브리핑',feed:'전체 자료',saved:'저장한 자료',sources:'수집 현황'};
   document.querySelectorAll('[data-view]').forEach(button=>{button.classList.toggle('active', button.dataset.view === view); button.setAttribute('aria-current', button.dataset.view === view ? 'page' : 'false'); });
@@ -218,6 +228,14 @@ function render() {
   ];
   $('#stats').innerHTML = stats.map(([i,label,value,unit,caption])=>`<div class="stat"><div class="stat-label">${icon(i)}${label}</div><div class="stat-value">${escape(value)}<small>${unit}</small></div><div class="stat-caption">${caption}</div></div>`).join('');
   $('#mode-label').textContent = mode === 'demo' ? '가상 시나리오' : '실시간 투자 브리핑';
+  if(dataProduct) {
+    $('#mode-label').textContent='근거 데이터 · AI 미사용';
+    $('#page-title').textContent={briefing:'새 자료와 근거를 확인하세요',feed:'전체 자료',saved:'저장한 자료',sources:'수집·데이터 품질 현황'}[view];
+    $('#page-description').textContent='원문과 수집 시각을 확인하세요. 사건 판정과 투자 추천은 미적용입니다.';
+    $('#list-caption').textContent=archiveView ? '누적 기사 · 최신순 · 미분류·본문 부족 자료도 모두 보관합니다.' : '최신성 기준 · 제목 키워드 분류 · AI 분석·추천 미사용';
+    $('.method-note p').textContent='기사·수집 시각·원문 버전을 확인하는 데이터 제품입니다. 테마 연결·사건 통계는 검증된 범위부터 추가합니다.';
+    $('#stats').innerHTML=`<div class="stat"><div class="stat-label">수집한 자료</div><div class="stat-value">${escape(data.archive?.articles ?? articles.length)}<small>건</small></div><div class="stat-caption">미분류 포함 · 전체 기사 보관</div></div><div class="stat"><div class="stat-label">분석 방식</div><div class="stat-value">AI 미사용</div><div class="stat-caption">사건 판정·투자 추천 미적용</div></div>`;
+  }
   $('#mode-button').innerHTML = `${icon(mode === 'demo' ? 'radio' : 'sparkles')}${mode === 'demo' ? '실제 수집으로 돌아가기' : '시나리오 체험'}`;
   const failed = statuses.filter(s=>['error','stale'].includes(s.status));
   const notice = $('#mode-notice');
