@@ -1,0 +1,121 @@
+{
+  "version": "official-rates-v1",
+  "decisions": [
+    {
+      "id": "fed-20240918",
+      "country": "US",
+      "currency": "USD",
+      "authority": "Federal Reserve",
+      "instrument": "federal_funds_target",
+      "decision_date": "2024-09-18",
+      "published_at": "2024-09-18T18:00:00+00:00",
+      "effective_at": null,
+      "previous_level": [
+        "5.25",
+        "5.50"
+      ],
+      "previous_basis": "derived_from_reported_change",
+      "new_level": [
+        "4.75",
+        "5.00"
+      ],
+      "delta_bp": "-50",
+      "direction": "cut",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20240918a.htm",
+      "quote": "target range for the federal funds rate by 1/2 percentage point to 4-3/4 to 5 percent",
+      "checked_on": "2026-11-16",
+      "expected_change_bp": null,
+      "surprise_bp": null,
+      "time_precision": "instant",
+      "source_status": "reviewed_official_statement",
+      "effective_date": "2024-09-19",
+      "effective_source": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20240918a1.htm",
+      "effective_quote": "Effective September 19, 2024"
+    },
+    {
+      "id": "fed-20241107",
+      "country": "US",
+      "currency": "USD",
+      "authority": "Federal Reserve",
+      "instrument": "federal_funds_target",
+      "decision_date": "2024-11-07",
+      "published_at": "2024-11-07T19:00:00+00:00",
+      "effective_at": null,
+      "previous_level": [
+        "4.75",
+        "5.00"
+      ],
+      "previous_basis": "derived_from_reported_change",
+      "new_level": [
+        "4.50",
+        "4.75"
+      ],
+      "delta_bp": "-25",
+      "direction": "cut",
+      "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20241107a.htm",
+      "quote": "target range for the federal funds rate by 1/4 percentage point to 4-1/2 to 4-3/4 percent",
+      "checked_on": "2026-11-16",
+      "expected_change_bp": null,
+      "surprise_bp": null,
+      "time_precision": "instant",
+      "source_status": "reviewed_official_statement",
+      "effective_date": "2024-11-08",
+      "effective_source": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20241107a1.htm",
+      "effective_quote": "Effective November 8, 2024"
+    },
+    {
+      "id": "bok-20241011",
+      "country": "KR",
+      "currency": "KRW",
+      "authority": "한국은행",
+      "instrument": "kr_base_rate",
+      "decision_date": "2024-10-11",
+      "published_at": null,
+      "effective_at": null,
+      "previous_level": [
+        "3.50"
+      ],
+      "previous_basis": "explicit",
+      "new_level": [
+        "3.25"
+      ],
+      "delta_bp": "-25",
+      "direction": "cut",
+      "url": "https://www.bok.or.kr/portal/bbs/P0000559/view.do?nttId=10087410&menuNo=200690",
+      "quote": "기준금리를 현재의 3.50% 수준에서 3.25%로 하향 조정",
+      "checked_on": "2026-11-16",
+      "expected_change_bp": null,
+      "surprise_bp": null,
+      "time_precision": "day",
+      "source_status": "reviewed_official_statement",
+      "effective_date": null
+    },
+    {
+      "id": "bok-20241128",
+      "country": "KR",
+      "currency": "KRW",
+      "authority": "한국은행",
+      "instrument": "kr_base_rate",
+      "decision_date": "2024-11-28",
+      "published_at": null,
+      "effective_at": null,
+      "previous_level": [
+        "3.25"
+      ],
+      "previous_basis": "explicit",
+      "new_level": [
+        "3.00"
+      ],
+      "delta_bp": "-25",
+      "direction": "cut",
+      "url": "https://www.bok.or.kr/portal/bbs/P0000559/view.do?nttId=10088270&menuNo=200690",
+      "quote": "기준금리를 현재의 3.25% 수준에서 3.00%로 하향 조정",
+      "checked_on": "2026-11-16",
+      "expected_change_bp": null,
+      "surprise_bp": null,
+      "time_precision": "day",
+      "source_status": "reviewed_official_statement",
+      "effective_date": null
+    }
+  ]
+}

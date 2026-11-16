@@ -12,10 +12,11 @@ import sqlite3
 import archive
 import business_ontology
 import relations
+import macro_events
 from analysis_store import epoch
 
 PATH=Path(__file__).resolve().parent/'.data'/'event_facts.sqlite3'
-RULE_VERSION='event-rules-v1.4'
+RULE_VERSION='event-rules-v2.1'
 STAGES={'unknown','planned','mou','announced','approved','execution','cancelled','denied'}
 
 
@@ -70,18 +71,34 @@ def infra(text):
 def extract(article,body=None,body_version=None):
     sections={'title':article['title'],'body':body or ''}
     chosen=None
-    title=article['title']
+    title=re.sub(r'\[[^\]]{1,40}\]\s*$','',article['title']).strip()
     headline_fact=infra(title)
+    headline_rate=macro_events.rates(title)
+    reference=macro_events.official(article['url'],body or '')
     primary=bool(headline_fact or (entities(title) and re.search(r'투자|증설|건설|착공|구축|발주|수주|계약',title)))
     if re.search(r'피소|소송|고소|쇼크|급등|급락|코스피|코스닥|뉴욕증시',title):primary=False
     if re.search(r'투자\s*(?:적기|기회|매력|전략)|투자금.{0,10}(?:썰물|유출|유입)|수혜주|추천주',title):primary=False
     if re.search(r'투자의견|목표주가|목표가(?:[^가-힣]|$)|목표가(?:유지|상향|하향)',title):primary=False
     if not headline_fact and re.search(r'주식|주가|목표가|투자의견|ETF|수익률',title,re.I):primary=False
-    for section in (('body','title') if primary else ()):
+    classifiers=([macro_events.rates] if headline_rate else [])+([infra] if primary else [])
+    if reference:
+        match=macro_events.reference_match(reference,body)
+        chosen=('body',match,macro_events.from_official(reference))
+    for section in (() if chosen else ('body','title')):
         for match in re.finditer(r'.+?(?:\n|[。!?]|(?<![0-9])\.(?![0-9])|$)',sections[section],re.S):
-            facts=infra(match.group())
-            if facts:
+            for classifier in classifiers:
+                facts=classifier(match.group())
+                if not facts:continue
+                if facts['axis']=='rates' and headline_rate:
+                    h,c=headline_rate['details'],facts['details']
+                    if h['country'] and c['country'] and h['country']!=c['country']:continue
+                    if headline_rate['stage'] in ('planned','denied') and headline_rate['stage']!=facts['stage']:continue
+                    if h['instrument']=='sovereign_yield' and c['instrument']!='sovereign_yield':continue
+                    if not c['country'] and h['country']:
+                        facts={**facts,'product':h['instrument'],'details':{**c,'country':h['country'],'currency':h['currency'],
+                              'authority':h['authority'],'instrument':h['instrument'],'context_basis':'headline'}}
                 chosen=(section,match,facts);break
+            if chosen:break
         if chosen:break
     source_key=digest({'id':article['id'],'title':article['title'],'url':article['url'],
                        'body_version':body_version or (digest(body) if body else None),'published_at':article.get('published_at')})
@@ -90,8 +107,11 @@ def extract(article,body=None,body_version=None):
     if chosen:
         section,match,facts=chosen
         text=match.group()
+        if facts['axis']=='rates' and not reference:
+            facts={**facts,'details':macro_events.compare_reference(facts['details'],
+                article.get('published_at') if article.get('timestamp_basis')!='portal_display' else None,facts['stage']=='planned')}
         evidence=[{'section':section,'start':match.start(),'end':match.end(),'quote':text}]
-        if headline_fact and headline_fact['stage']!='unknown' and facts['stage']!='unknown' and headline_fact['stage']!=facts['stage']:
+        if facts['axis']=='infrastructure' and headline_fact and headline_fact['stage']!='unknown' and facts['stage']!='unknown' and headline_fact['stage']!=facts['stage']:
             facts={**facts,'stage':'unknown','stage_conflict':True}
             evidence.append({'section':'title','start':0,'end':len(title),'quote':title})
         actors=entities(text)
@@ -162,10 +182,11 @@ def apply_review(review):
             review.get('reviewer_kind') not in ('human','agent') or not review.get('reviewer') or not review.get('reason')):
         raise ValueError('검토 동작·대상·검토자·사유 필요')
     changes=review.get('changes',{})
-    allowed={'axis','event_type','stage','product','region','actors','amounts'}
+    allowed={'axis','event_type','stage','product','region','actors','amounts','details'}
     if not isinstance(changes,dict) or set(changes)-allowed or ('stage' in changes and changes['stage'] not in STAGES):
         raise ValueError('허용하지 않는 사건 정정')
     if 'axis' in changes and changes['axis'] not in (None,'infrastructure','rates','fx','tariff'):raise ValueError('사건 축 정정 오류')
+    if 'details' in changes and not isinstance(changes['details'],dict):raise ValueError('상세 정정 형식 오류')
     if any(field in changes and (not isinstance(changes[field],list) or any(not isinstance(x,dict) for x in changes[field])) for field in ('actors','amounts')):
         raise ValueError('당사자·금액 정정 형식 오류')
     if any(field in changes and changes[field] is not None and (not isinstance(changes[field],str) or len(changes[field])>100) for field in ('event_type','product','region')):

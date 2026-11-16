@@ -148,7 +148,25 @@ function readingHTML(article) {
 }
 function eventFactsHTML(e) {
   const stages={unknown:'미확인',planned:'계획·검토',mou:'MOU',announced:'발표',approved:'승인',execution:'실행',cancelled:'취소',denied:'부인'};
-  return `<section class="detail-overview"><div class="overview-heading"><h3>원문에서 찾은 사건 제안</h3><span>${e.review_status==='reviewed' ? `${escape(e.reviewer_kind)} 검토 기록` : '규칙 추출 · 검수 전'}</span></div><dl class="event-facts">${[['사건 축',e.axis || '미분류'],['유형',e.event_type],['상태',stages[e.stage] || e.stage],['금액 표기',(e.amounts || []).map(a=>a.raw).join(' / ') || '미확인'],['당사자 후보',(e.actors || []).map(a=>a.name).join(' · ') || '미확인']].map(([k,v])=>`<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>${(e.evidence || []).map(p=>`<blockquote>${escape(p.quote)}</blockquote>`).join('')}<details><summary>사건·규칙 이력 정보</summary><p>사건 ${escape(e.event_id)} · 기준 ${escape(e.rule_version)} · 처리 ${escape(dateTime(e.processed_at))}</p><p>기사 공개 ${escape(dateTime(e.published_at))} · 포털 표시 ${escape(dateTime(e.portal_display_at))} · 최초 수집 ${escape(dateTime(e.first_seen_at))}</p><p>기업은 이름이 등장한 후보이며 법적 당사자·수혜를 확정하지 않습니다. ${escape(e.source_quality==='body_title_binding_unverified' ? '보관 본문과 현재 제목의 일치 미검증' : '제목에서 추출한 제안')}</p><p>관련 사건 ${escape((e.related_event_ids || []).join(' · ') || '미확인')}</p>${(e.source_history || []).map(v=>`<p>${escape(v.stage)} · ${escape(v.article_title)} · ${escape(dateTime(v.source_version_at))}</p>`).join('')}${(e.review_history || []).map(r=>`<p>${escape(r.action)} · ${escape(r.reviewer_kind)} ${escape(r.reviewer)} · ${escape(r.reason)} · ${escape(dateTime(r.applied_at))}</p>`).join('')}</details></section>`;
+  return `<section class="detail-overview"><div class="overview-heading"><h3>원문에서 찾은 사건 제안</h3><span>${e.review_status==='reviewed' ? `${escape(e.reviewer_kind)} 검토 기록` : '규칙 추출 · 검수 전'}</span></div><dl class="event-facts">${[['사건 축',e.axis || '미분류'],['유형',e.event_type],['상태',stages[e.stage] || e.stage],['금액 표기',(e.amounts || []).map(a=>a.raw).join(' / ') || '미확인'],['당사자 후보',(e.actors || []).map(a=>a.name).join(' · ') || '미확인']].map(([k,v])=>`<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>${e.details ? macroDetailsHTML(e.details) : ''}${(e.evidence || []).map(p=>`<blockquote>${escape(p.quote)}</blockquote>`).join('')}<details><summary>사건·규칙 이력 정보</summary><p>사건 ${escape(e.event_id)} · 기준 ${escape(e.rule_version)} · 처리 ${escape(dateTime(e.processed_at))}</p><p>기사 공개 ${escape(dateTime(e.published_at))} · 포털 표시 ${escape(dateTime(e.portal_display_at))} · 최초 수집 ${escape(dateTime(e.first_seen_at))}</p><p>기업은 이름이 등장한 후보이며 법적 당사자·수혜를 확정하지 않습니다. ${escape(e.source_quality==='body_title_binding_unverified' ? '보관 본문과 현재 제목의 일치 미검증' : '제목에서 추출한 제안')}</p><p>관련 사건 ${escape((e.related_event_ids || []).join(' · ') || '미확인')}</p>${(e.source_history || []).map(v=>`<p>${escape(v.stage)} · ${escape(v.article_title)} · ${escape(dateTime(v.source_version_at))}</p>`).join('')}${(e.review_history || []).map(r=>`<p>${escape(r.action)} · ${escape(r.reviewer_kind)} ${escape(r.reviewer)} · ${escape(r.reason)} · ${escape(dateTime(r.applied_at))}</p>`).join('')}</details></section>`;
+}
+function macroDetailsHTML(d) {
+  const verified={official_registry:'공식 결정문',matched_official_values:'공식 수치 대조',matched_values_publication_time_unverified:'수치 일치 · 공개 시각 미확인',official_unverified:'공식 대조 미확인'};
+  const rows=[['국가·통화',[d.country,d.currency].filter(Boolean).join(' · ') || '미확인'],['발표 기관',d.authority || '미확인'],['금리 기준',d.instrument || '미확인'],['만기',d.tenor_years ? d.tenor_years+'년' : '미확인'],['이전 수준',d.previous_level?.length ? d.previous_level.join('~')+'%' : '미확인'],['새 수준',d.new_level?.length ? d.new_level.join('~')+'%' : '미확인'],['변화량',(d.changes || []).map(c=>c.basis_points!=null ? c.basis_points+' bp' : (c.raw || '미확인')+' · 방향 미확인').join(' / ') || '미확인'],['공식 자료',verified[d.verification] || '미확인'],['결정일',d.decision_date || '미확인'],['효력 시각',d.effective_at ? dateTime(d.effective_at) : d.effective_date ? d.effective_date+' · 시각 미확인' : '미확인'],['기대 대비 변화',d.surprise_bp==null ? '사전 기대 자료 미확보 · 미산정' : d.surprise_bp+' bp']];
+  return `<dl class="event-facts">${rows.map(([k,v])=>`<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>${d.numeric_conflict ? '<p>원문 수치가 상충합니다. 확정 값으로 사용하지 않습니다.</p>' : ''}${safeLink(d.reference_url || d.url) ? `<a href="${escape(safeLink(d.reference_url || d.url))}" target="_blank" rel="noopener noreferrer">공식 결정문 ↗</a>` : ''}`;
+}
+async function openRateReferences() {
+  if(mode!=='live') return;
+  const request=++historyRequest;detailId=null;
+  $('#detail').innerHTML='<div class="detail-top"><h2 id="detail-title">과거 공식 금리 결정문</h2><button data-close aria-label="상세 닫기">×</button></div>';
+  $('#detail-dialog').showModal();
+  try {
+    const response=await fetch('/api/rate-decisions',{signal:AbortSignal.timeout(15000)});
+    if(!response.ok) throw new Error();
+    const result=await response.json();
+    if(request!==historyRequest || !$('#detail-dialog').open) return;
+    $('#detail').innerHTML=`<div class="detail-top"><h2 id="detail-title">과거 공식 금리 결정문</h2><button data-close aria-label="상세 닫기">×</button></div><div class="detail-content"><p>검토한 과거 결정만 표시합니다. 현재 금리·전체 결정 이력이 아닙니다.</p>${result.decisions.map(d=>`<section class="detail-overview"><h3>${escape(d.authority)} · ${escape(d.decision_date)}</h3>${macroDetailsHTML({...d,verification:'official_registry',changes:[{basis_points:d.delta_bp}]})}<blockquote>${escape(d.quote)}</blockquote></section>`).join('')}</div>`;
+  } catch {if(request===historyRequest) $('#detail').innerHTML='<div class="detail-top"><h2 id="detail-title">조회 실패</h2><button data-close aria-label="상세 닫기">×</button></div><p>공식 근거를 확인할 수 없습니다.</p>';}
 }
 function evidenceHTML(e) {
   if(e.rule_version!=='article-evidence-v1') return '<section class="detail-overview"><h3>근거 확인 불가</h3><p>지원하지 않는 근거 버전입니다.</p></section>';
@@ -436,6 +454,7 @@ document.addEventListener('click', event => {
   if (button.dataset.stock) openStock(button.dataset.article, button.dataset.stock);
   if (button.dataset.businessCode) openBusiness(button.dataset.businessCode);
   if (button.hasAttribute('data-supply-all')) openSupply();
+  if (button.hasAttribute('data-official-rates')) openRateReferences();
   if (button.dataset.supplyCode) openSupply(button.dataset.supplyCode);
   if (button.dataset.historySymbol) openHistory(button.dataset.historyMarket,button.dataset.historySymbol,button.dataset.historyAdjusted);
   if (button.hasAttribute('data-close-stock')) $('#stock-dialog').close();

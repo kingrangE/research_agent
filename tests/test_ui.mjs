@@ -68,6 +68,15 @@ test('rule event facts stay visibly unreviewed and preserve literal source evide
   assert.ok(html.includes('현재 제목의 일치 미검증'));
 });
 
+test('rate detail separates percent levels from bp changes and leaves surprise unestimated', () => {
+  const run=ui();
+  const html=run(`macroDetailsHTML({country:'US',currency:'USD',instrument:'federal_funds_target',previous_level:['4.75','5.00'],new_level:['4.50','4.75'],changes:[{basis_points:'-25'}],verification:'official_unverified',surprise_bp:null,effective_at:null})`);
+  assert.ok(html.includes('4.50~4.75%'));
+  assert.ok(html.includes('-25 bp'));
+  assert.ok(html.includes('공식 대조 미확인'));
+  assert.ok(html.includes('사전 기대 자료 미확보 · 미산정'));
+});
+
 test('stock card escapes names and reasons and distinguishes inferred candidates', () => {
   const run = ui();
   const html = run(`stocksHTML({related_stocks:[{code:'003470',name:'<img src=x>',relation:'business',reason:'<script>alert(1)</script>'}]},true)`);

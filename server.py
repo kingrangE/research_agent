@@ -27,6 +27,7 @@ import market_history
 import business_ontology
 import supply
 import event_facts
+import macro_events
 from analysis_store import epoch, CURRENT_EVENT_SECONDS
 
 ROOT = Path(__file__).resolve().parent
@@ -284,6 +285,9 @@ def demo_snapshot():
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path == '/api/rate-decisions':
+            self.respond(json.dumps(macro_events.REFERENCES,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == '/api/events':
             params=parse_qs(urlsplit(self.path).query)
             try:
