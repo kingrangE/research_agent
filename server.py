@@ -311,6 +311,16 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
             return
+        if path == '/api/market-watch':
+            import market_watch
+            try:
+                result=market_watch.snapshot(parse_qs(urlsplit(self.path).query).get('market',['KR'])[0])
+                result['candidates']=market_watch.candidates(result)
+            except ValueError:
+                self.respond(b'{"error":"Invalid market"}','application/json',400)
+                return
+            self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == '/api/price-movement':
             article_id=parse_qs(urlsplit(self.path).query).get('article_id',[''])[0]
             if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',article_id):

@@ -174,7 +174,8 @@ def cycle():
     # Keep reviewed theme members observable even without a new article mentioning them.
     members=business_ontology.snapshot()['memberships']
     securities={m['code']:m['security'] for m in members if m['kind']=='business'}
-    register({'id':'market-watch','published_at':clock},list(securities.values()),now=clock)
+    watch=list(securities.values())+[{'code':'069500','name':'KODEX 200','country':'KR'},{'code':'SPY','name':'SPY','country':'US'}]
+    register({'id':'market-watch','published_at':clock},watch,now=clock)
     with db() as connection:
         # Round-robin by last attempt keeps a popular ticker from starving other active stocks.
         codes=[r['code'] for r in connection.execute("""
