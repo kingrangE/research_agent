@@ -1115,6 +1115,18 @@ class IntelligenceTest(unittest.TestCase):
                 request.assert_not_called()
             self.assertEqual(other.usage()['calls_today'],2)
 
+    def test_title_mismatch_waits_without_repeated_reads_or_model_calls(self):
+        with patch('archive.body_snapshot',return_value={'title':'변경된 새 제목','status':'ok','text':BODY}),patch.object(self.engine,'reading',return_value=None) as read,patch.object(self.engine,'call') as call:
+            first=self.engine.cycle([ARTICLE])
+            second=self.engine.cycle([ARTICLE])
+        self.assertEqual(first['queue']['source_waiting'],1)
+        self.assertEqual(second['queue']['source_waiting'],1)
+        self.assertEqual(second['queue']['retrying'],0)
+        self.assertEqual(read.call_count,1)
+        call.assert_not_called()
+        with self.engine.queue.db() as db:
+            self.assertEqual(db.execute('SELECT attempts FROM analysis_jobs').fetchone()[0],1)
+
     def test_local_cycle_continues_past_validation_errors_without_daily_cap(self):
         self.assertIsNone(self.engine.daily_limit)
         with patch.object(self.engine,'reading',side_effect=[ValueError('invalid'),None]) as reading,patch('intelligence.market_snapshot') as market:

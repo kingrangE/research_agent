@@ -722,12 +722,14 @@ class Engine:
         self.queue.enqueue([{'article':article} for article in articles])
         review_compatibility={(READ_VERSION,p) for p in screen_policies()}
         self.queue.enqueue_reviews([a for a in articles if event_recency(a.get('published_at'),analysis_store.epoch(now()))=='current'],SCREEN_VERSION,READ_VERSION,review_compatibility=review_compatibility)
+        self.queue.recheck_sources()
         job = self.queue.claim()
         if job:
             with LOCK:
                 STATE.update(status='processing',message='분석 대기열 처리 중',model=self.model,
                              queue=self.queue.summary(),daily_call_limit=self.daily_limit,usage=self.usage())
             article = job['article']
+            source_waiting=False
             if job['body'] is not None:
                 article = {**article,'_analysis_body':job['body'],'_body_version':job['body_version']}
             try:
@@ -743,11 +745,14 @@ class Engine:
                             if job['body_version']:article['_body_version']=job['body_version']
                 reading = previous if previous and previous.get('read_policy_version')==READ_VERSION else self.reading(article,self.queue.anchors(article,READ_VERSION))
                 if not reading:
+                    if job['body'] is None and not job['job_key'].startswith('screen-review:'):
+                        source=archive.body_snapshot(article['url'])
+                        source_waiting=bool(source and source.get('title') and source['title']!=article['title'])
                     raise ValueError('공개 본문 또는 재시도 대기')
                 assessment = self.screen(reading)
                 self.queue.complete(job,reading,assessment)
             except Exception as error:
-                self.queue.retry(job,error)
+                self.queue.retry(job,error,source_waiting=source_waiting)
                 errors.append(type(error).__name__)
             with LOCK:
                 STATE.update(status='processing',message='분석 대기열 처리 중',model=self.model,

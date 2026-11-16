@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from analysis_store import Store, timing_summary, CURRENT_EVENT_SECONDS
+from analysis_store import Store, timing_summary, CURRENT_EVENT_SECONDS, epoch
 
 
 class AnalysisStoreTest(unittest.TestCase):
@@ -388,6 +388,48 @@ class AnalysisStoreTest(unittest.TestCase):
             self.assertIsNone(other.claim())
         with patch('analysis_store.time.time',return_value=1902):
             self.assertEqual(other.claim()['attempts'],3)
+
+    def test_title_wait_rechecks_without_attempts_and_resumes_only_with_matching_fresh_source(self):
+        a=self.article(1,_version_at='2026-11-11T00:00:00Z')
+        t=epoch(a['_version_at'])+10
+        with patch('analysis_store.time.time',return_value=t):
+            self.store.enqueue([{'article':a}]);job=self.store.claim()
+            self.store.retry(job,'제목 불일치',source_waiting=True)
+            self.assertEqual(self.store.summary()['source_waiting'],1)
+        matching={'status':'ok','title':a['title'],'text':'공개된 정상 본문입니다.','observed_at':'2026-11-11T00:00:05Z'}
+        with patch('analysis_store.time.time',return_value=t+3599),patch('archive.body_snapshot') as snapshot:
+            self.store.recheck_sources();snapshot.assert_not_called()
+        for i,source in enumerate((None,{**matching,'title':'다른 제목'},{**matching,'status':'error'},
+                                   {**matching,'text':'속보'},{**matching,'observed_at':'2026-11-10T23:59:00Z'},
+                                   {**matching,'observed_at':'2099-01-01T00:00:00Z'},matching),1):
+            with patch('analysis_store.time.time',return_value=t+3600*i),patch('archive.body_snapshot',return_value=source):
+                self.store.recheck_sources()
+                if i<7:self.assertIsNone(self.store.claim())
+                else:self.assertEqual(self.store.claim()['id'],job['id'])
+        with self.store.db() as db:
+            row=db.execute('SELECT attempts,article,last_error FROM analysis_jobs WHERE id=?',(job['id'],)).fetchone()
+            self.assertEqual(row['attempts'],2)
+            self.assertEqual(json.loads(row['article']),a)
+            self.assertEqual(row['last_error'],'제목 불일치')
+
+    def test_source_recheck_storage_failure_does_not_claim_or_discard_waiting_input(self):
+        import sqlite3
+        self.store.enqueue([{'article':self.article(1)}]);job=self.store.claim()
+        self.store.retry(job,'제목 불일치',source_waiting=True)
+        with patch('analysis_store.time.time',return_value=2000000000),patch('archive.body_snapshot',side_effect=sqlite3.OperationalError('busy')):
+            self.store.recheck_sources()
+            self.assertIsNone(self.store.claim())
+            self.assertEqual(self.store.summary()['source_waiting'],1)
+
+    def test_pinned_input_does_not_enter_title_wait_and_new_version_supersedes_wait(self):
+        a=self.article(1)
+        self.store.enqueue([{'article':a}]);job=self.store.claim();self.store.retry(job,'제목 불일치',source_waiting=True)
+        self.store.enqueue([{'article':a,'body':'보관한 정상 본문입니다.','body_version':'full'}])
+        self.assertEqual(self.store.summary()['source_waiting'],0)
+        newer=self.store.claim();self.store.retry(newer,'일시 오류',source_waiting=True)
+        self.assertEqual(self.store.summary()['retrying'],1)
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT status FROM analysis_jobs WHERE id=?',(job['id'],)).fetchone()[0],'superseded')
 
     def test_fixed_short_body_waits_for_new_input_without_retrying_or_losing_versions(self):
         a=self.article(1)

@@ -78,7 +78,7 @@ class Store:
                      json.dumps(article,ensure_ascii=False),record.get('body'),epoch(article.get('published_at')),time.time()))
                 if version:
                     db.execute('''UPDATE analysis_jobs SET status='superseded' WHERE namespace=? AND url=? AND title=?
-                        AND body_version='' AND status IN ('pending','error')''', (self.namespace,article['url'],article['title']))
+                        AND body_version='' AND status IN ('pending','error','source_waiting')''', (self.namespace,article['url'],article['title']))
             for name,value in (cursors or {}).items():
                 db.execute('INSERT OR REPLACE INTO analysis_cursors VALUES(?,?,?)',(self.namespace,name,value))
 
@@ -134,12 +134,33 @@ class Store:
                 WHERE id=? AND namespace=? AND status='processing' AND attempts=?''',(time.time(),reading['event_id'],json.dumps(reading,ensure_ascii=False),
                 json.dumps(assessment,ensure_ascii=False),job['id'],self.namespace,job['attempts']))
 
-    def retry(self, job, error):
+    def retry(self, job, error, source_waiting=False):
         delay = min(3600, 300 * 2 ** min(job['attempts']-1,4))
-        status='insufficient_body' if isinstance(job['body'],str) and len(job['body'])<archive.MIN_BODY_CHARS else 'error'
+        status='source_waiting' if source_waiting and job['body'] is None else 'error'
+        if isinstance(job['body'],str) and len(job['body'])<archive.MIN_BODY_CHARS:
+            status='insufficient_body'
+        if status=='source_waiting':delay=3600
         with self.db() as db:
             db.execute("UPDATE analysis_jobs SET status=?,available_at=?,last_error=? WHERE id=? AND namespace=? AND status='processing' AND attempts=?",
                        (status,time.time()+delay,str(error)[:300],job['id'],self.namespace,job['attempts']))
+
+    def recheck_sources(self):
+        as_of=time.time()
+        with self.db() as db:
+            rows=db.execute("SELECT id,url,title,article FROM analysis_jobs WHERE namespace=? AND status='source_waiting' AND available_at<=?",(self.namespace,as_of)).fetchall()
+        for row in rows:
+            try:
+                source=archive.body_snapshot(row['url'])
+            except sqlite3.Error:
+                source=None
+            article=json.loads(row['article'])
+            ready=bool(source and source.get('status')=='ok' and source.get('title')==row['title']
+                       and len(source.get('text') or '')>=archive.MIN_BODY_CHARS
+                       and 0<epoch(source.get('observed_at'))<=as_of
+                       and epoch(source.get('observed_at'))>=epoch(article.get('_version_at')))
+            with self.db() as db:
+                db.execute("UPDATE analysis_jobs SET status=?,available_at=? WHERE namespace=? AND id=? AND status='source_waiting' AND available_at<=?",
+                           ('pending' if ready else 'source_waiting',as_of if ready else as_of+3600,self.namespace,row['id'],as_of))
 
     def _latest(self, articles):
         if not articles:
@@ -285,7 +306,7 @@ class Store:
         current_oldest=min((v for v in (fresh[2],warm[2]) if v is not None),default=None)
         current=(fresh[0]+warm[0],fresh[1]+warm[1],current_oldest)
         delays = sorted(row[0] for row in elapsed)
-        return {'insufficient_body':counts.get('insufficient_body',0),'pending':counts.get('pending',0),'processing':counts.get('processing',0),'retrying':counts.get('error',0),
+        return {'source_waiting':counts.get('source_waiting',0),'insufficient_body':counts.get('insufficient_body',0),'pending':counts.get('pending',0),'processing':counts.get('processing',0),'retrying':counts.get('error',0),
                 'done':counts.get('done',0),'event_count':events,'oldest_wait_seconds':round(max(0,as_of-oldest)) if oldest else 0,
                 'recent_p95_seconds':round(delays[(len(delays)*95+99)//100-1]) if delays else None,
                 'priority_window':{'window_seconds':CURRENT_EVENT_SECONDS,'fresh_window_seconds':FRESH_EVENT_SECONDS,

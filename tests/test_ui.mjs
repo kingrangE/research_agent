@@ -705,3 +705,15 @@ test('short pinned versions are visible as needing new input rather than complet
   run(`delete data.intelligence.queue.insufficient_body;render()`);
   assert.ok(!run(`$('#source-view').innerHTML`).includes('본문 보강 필요'));
 });
+
+
+test('title source waits remain explicit and are not invented for old payloads',()=>{
+ const run=ui();
+ run(`data={articles:[],sources:[],intelligence:{queue:{pending:0,processing:0,retrying:1,done:2,event_count:2,oldest_wait_seconds:0,source_waiting:3}}};render()`);
+ const html=run(`$('#source-view').innerHTML`);
+ assert.ok(html.includes('3개 작업은 보관된 최신 제목이 달라'));
+ assert.ok(html.includes('1시간 간격으로 같은 제목'));
+ assert.ok(html.includes('완료나 추천 제외 판정이 아닙니다'));
+ run(`delete data.intelligence.queue.source_waiting;render()`);
+ assert.ok(!run(`$('#source-view').innerHTML`).includes('원래 제목의 본문 대기'));
+});
