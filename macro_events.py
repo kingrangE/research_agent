@@ -126,13 +126,15 @@ def compare_reference(details,article_time=None,forecast=False):
 
 def fx(text):
     """News claims only; a mentioned dollar investment is never an FX observation."""
-    direct=bool(re.search(r'USD\s*/\s*KRW|(?:원\s*[/·-]\s*달러|달러\s*[/·-]\s*원)\s*환율|1\s*달러당\s*원',text,re.I))
-    inverse=bool(re.search(r'KRW\s*/\s*USD|1\s*원당\s*달러',text,re.I))
+    dollar_unit=any(m[1] in (None,'1') for m in re.finditer(r'(?<![0-9.])(?:(\d+(?:\.\d+)?)\s*)?달러당\s*[0-9,.]+\s*원',text))
+    won_unit=any(m[1] in (None,'1') for m in re.finditer(r'(?<![0-9.])(?:(\d+(?:\.\d+)?)\s*)?원당\s*[0-9,.]+\s*달러',text))
+    direct=dollar_unit or bool(re.search(r'USD\s*/\s*KRW|(?:원\s*[/·-]\s*달러|달러\s*[/·-]\s*원)\s*환율|(?<![0-9.])1\s*달러당\s*원',text,re.I))
+    inverse=won_unit or bool(re.search(r'KRW\s*/\s*USD|(?<![0-9.])1\s*원당\s*달러',text,re.I))
     won=re.search(r'원화\s*(강세|약세)',text)
     if not (direct or inverse or won):return None
     ambiguous=direct and inverse
     pair=('KRW','USD') if inverse and not direct else ('USD','KRW') if direct and not inverse else (None,None)
-    up=bool(re.search(r'상승|급등|올랐|높아',text));down=bool(re.search(r'하락|급락|내렸|낮아',text))
+    up=bool(re.search(r'상승|급등|올랐|오른|높아',text));down=bool(re.search(r'하락|급락|내렸|내린|낮아',text))
     direction='up' if up and not down else 'down' if down and not up else None
     denied=bool(re.search(r'(?:상승|하락|강세|약세).{0,5}(?:않|없)|사실무근|부인',text))
     forecast=bool(re.search(r'전망|예상|가능성|기대|관측|예측',text))
@@ -149,7 +151,7 @@ def fx(text):
             if direction and direction!=numeric:ambiguous=True
             direction=numeric
     if old is None and pair[0]:
-        level=re.search(value+r'\s*'+unit+r'(?:으로|로|에\s*(?:마감|출발)|을\s*기록)',text)
+        level=re.search(value+r'\s*'+unit+r'(?:으로|로|에\s*(?:마감|출발)|을\s*기록|\s*(?:마감|출발|개장))',text)
         if level and Decimal(level[1].replace(',',''))>0:new=Decimal(level[1].replace(',',''))
     if denied or ambiguous:direction=None
     canonical_direction=({'up':'down','down':'up','unchanged':'unchanged'}.get(direction) if inverse and not direct else direction) if pair[0] else None

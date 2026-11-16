@@ -38,6 +38,18 @@ class FXTest(unittest.TestCase):
         unrelated={'id':'other','url':'https://example.com/a','title':'비트코인, 금리·AI주 충격에 흔들'}
         self.assertIsNone(f.extract(unrelated,'연준이 기준금리를 인하했다.')['axis'])
 
+    def test_korean_closing_quotes_and_per_currency_units(self):
+        down=m.fx('원·달러 환율, 1.0원 내린 1335.7원 마감')['details']
+        self.assertEqual((down['direction'],down['won_strength'],down['new_value']),('down','strong','1335.7'))
+        self.assertIsNone(down['change_percent']);self.assertIsNone(down['previous_value'])
+        up=m.fx('원·달러 환율, 6.0원 오른 1336.7원 마감')['details']
+        self.assertEqual((up['direction'],up['won_strength']),('up','weak'))
+        self.assertEqual(m.fx('환율은 1달러당 1,300원으로 하락')['product'],'USD/KRW')
+        self.assertEqual(m.fx('환율은 달러당 1,300원으로 하락')['details']['new_value'],'1300')
+        self.assertEqual(m.fx('환율은 1원당 0.001달러로 하락')['product'],'KRW/USD')
+        self.assertIsNone(m.fx('환율은 100 달러당 130000원으로 하락'))
+        self.assertIsNone(m.fx('환율은 0.1달러당 130원으로 하락'))
+
     def test_exact_windows_source_types_and_spread(self):
         a=fx.normalize(response(),'USD','KRW')
         b=fx.normalize(response('1414','2026-11-16T09:01:00+09:00','2026-11-16T09:02:00+09:00'),'USD','KRW')

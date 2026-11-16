@@ -17,7 +17,7 @@ import trade_events
 from analysis_store import epoch
 
 PATH=Path(__file__).resolve().parent/'.data'/'event_facts.sqlite3'
-RULE_VERSION='event-rules-v4'
+RULE_VERSION='event-rules-v4.1'
 STAGES={'unknown','planned','mou','announced','approved','execution','cancelled','denied','deferred','exempt'}
 
 
