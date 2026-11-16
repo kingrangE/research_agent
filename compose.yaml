@@ -56,6 +56,28 @@ services:
       timeout: 10s
       start_period: 60s
       retries: 3
+  data-worker:
+    depends_on:
+      init-data:
+        condition: service_completed_successfully
+    image: python:3.12-slim
+    user: "${AIRFLOW_UID:-50000}:0"
+    working_dir: /opt/research
+    volumes:
+      - .:/opt/research:ro
+      - news-data:/opt/research/.data
+    environment:
+      TOSS_CLIENT_ID: ${TOSS_CLIENT_ID:-}
+      TOSS_CLIENT_SECRET: ${TOSS_CLIENT_SECRET:-}
+    command: ["python", "-u", "data_worker.py", "worker"]
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import time;from datetime import datetime;from data_worker import status;s=status();last=(s.get('last_cycle') or {}).get('last_success');assert last and time.time()-datetime.fromisoformat(last).timestamp()<180"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
   airflow:
     depends_on:
       init-data:

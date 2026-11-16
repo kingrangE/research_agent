@@ -126,14 +126,15 @@ def load_inputs(article_id,market,symbol,benchmark=None,basis='public',adjusted=
     event=next((p for p in proposals if p['axis']),None)
     if not event:raise ValueError('분류된 사건 제안 없음')
     event_time=event.get('published_at') if basis=='public' else event.get('available_at')
+    day=h.timestamp(event_time).astimezone(h.ZoneInfo(h.ZONES[market])).date() if event_time else None
     with h.db() as db:
-        calendar=h.calendar_snapshot(db,market)
+        calendar=h.calendar_snapshot(db,market,(day-timedelta(days=210)).isoformat(),(day+timedelta(days=10)).isoformat()) if day else {}
     after=[p for p in sessions(calendar,market) if event_time and h.timestamp(p['close'])>h.timestamp(event_time)]
     until=after[min(1,len(after)-1)]['day'] if after else h.timestamp(event_time).astimezone(h.ZoneInfo(h.ZONES[market])).date().isoformat() if event_time else None
     return {'event':{k:event.get(k) for k in ('article_id','event_id','source_key','rule_version','published_at','available_at','review_status','url')},
         'calendar_policy':h.CALENDAR_POLICY,'market':market,'symbol':symbol,'benchmark':benchmark,'basis':basis,'adjusted':adjusted,'as_of':moment.isoformat(),
-        'stock_prices':h.observations(market,symbol,adjusted,until=until),
-        'benchmark_prices':h.observations(market,benchmark,adjusted if market=='US' else False,until=until),'calendar':calendar}
+        'stock_prices':h.observations(market,symbol,adjusted,until=until) if day else [],
+        'benchmark_prices':h.observations(market,benchmark,adjusted if market=='US' else False,until=until) if day else [],'calendar':calendar}
 
 
 def schema(db):
@@ -155,10 +156,18 @@ def snapshot(article_id=None,run_id=None,include_inputs=False):
     if run_id and not re.fullmatch('[a-f0-9]{64}',run_id):raise ValueError('관측 실행 식별자 오류')
     with h.db() as db:
         schema(db)
-        columns='result,inputs' if include_inputs else 'result'
+        columns='result,inputs'
         rows=db.execute(f'SELECT {columns} FROM reaction_runs WHERE (? IS NULL OR article_id=?) AND (? IS NULL OR id=?) ORDER BY created_at DESC LIMIT 20',
                         (article_id,article_id,run_id,run_id)).fetchall()
-    return {'version':VERSION,'runs':[{**json.loads(r[0]),'calendar_policy_current':json.loads(r[0]).get('calendar_policy')==h.CALENDAR_POLICY,**({'inputs':json.loads(r['inputs'])} if include_inputs else {})} for r in rows]}
+    runs=[]
+    for row in rows:
+        result=json.loads(row['result']);inputs=json.loads(row['inputs'])
+        checks=[h.revisions_current(inputs['market'],inputs['symbol'],inputs['stock_prices'],inputs['adjusted']),
+                h.revisions_current(inputs['market'],inputs['benchmark'],inputs['benchmark_prices'],inputs['adjusted'] if inputs['market']=='US' else False)]
+        runs.append({**result,'calendar_policy_current':result.get('calendar_policy')==h.CALENDAR_POLICY,
+                     'price_revisions_current':False if False in checks else True if all(c is True for c in checks) else None,
+                     **({'inputs':inputs} if include_inputs else {})})
+    return {'version':VERSION,'runs':runs}
 
 
 def replay(identifier):

@@ -32,6 +32,7 @@ import fx_data
 import trade_events
 import event_reactions
 import comparable_events
+import data_worker
 import theme_statistics
 from analysis_store import epoch, CURRENT_EVENT_SECONDS
 
@@ -186,6 +187,7 @@ def snapshot():
     return {**state, 'product_mode':'data' if data_mode() else 'model', "articles": articles, "themes": themes, "raw_count": len(state["articles"]), "interval": INTERVAL,
             "stock_status": stock_status, "quote_interval": stocks.QUOTE_TTL, "intelligence": analysis, "archive": archive.summary(),
             "collection":portal,
+            'data_pipeline':data_worker.status() if data_mode() else None,
             'history':market_history.coverage(),
             'business':business_ontology.snapshot() if data_mode() else None,
             "method": "근거 데이터 모드 · 제목 키워드 분류 · AI 분석·추천 미사용" if data_mode() else "기본 추천은 주식 적합성을 검토한 사건의 모델 순위. 전체 자료의 최신성 점수는 별도 유지. 국내·미국 종목 연결과 공개 근거를 제공하며 실적·가격 반영 정도는 추가 확인 필요."}

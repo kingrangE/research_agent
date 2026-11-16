@@ -13,7 +13,14 @@ def news_reconciliation():
     def reconcile_recent_days():
         from news_ingestion import reconcile
         return reconcile(days=2,page_budget=100)
+    @task(execution_timeout=timedelta(minutes=3))
+    def reconcile_data_product():
+        from data_worker import cycle
+        result=cycle(network=False)
+        if result.get('state')=='error':raise RuntimeError('데이터 복구 실패: '+result['error'])
+        return result
     reconcile_recent_days()
+    reconcile_data_product()
 
 
 news_reconciliation()

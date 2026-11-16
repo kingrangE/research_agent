@@ -1,7 +1,7 @@
 """Same-market daily return co-movement; no sector bonuses or predictive theme score."""
 
 import argparse
-from datetime import date,datetime,timezone
+from datetime import date,datetime,timedelta,timezone
 from hashlib import sha256
 from itertools import combinations
 import json
@@ -109,7 +109,8 @@ def load_inputs(as_of=None,membership_basis='as_of'):
     for market in ('KR','US'):
         benchmark='KOSPI' if market=='KR' else 'SPY'
         with h.db() as db:
-            calendar=h.calendar_snapshot(db,market)
+            day=moment.astimezone(h.ZoneInfo(h.ZONES[market])).date()
+            calendar=h.calendar_snapshot(db,market,(day-timedelta(days=400)).isoformat(),day.isoformat())
         codes={m['security']['provider_symbol']:m['code'] for m in knowledge['memberships'] if m['security']['country']==market}
         markets[market]={'calendar':calendar,'benchmark':benchmark,'benchmark_prices':h.observations(market,benchmark,until=moment.astimezone(h.ZoneInfo(h.ZONES[market])).date().isoformat()),
                          'prices':{code:h.observations(market,symbol,until=moment.astimezone(h.ZoneInfo(h.ZONES[market])).date().isoformat()) for symbol,code in codes.items()}}

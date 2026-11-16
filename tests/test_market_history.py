@@ -155,6 +155,20 @@ class HistoryTest(unittest.TestCase):
         self.assertEqual(first,second)
         self.assertGreater(first['retry_after'],0)
 
+    def test_invalidated_token_is_cleared_for_the_next_worker_attempt(self):
+        client=h.Toss();client.token='private-token';client.expires=float('inf')
+        with patch.object(client,'open',side_effect=HTTPError('https://x',401,'private',{},BytesIO(b'private'))),patch('market_history.time.sleep'):
+            with self.assertRaises(ValueError):client.request('/api/v1/stocks',{'symbols':'AAPL'})
+        self.assertIsNone(client.token);self.assertEqual(client.expires,0)
+
+    def test_saved_reaction_price_vintage_detects_a_correction(self):
+        with h.db() as db:h.save_page(db,'KR','005930',False,{},page([candle()]),'2026-11-01','2026-11-10')
+        old=h.observations('KR','005930');self.assertTrue(h.revisions_current('KR','005930',old))
+        corrected=candle();corrected['closePrice']='101';corrected['highPrice']='102'
+        with h.db() as db:h.save_page(db,'KR','005930',False,{},page([corrected]),'2026-11-01','2026-11-10')
+        self.assertFalse(h.revisions_current('KR','005930',old))
+        self.assertIsNone(h.revisions_current('KR','005930',[]))
+
     def test_history_http_routes_only_read_saved_data_and_validate_queries(self):
         from unittest.mock import Mock
         import server

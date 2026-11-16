@@ -25,6 +25,17 @@ test('comparable observations show insufficiency, losses and exclusions without 
   assert.ok(!html.includes('href="javascript:'));
 });
 
+test('data worker quality separates waiting, unsupported, errors and old success',()=>{
+  const run=ui();
+  const html=run(`pipelineHTML({counts:{waiting:3,error:1,unsupported:2,complete:4},last_cycle:{last_success:'2020-01-01T00:00:00Z'},last_error:{error:'<script>'},recent_states:[{state:'waiting',reason:'window_not_closed'}],ai_calls:0})`);
+  assert.ok(html.includes('처리 지연'));
+  assert.ok(html.includes('관측·가격 대기'));
+  assert.ok(html.includes('미지원'));
+  assert.ok(html.includes('window_not_closed'));
+  assert.ok(html.includes('&lt;script&gt;'));
+  assert.ok(html.includes('AI 호출 0회'));
+});
+
 test('data product uses sources without AI ranking and rejects unknown evidence versions', () => {
   const run=ui();
   run(`data={product_mode:'data',articles:[{id:'a',title:'기사',source:'원문',themes:[],score:25}],sources:[],intelligence:{status:'disabled',events:[],ranking:[]}};render()`);

@@ -104,6 +104,8 @@ class Toss:
                 raise ValueError('토스 응답 크기 초과')
             result = json.loads(raw)
         except HTTPError as error:
+            if error.code == 401 and not auth:
+                self.token=None;self.expires=0
             retry = error.headers.get('Retry-After','')
             if error.code == 429:
                 raise RateLimited(max(1,int(retry)) if retry.isdecimal() else 60) from None
@@ -396,6 +398,13 @@ def source_response(response_id):
             f'/api/v1/market-indicators/{row["symbol"]}/candles' if row['symbol'] in INDICES else '/api/v1/candles')
     result['source_url']=BASE+path+'?'+urlencode(json.loads(row['params']))
     return result
+
+
+def revisions_current(market,symbol,rows,adjusted=False):
+    if not rows:return None
+    latest={r['day']:r['revision'] for r in observations(market,symbol,adjusted,until=max(r['day'] for r in rows))}
+    if any(r['day'] in latest and latest[r['day']]!=r.get('revision') for r in rows):return False
+    return True if all(r.get('revision') is not None and r['day'] in latest for r in rows) else None
 
 
 if __name__ == '__main__':
