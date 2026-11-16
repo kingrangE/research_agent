@@ -820,3 +820,14 @@ test('daily reactions show immutable input prices and never label a missing abno
  assert.ok(html.includes('ETF 대용 자료'));
  assert.ok(html.includes('/api/history?response_id=4'));
 });
+
+test('theme statistics display coverage and keep unavailable statistics empty',()=>{
+ const run=ui();
+ const html=run(`themeStatisticsHTML({runs:[{as_of:'2026-11-16T00:00:00Z',membership_as_of:'2026-11-16',membership_basis:'as_of',notes:[],run_id:'abc',themes:[{name:'반도체',market:'KR',last_session:'2026-11-13',observed_members:0,members:2,up_fraction:null,down_fraction:null,mean_market_difference:null,mean_volume_change:null,volume_members:0,duplicate_securities_excluded:[],pairs:[{a:'005930',b:'000660',window_sessions:20,minimum:16,raw:{value:null,samples:5},market_adjusted:{value:null,samples:0}}]}]}]})`);
+ assert.ok(html.includes('관측 0/2개 기업'));
+ assert.ok(html.includes('미산정 · 5쌍'));
+ assert.ok(html.includes('독립 새 사건 수'));
+ assert.ok(html.includes('검수 자료 부족'));
+ assert.ok(!html.includes('0.0%'));
+ assert.ok(html.includes('inputs=true'));
+});

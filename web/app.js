@@ -163,6 +163,26 @@ function macroDetailsHTML(d) {
   const rows=[['국가·통화',[d.country,d.currency].filter(Boolean).join(' · ') || '미확인'],['발표 기관',d.authority || '미확인'],['금리 기준',d.instrument || '미확인'],['만기',d.tenor_years ? d.tenor_years+'년' : '미확인'],['이전 수준',d.previous_level?.length ? d.previous_level.join('~')+'%' : '미확인'],['새 수준',d.new_level?.length ? d.new_level.join('~')+'%' : '미확인'],['변화량',(d.changes || []).map(c=>c.basis_points!=null ? c.basis_points+' bp' : (c.raw || '미확인')+' · 방향 미확인').join(' / ') || '미확인'],['공식 자료',verified[d.verification] || '미확인'],['결정일',d.decision_date || '미확인'],['효력 시각',d.effective_at ? dateTime(d.effective_at) : d.effective_date ? d.effective_date+' · 시각 미확인' : '미확인'],['기대 대비 변화',d.surprise_bp==null ? '사전 기대 자료 미확보 · 미산정' : d.surprise_bp+' bp']];
   return `<dl class="event-facts">${rows.map(([k,v])=>`<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>${d.numeric_conflict ? '<p>원문 수치가 상충합니다. 확정 값으로 사용하지 않습니다.</p>' : ''}${safeLink(d.reference_url || d.url) ? `<a href="${escape(safeLink(d.reference_url || d.url))}" target="_blank" rel="noopener noreferrer">공식 결정문 ↗</a>` : ''}`;
 }
+function themeStatisticsHTML(result) {
+  const pct=v=>v==null ? '미산정' : (v*100).toFixed(1)+'%';
+  const corr=p=>p.value==null ? `미산정 · ${p.samples}쌍` : `${p.value.toFixed(3)} · ${p.samples}쌍`;
+  return result.runs.map(r=>`<p>일 단위 계산 ${escape(dateTime(r.as_of))} · 소속 기준 ${escape(r.membership_as_of)} · ${r.membership_basis==='current' ? '현재 구성으로 과거 가격 관측' : '조회 당시 공개된 구성'}</p>${r.themes.map(t=>`<section class="detail-overview"><h3>${escape(t.name)} · ${escape(t.market)}</h3><p>기준 거래일 ${escape(t.last_session || '미확인')} · 관측 ${t.observed_members}/${t.members}개 기업</p><dl class="event-facts"><div><dt>상승 기업 비율</dt><dd>${escape(pct(t.up_fraction))}</dd></div><div><dt>하락 기업 비율</dt><dd>${escape(pct(t.down_fraction))}</dd></div><div><dt>시장 수익률 대비 차이 평균</dt><dd>${escape(pct(t.mean_market_difference))}</dd></div><div><dt>거래량 변화 평균</dt><dd>${escape(pct(t.mean_volume_change))} · ${t.volume_members}개 관측</dd></div><div><dt>실제 거래대금 변화</dt><dd>미산정</dd></div><div><dt>독립 새 사건 수</dt><dd>검수 자료 부족 · 미산정</dd></div></dl><details><summary>종목 간 동조·표본·산식</summary><p>원시 상관과 시장 모형 잔차 상관입니다. 가격 수준이나 선행 예측이 아닙니다. 각 관측 창 이전 120일·최소 60일로 시장 모형을 추정합니다.</p>${t.pairs.map(p=>`<p>${escape(p.a)} ↔ ${escape(p.b)} · ${p.window_sessions}거래일 (${escape(p.calendar_window_first || '미확인')} ~ ${escape(p.calendar_window_last || '미확인')})</p><p>원시 ${escape(corr(p.raw))} / 시장 보정 ${escape(corr(p.market_adjusted))} · 최소 ${p.minimum}쌍</p>`).join('') || '<p>같은 시장의 비교 기업 쌍이 없습니다.</p>'}<p>중복 증권 제외 ${escape(t.duplicate_securities_excluded.join(' · ') || '없음')}</p></details></section>`).join('')}<details><summary>고정 계산 입력·출처</summary>${r.notes.map(n=>`<p>${escape(n)}</p>`).join('')}<p>당시 가격 버전·기업행동·거래정지 전체는 미확보입니다. 사업 소속의 공개 근거는 날짜 단위입니다.</p><a href="/api/theme-statistics?run_id=${encodeURIComponent(r.run_id)}&inputs=true" target="_blank" rel="noopener noreferrer">고정 가격·캘린더·근거 입력 조회</a></details>`).join('') || '<p>선택한 소속 기준일의 저장 계산이 없습니다. 최신 계산으로 대체하지 않습니다.</p>';
+}
+async function openThemeStatistics(code) {
+  if(mode!=='live') return;
+  const request=++historyRequest;detailId=null;
+  $('#detail').innerHTML='<div class="detail-top"><h2 id="detail-title">테마별 일봉 동조·확산</h2><button data-close aria-label="상세 닫기">×</button></div>';
+  if($('#stock-dialog').open) $('#stock-dialog').close();
+  if(!$('#detail-dialog').open) $('#detail-dialog').showModal();
+  try {
+    const day=$('#business-asof').value;
+    const response=await fetch('/api/theme-statistics'+(day ? '?as_of='+encodeURIComponent(day) : ''),{signal:AbortSignal.timeout(15000)});
+    if(!response.ok) throw new Error();
+    const result=await response.json();
+    if(request!==historyRequest || !$('#detail-dialog').open) return;
+    $('#detail').innerHTML=`<div class="detail-top"><h2 id="detail-title">테마별 일봉 동조·확산</h2><button data-close aria-label="상세 닫기">×</button></div><div class="detail-content">${themeStatisticsHTML(code ? {...result,runs:result.runs.map(r=>({...r,themes:r.themes.filter(t=>t.codes.includes(code))}))} : result)}</div>`;
+  } catch {if(request===historyRequest) $('#detail').innerHTML='<h2>테마 통계 조회 실패</h2><button data-close>닫기</button>';}
+}
 function reactionsHTML(result) {
   const pct=v=>v==null ? '미산정' : (v*100).toFixed(2)+'%';
   return `<p>일봉 가격 반응이며 기사 발견 이후 매매 수익·인과 효과가 아닙니다. 가격은 수집한 수정 버전으로 과거 당시 가용값을 보장하지 않습니다.</p>${result.runs.map(r=>`<section class="detail-overview"><h3>${escape(r.market)} ${escape(r.symbol)} · ${r.basis==='public' ? '기사 공개 시각' : '시스템 이용 가능 시각'} 기준</h3><p>기준 ${escape(dateTime(r.event_time))} · ${escape(r.status)} · 비교 ${escape(r.benchmark)}${r.benchmark_kind==='ETF_proxy_not_index' ? ' (ETF 대용 자료)' : ''}</p>${r.windows.map(w=>`<section><h4>${({pre_event:'사건 전 거래일',event_day:'발표에 대응하는 거래일',next_session:'다음 거래일'})[w.name] || escape(w.name)}</h4><dl class="event-facts"><div><dt>원시 수익률</dt><dd>${escape(pct(w.raw_return))}</dd></div><div><dt>시장 모형 잔차</dt><dd>${escape(pct(w.abnormal_return))}</dd></div><div><dt>거래량 변화</dt><dd>${escape(pct(w.volume_change))}</dd></div><div><dt>실제 거래대금 변화</dt><dd>${escape(pct(w.turnover_change))}</dd></div></dl><p>${escape(w.start?.close ? dateTime(w.start.close) : '시작 미확인')} → ${escape(w.end?.close ? dateTime(w.end.close) : '종료 미확인')} · ${escape(w.status)}</p>${w.includes_pre_event_movement ? '<p>전일 종가 기준이므로 장중 기사 이전 움직임이 포함됩니다.</p>' : ''}<details><summary>계산 입력·원문</summary>${(w.input_prices || []).map(p=>`<p>${escape(p.series)} ${escape(p.day)} · 종가 ${escape(p.closePrice)} ${escape(p.currency || '')} · 수정 ${escape(p.revision)} <a href="/api/history?response_id=${encodeURIComponent(p.response_id)}" target="_blank" rel="noopener noreferrer">가격 원문</a></p>`).join('')}</details></section>`).join('')}<details><summary>시장 모형·품질 제한</summary><p>사건 이전 최대 120거래일 · 유효 최소 60일 · 실제 ${escape(r.model?.samples ?? 0)}일 · ${escape(r.model?.status || '미산정')}</p><p>기업행동·과거 거래정지·동시 사건은 충분히 확인하지 못했습니다. 큰 원시 가격 단절·미완료 봉은 산정에서 제외합니다.</p><p>계산 ${escape(r.version)} · 원문 ${escape(r.source_key)}</p><a href="/api/reactions?run_id=${encodeURIComponent(r.run_id)}" target="_blank" rel="noopener noreferrer">고정 계산 조회</a></details></section>`).join('') || '<p>아직 저장된 계산이 없습니다. 수집 실패·시각 미확인은 0%가 아닙니다.</p>'}`;
@@ -455,7 +475,7 @@ function openStock(articleId, code) {
   const article = findArticle(articleId);
   const stock = article?.related_stocks?.find(s=>s.code === code);
   if (!stock) return;
-  $('#stock-detail').innerHTML = `<div class="detail-top"><span>관련 주식 상세</span><button data-close-stock aria-label="주식 상세 닫기">×</button></div><div class="detail-content"><h2 id="stock-title">${escape(stock.name)}</h2><p class="detail-meta">${escape(article.title)}</p>${stocksHTML({...article,related_stocks:[stock]},true)}</div>`;
+  $('#stock-detail').innerHTML = `<div class="detail-top"><span>관련 주식 상세</span><button data-close-stock aria-label="주식 상세 닫기">×</button></div><div class="detail-content"><h2 id="stock-title">${escape(stock.name)}</h2><p class="detail-meta">${escape(article.title)}</p>${stocksHTML({...article,related_stocks:[stock]},true)}<button data-theme-statistics="${escape(stock.code)}">이 종목의 일봉 테마 동조 보기</button></div>`;
   $('#stock-dialog').showModal();
   loadQuotes();
 }
@@ -508,6 +528,7 @@ document.addEventListener('click', event => {
   if (button.dataset.stock) openStock(button.dataset.article, button.dataset.stock);
   if (button.dataset.businessCode) openBusiness(button.dataset.businessCode);
   if (button.hasAttribute('data-supply-all')) openSupply();
+  if (button.hasAttribute('data-theme-statistics')) openThemeStatistics(button.dataset.themeStatistics);
   if (button.dataset.reactions) openReactions(button.dataset.reactions);
   if (button.hasAttribute('data-trade')) openTrade();
   if (button.hasAttribute('data-fx')) openFX();

@@ -31,6 +31,7 @@ import macro_events
 import fx_data
 import trade_events
 import event_reactions
+import theme_statistics
 from analysis_store import epoch, CURRENT_EVENT_SECONDS
 
 ROOT = Path(__file__).resolve().parent
@@ -288,6 +289,15 @@ def demo_snapshot():
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path == '/api/theme-statistics':
+            params=parse_qs(urlsplit(self.path).query)
+            try:
+                result=theme_statistics.snapshot(params.get('as_of',[None])[0],params.get('run_id',[None])[0],params.get('inputs',['false'])[0]=='true')
+            except (ValueError,TypeError):
+                self.respond(b'{"error":"Invalid theme statistics query"}','application/json',400)
+                return
+            self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == '/api/reactions':
             params=parse_qs(urlsplit(self.path).query)
             try:
