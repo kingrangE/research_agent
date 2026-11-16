@@ -9,6 +9,7 @@ import sqlite3
 import time
 
 PATH = Path(__file__).resolve().parent / '.data' / 'news.sqlite3'
+MIN_BODY_CHARS = 8
 
 
 @contextmanager
@@ -161,6 +162,9 @@ def pending(newest=False):
 
 def save_body(url, text=None, error=None):
     fetched = datetime.now(timezone.utc).isoformat()
+    usable = bool(text) and len(text)>=MIN_BODY_CHARS
+    if text and not usable:
+        error = '인용 가능한 본문 부족 · 공개 본문 재수집 대기'
     with db() as connection:
         if text:
             fingerprint = sha256(text.encode()).hexdigest()
@@ -170,7 +174,7 @@ def save_body(url, text=None, error=None):
             connection.execute('INSERT INTO bodies VALUES(?,?,?,?,?) ON CONFLICT(url,fingerprint) DO UPDATE SET last_seen=excluded.last_seen',(url,fingerprint,text,fetched,fetched))
         connection.execute('''INSERT INTO body_fetches VALUES(?,?,?,?,?) ON CONFLICT(url) DO UPDATE SET
             status=excluded.status,fetched_at=excluded.fetched_at,retry_after=excluded.retry_after,error=excluded.error''',
-            (url,'ok' if text else 'error',fetched,0 if text else time.time()+3600,error))
+            (url,'ok' if usable else 'error',fetched,0 if usable else time.time()+3600,error))
 
 
 def summary():

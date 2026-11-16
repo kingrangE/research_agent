@@ -95,10 +95,10 @@ summary·금액·시점·당사자·evidence는 반드시 현재 body에서만 �
 
 
 def source_passages(body):
-    if not isinstance(body,str) or len(body)<8:
+    if not isinstance(body,str) or len(body)<archive.MIN_BODY_CHARS:
         raise ValueError('인용 가능한 본문 부족')
     chunks=[body[i:i+240] for i in range(0,len(body),240)]
-    if len(chunks)>1 and len(chunks[-1])<8:
+    if len(chunks)>1 and len(chunks[-1])<archive.MIN_BODY_CHARS:
         tail=chunks.pop()
         chunks[-1]+=tail
     return [{'id':i+1,'text':text} for i,text in enumerate(chunks)]

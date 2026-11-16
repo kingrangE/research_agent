@@ -64,6 +64,24 @@ class ArchiveTest(unittest.TestCase):
         self.assertIsNone(archive.pending())
         self.assertEqual(archive.summary()['bodies'],1)
 
+    def test_short_flash_body_is_preserved_but_retried_until_analysis_can_quote_it(self):
+        item=self.item();archive.store([item])
+        with patch('archive.time.time',return_value=10000):
+            archive.save_body(item['url'],'속보')
+            self.assertEqual(archive.get_body(item['url']),'속보')
+            self.assertEqual(archive.body_snapshot(item['url'])['status'],'error')
+            self.assertIsNone(archive.pending())
+        with patch('archive.time.time',return_value=13600):
+            self.assertEqual(archive.pending(),item['url'])
+            self.assertEqual(archive.pending(newest=True),item['url'])
+            archive.save_body(item['url'],'가'*archive.MIN_BODY_CHARS)
+            self.assertIsNone(archive.pending())
+            self.assertEqual(archive.body_snapshot(item['url'])['status'],'ok')
+        with archive.db() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM bodies').fetchone()[0],2)
+            self.assertEqual(db.execute('SELECT count(*) FROM body_versions').fetchone()[0],2)
+        self.assertEqual(archive.summary()['articles'],1)
+
     def test_body_failure_keeps_article_and_prior_body_with_retry_status(self):
         item=self.item();archive.store([item]);archive.save_body(item['url'],'보관된 공개 본문')
         archive.save_body(item['url'],error='수집 실패')
