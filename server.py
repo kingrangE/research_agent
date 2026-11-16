@@ -312,7 +312,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="맥락 투자 정보 대시보드 시제품")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument('--host',default='127.0.0.1',help='기본 로컬 접속 · 컨테이너 내부에서만 0.0.0.0 사용')
-    parser.add_argument('--analysis', action='store_true', help='Ollama 본문 분석·사건 묶기·시장 맥락순 활성화')
+    parser.add_argument('--analysis', action='store_true', help='설정한 LLM 제공처의 본문 분석·사건 묶기·시장 맥락순 활성화')
     args = parser.parse_args()
     if args.analysis:
         os.environ['LLM_ENABLED'] = '1'

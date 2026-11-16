@@ -19,7 +19,18 @@ services:
       - .:/opt/research:ro
       - news-data:/opt/research/.data
     environment:
-      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      LLM_PROVIDER: ${LLM_PROVIDER:-nvidia}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_RESPONSE_FORMAT: ${LLM_RESPONSE_FORMAT:-}
+      LLM_TOKEN_PARAMETER: ${LLM_TOKEN_PARAMETER:-}
+      LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-}
+      LLM_DAILY_CALL_LIMIT: ${LLM_DAILY_CALL_LIMIT:-200}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
     command: ["python", "-u", "server.py", "--analysis", "--host", "0.0.0.0"]
     ports:
       - "127.0.0.1:8765:8765"

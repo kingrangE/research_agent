@@ -717,3 +717,12 @@ test('title source waits remain explicit and are not invented for old payloads',
  run(`delete data.intelligence.queue.source_waiting;render()`);
  assert.ok(!run(`$('#source-view').innerHTML`).includes('원래 제목의 본문 대기'));
 });
+
+
+test('provider usage keeps unattributed historical calls separate',()=>{
+ const run=ui();
+ run(`data={articles:[],sources:[],intelligence:{usage:{calls_today:2,legacy_calls_today:99},daily_call_limit:200}};render()`);
+ const html=run(`$('#source-view').innerHTML`);
+ assert.ok(html.includes('현재 제공처 요청 2회'));
+ assert.ok(html.includes('제공처 미상 과거 기록 99회 별도 보존'));
+});
