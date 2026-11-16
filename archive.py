@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
+import re
 from pathlib import Path
 import sqlite3
 import time
@@ -108,6 +109,29 @@ def get_body(url):
     with db() as connection:
         row = connection.execute('SELECT text FROM bodies WHERE url=? ORDER BY last_seen DESC LIMIT 1',(url,)).fetchone()
     return row[0] if row else None
+
+
+def analysis_body(url, version):
+    """Recover the exact saved analysis window, never the latest body as a substitute."""
+    match=re.fullmatch(r'(?:([0-9]+):)?([0-9a-f]{64})',version) if isinstance(version,str) else None
+    if not match or not PATH.exists():
+        return None
+    revision,digest=match.groups()
+    if revision and (len(revision)>19 or not 0<int(revision)<=9223372036854775807):
+        return None
+    with db() as connection:
+        if revision:
+            rows=connection.execute('''SELECT b.text FROM body_versions v JOIN bodies b ON b.url=v.url AND b.fingerprint=v.fingerprint
+                WHERE v.id=? AND v.url=? AND v.fingerprint=?''',(int(revision),url,digest)).fetchall()
+        else:
+            rows=connection.execute('SELECT text FROM bodies WHERE url=?',(url,)).fetchall()
+    for (text,) in rows:
+        if not isinstance(text,str):
+            continue
+        window=text[:6000]
+        if sha256(text.encode()).hexdigest()==digest or (not revision and sha256(window.encode()).hexdigest()==digest):
+            return window
+    return None
 
 
 def body_snapshot(url):

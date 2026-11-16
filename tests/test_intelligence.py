@@ -1843,6 +1843,41 @@ class IntelligenceTest(unittest.TestCase):
             self.engine.cycle([ARTICLE])
         read.assert_called_once()
 
+    def test_legacy_review_uses_pinned_body_even_after_latest_headline_changes(self):
+        old_article={**ARTICLE,'source_id':'finance','title':'[속보] 공급 계약 발표'}
+        policy='source-passages-v7-source-time'
+        key=self.engine.reading_key(old_article,BODY,policy)
+        old={**copy.deepcopy(ANALYZED),'read_policy_version':policy,'article_id':old_article['id'],
+             'article_title':old_article['title'],'source_url':old_article['url'],'published_at':old_article['published_at'],
+             'event_id':'event-'+key[:20],'body_version':ai.sha256(BODY.encode()).hexdigest(),'body_chars':len(BODY),
+             'model':self.engine.model,'analyzed_at':'2026-11-11T01:00:00Z','source_version_at':'2026-11-11T00:30:00Z'}
+        self.engine.queue.enqueue([{'article':old_article}]);self.engine.queue.complete(self.engine.queue.claim(),old,{**GATE,'screen_policy_version':'old'})
+        with self.engine.db() as db:db.execute('INSERT INTO readings VALUES(?,?,?,?)',(key,old_article['id'],json.dumps(old),ai.now()))
+        with patch('archive.PATH',Path(self.temp.name)/'archive.sqlite3'):
+            ai.archive.store([old_article]);ai.archive.save_body(old_article['url'],BODY)
+            ai.archive.store([{**old_article,'title':'공급 계약 발표'}])
+            self.assertIsNone(self.engine.reading(old_article,[]))
+            with patch.object(self.engine,'call') as call,patch.object(self.engine,'screen',return_value={**GATE,'stock_relevance':'배경·상품 안내'}):
+                result=self.engine.cycle([old_article])
+        call.assert_not_called()
+        self.assertEqual(result['coverage']['screen_pending_events'],0)
+        self.assertEqual(result['events'][0]['read_policy_version'],ai.READ_VERSION)
+        self.assertEqual(result['events'][0]['analyzed_at'],old['analyzed_at'])
+        self.assertEqual(result['events'][0]['source_version_at'],old['source_version_at'])
+        self.assertEqual(self.engine.queue.summary()['done'],2)
+
+    def test_review_cannot_recover_a_body_for_mismatched_metadata_or_future_source(self):
+        for i,change in enumerate(({'source_url':'https://example.com/other'}, {'source_version_at':'2026-11-12T00:00:00Z'})):
+            with self.subTest(change=change):
+                a={**ARTICLE,'id':'bound-'+str(i),'url':ARTICLE['url']+str(i)}
+                old={**ANALYZED,'read_policy_version':'old','event_id':'old-'+str(i),'article_id':a['id'],
+                     'article_title':a['title'],'source_url':a['url'],'published_at':a['published_at'],
+                     'body_version':ai.sha256(BODY.encode()).hexdigest(),'source_version_at':'2026-11-11T00:30:00Z',**change}
+                self.engine.queue.enqueue([{'article':a}]);self.engine.queue.complete(self.engine.queue.claim(),old,{**GATE,'screen_policy_version':'old'})
+                with patch.object(ai.archive,'analysis_body') as source,patch.object(self.engine,'reading',return_value=None):
+                    self.engine.cycle([a])
+                source.assert_not_called()
+
     def test_policy_upgrade_leaves_historical_articles_out_of_the_review_sweep(self):
         a={**ARTICLE,'published_at':'2026-10-01T00:00:00Z'}
         old={**ANALYZED,'event_id':'old','article_id':'a','source_url':a['url'],'published_at':a['published_at']}

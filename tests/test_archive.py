@@ -109,6 +109,24 @@ class ArchiveTest(unittest.TestCase):
         self.assertEqual(archive.summary()['articles'],9)
         self.assertEqual(archive.summary()['bodies'],6)
 
+    def test_analysis_body_recovers_only_the_pinned_version_and_original_window(self):
+        from hashlib import sha256
+        a=self.item();archive.store([a])
+        first='원래 공개 본문 '*1000
+        archive.save_body(a['url'],first)
+        records,_=archive.analysis_batch({})
+        version=next(r['body_version'] for r in records if r.get('body_version'))
+        archive.save_body(a['url'],'다른 내용으로 바뀐 최신 본문')
+        archive.store([{**a,'title':'제목도 바뀜'}])
+        self.assertEqual(archive.analysis_body(a['url'],version),first[:6000])
+        self.assertEqual(archive.analysis_body(a['url'],sha256(first[:6000].encode()).hexdigest()),first[:6000])
+        self.assertEqual(archive.get_body(a['url']),'다른 내용으로 바뀐 최신 본문')
+        for bad in ('unknown','0'*64,'999999:'+version.split(':')[-1]):
+            self.assertIsNone(archive.analysis_body(a['url'],bad))
+        self.assertIsNone(archive.analysis_body('https://example.com/other',version))
+        with archive.db() as db:db.execute('UPDATE bodies SET text=? WHERE url=? AND fingerprint=?',('손상된 내용',a['url'],version.split(':')[-1]))
+        self.assertIsNone(archive.analysis_body(a['url'],version))
+
     def test_analysis_replay_keeps_articles_outside_latest_feed_and_full_body_versions(self):
         first=self.item('첫 기사')
         archive.store([first,self.item('이전 피드','https://www.hankyung.com/article/2')])

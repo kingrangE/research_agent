@@ -732,6 +732,15 @@ class Engine:
                 article = {**article,'_analysis_body':job['body'],'_body_version':job['body_version']}
             try:
                 previous=json.loads(job['result']) if job['job_key'].startswith('screen-review:') and job['result'] else None
+                if previous and previous.get('read_policy_version')!=READ_VERSION and job['body'] is None:
+                    stamp=previous.get('source_version_at') or previous.get('analyzed_at')
+                    bound=all(previous.get(k)==article.get(a) for k,a in
+                              (('article_id','id'),('article_title','title'),('source_url','url'),('published_at','published_at')))
+                    if bound and 0<analysis_store.epoch(stamp)<=analysis_store.epoch(now()):
+                        frozen=archive.analysis_body(article['url'],previous.get('body_version'))
+                        if frozen is not None:
+                            article={**article,'_analysis_body':frozen,'_version_at':stamp}
+                            if job['body_version']:article['_body_version']=job['body_version']
                 reading = previous if previous and previous.get('read_policy_version')==READ_VERSION else self.reading(article,self.queue.anchors(article,READ_VERSION))
                 if not reading:
                     raise ValueError('공개 본문 또는 재시도 대기')
