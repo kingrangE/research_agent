@@ -677,3 +677,19 @@ test('event link review exposes pending and deferred scope without claiming all 
   run(`delete data.intelligence.event_linking;render()`);
   assert.ok(!run(`$('#source-view').innerHTML`).includes('같은 제목 사건 · 연결 재검토'));
 });
+
+
+test('fresh dispatch scope is explicit and older responses never invent a fresh zero', () => {
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{queue:{pending:80,processing:1,retrying:2,done:10,event_count:8,oldest_wait_seconds:1000,priority_window:{window_seconds:93600,current_unfinished:70,current_ready:50,other_unfinished:13,oldest_current_age_seconds:70000,fresh_window_seconds:3600,fresh_unfinished:20,fresh_ready:18}}}};render()`);
+  let html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('발행 1시간 이내 미완료 20건 · 지금 처리 가능 18건'));
+  assert.ok(html.includes('처리 가능한 발행 1시간 이내 자료를 먼저'));
+  assert.ok(html.includes('없으면 26시간 이내 자료'));
+  assert.ok(html.includes('오래된 자료도 삭제하거나 분석 완료로 처리하지 않습니다'));
+  run(`delete data.intelligence.queue.priority_window.fresh_window_seconds;render()`);
+  html=run(`$('#source-view').innerHTML`);
+  assert.ok(!html.includes('신규 자료 우선 처리'));
+  assert.ok(!html.includes('발행 1시간 이내 미완료 0건'));
+  assert.ok(html.includes('현재 대기가 계속되면 과거 분석은 오래 미뤄질 수 있습니다'));
+});
