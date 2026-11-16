@@ -235,7 +235,7 @@ def evaluate_equity(engine,dataset):
         row={'id':case['id'],'expected':case['expected'],'pass':False}
         try:
             output=engine.screen({'event_title':case['id'],'summary':case['summary'],'entities':[],
-                'certainty':'확정','amount':'본문 확인','timing':'당일·수일','evidence':[case['summary']]})
+                'certainty':'확정','amount':'본문 확인','timing':'당일·수일','evidence':case.get('evidence',[case['summary']])})
             row.update(actual=output['stock_relevance'],output=output,
                        **{'pass':output['stock_relevance']==case['expected']})
         except Exception as error:

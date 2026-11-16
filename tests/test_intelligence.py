@@ -898,6 +898,21 @@ class IntelligenceTest(unittest.TestCase):
             with patch.object(self.engine,'call',return_value={**READING,'evidence':ids}):
                 self.assertRaises(ValueError,self.engine.extract_reading,BODY,ARTICLE,[])
 
+    def test_equity_evaluation_preserves_real_multi_quote_input_and_legacy_summary_fallback(self):
+        dataset=json.loads(Path('tests/fixtures/fund_screening_eval.json').read_text())
+        actual=dataset['equity_screening'][0]
+        self.assertGreater(len(actual['evidence']),1)
+        self.assertGreater(len(actual['summary']),500)
+        self.assertTrue(all(8<=len(q)<=500 for q in actual['evidence']))
+        legacy={'id':'legacy','summary':'이전 형식의 실제 원문입니다.','expected':'주식 판단 재료'}
+        engine=MagicMock(model='test',provider='ollama')
+        engine.screen.side_effect=[{'stock_relevance':actual['expected']},{'stock_relevance':legacy['expected']}]
+        with patch('builtins.print'):
+            result=evaluate_equity(engine,{'equity_screening':[actual,legacy]})
+        self.assertEqual(result['passed'],2)
+        self.assertEqual(engine.screen.call_args_list[0].args[0]['evidence'],actual['evidence'])
+        self.assertEqual(engine.screen.call_args_list[1].args[0]['evidence'],[legacy['summary']])
+
     def test_equity_evaluator_isolates_screening_and_continues_after_failure(self):
         engine=MagicMock(model='test',provider='ollama')
         engine.screen.side_effect=[ValueError('bad quote'),{'stock_relevance':'주식 판단 재료'}]
