@@ -85,6 +85,7 @@ class EventFactsTest(unittest.TestCase):
         for title in ('복귀 노리는 젠슨 황, 백악관 대응팀 꾸렸다','인텔 주주들로부터 피소','젠슨 황 쇼크 지속…코스피 하락',
                       'AI 전력망 지금이 투자 적기','엔비디아 AI 자금줄 제동 땐 투자금 썰물'):
             self.assertIsNone(f.extract(self.article(title=title),body)['axis'])
+        self.assertIsNone(f.extract(self.article(title='유진證 한국전력 AI 전력망 투자 확대 기대…목표가↓'),body)['axis'])
         conflicting=f.extract(self.article(title='삼성SDS 데이터센터 MOU 체결'),'삼성SDS 데이터센터는 가동을 시작했다.')
         self.assertEqual(conflicting['stage'],'unknown')
         self.assertTrue(conflicting['stage_conflict'])
