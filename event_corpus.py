@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 PATH=Path(__file__).parent/'data/evaluation/event_corpus_v1.json'
 LOCK=PATH.with_suffix('.lock.json')
+PRICE_CHECK=Path(__file__).parent/'.data/validation/price_ground_truth.json'
 AXES={'rates','fx','tariff','infrastructure'}
 SPLITS={'development','validation','final','excluded'}
 
@@ -63,7 +64,7 @@ def source_check(data,root):
 
 def report(data):
     usable=[c for c in data['cases'] if c['split']!='excluded'];axis=Counter(c['axis'] for c in data['cases'])
-    return {'version':data['version'],'fingerprint':fingerprint(data),'real_independent_cases':len(data['cases']),
+    result={'version':data['version'],'fingerprint':fingerprint(data),'real_independent_cases':len(data['cases']),
         'usable_time_split_cases':len(usable),'axes':dict(axis),'usable_axes':dict(Counter(c['axis'] for c in usable)),
         'splits':dict(Counter(c['split'] for c in data['cases'])),
         'period':[min(c['published_date'] for c in data['cases']),max(c['published_date'] for c in data['cases'])],
@@ -78,6 +79,12 @@ def report(data):
         'ready_for_final_evaluation':False,
         'open_requirements':['실제 가격 반응 정답 대조','실행 가능한 도전 자료와 근거 검수','공급 경로 정답의 독립 검수','한국어 포털 기사·AI/소프트웨어 사례 보강'],
         'limitations':data['limitations']}
+    if PRICE_CHECK.exists():
+        check=json.loads(PRICE_CHECK.read_text())
+        frozen=PRICE_CHECK.parent/'price_checks'/(check.get('run_id','')+'.json')
+        if re.fullmatch('[a-f0-9]{64}',check.get('run_id','')) and check.get('corpus_fingerprint')==fingerprint(data) and frozen.exists() and fingerprint(json.loads(frozen.read_text()))==check['run_id']:
+            result['latest_private_price_check']={k:check[k] for k in ('checked_at','source_verified_cases','verified_daily_return_cases','complete_coverage_cases','run_id','not_expert_or_second_reviewer')}
+    return result
 
 
 if __name__=='__main__':

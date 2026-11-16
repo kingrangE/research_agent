@@ -1,0 +1,16 @@
+{
+  "version": "domain-challenges-v1",
+  "reviewer_kind": "agent",
+  "counts_as_real_corpus_events": false,
+  "cases": [
+    {"id":"homonym","type":"entities","synthetic":true,"input":"알파벳을 처음 배우는 유치원생","expected":[]},
+    {"id":"equity_not_facility","type":"event","synthetic":true,"input":"엔비디아 데이터센터 지분 투자 계획","expected":{"axis":"infrastructure","event_type":"equity_investment","stage":"planned"}},
+    {"id":"denial_not_cancellation","type":"event","synthetic":true,"input":"삼성SDS 데이터센터 계약 취소설 부인","expected":{"axis":"infrastructure","stage":"denied"}},
+    {"id":"cancellation_not_award","type":"event","synthetic":true,"input":"삼성SDS 데이터센터 투자 취소","expected":{"axis":"infrastructure","stage":"cancelled"}},
+    {"id":"future_relation","type":"supply","synthetic":true,"query":{"as_of":"2025-12-22","code":"018260"},"claim":"sds_openai","expected_status":"blocked","expected_reason":"기준일 이후 공개 근거"},
+    {"id":"generation_mismatch","type":"supply","synthetic":true,"query":{"as_of":"2026-11-16","code":"000660","product":"memory","generation":"HBM3"},"claim":"hynix_tsmc","expected_status":"blocked","expected_reason":"세대 불일치"},
+    {"id":"future_retroactive_exception","type":"trade_asof","synthetic":true,"input":"2024-08-01T00:00:00Z","forbidden_id":"s301-solar-exemption-20240918"},
+    {"id":"general_finance","type":"event","synthetic":false,"origin":"user_provided_example_not_counted_as_collected_independent_event","input":"미래에셋, 개인투자용국채 11월 청약…20년물 만기 수익률 162%","expected":{"axis":null}},
+    {"id":"weekend_and_missing_prices","type":"market_alignment","synthetic":true,"input":{"event_time":"2026-11-14T12:00:00+09:00","as_of":"2026-11-17T00:00:00+09:00","sessions":["2026-11-13","2026-11-16"],"closed_days":["2026-11-14","2026-11-15"]},"expected_end_day":"2026-11-16","expected_raw_return":null,"note":"봉 가격을 생성하지 않는 캘린더 반례. 실제 매매 성과 자료가 아님."}
+  ]
+}

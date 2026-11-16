@@ -1,0 +1,190 @@
+{
+  "version": "publication-metadata-v1",
+  "corpus_version": "event-corpus-v1",
+  "entries": [
+    {
+      "case_id": "samsung-p1",
+      "source_sha256": "369a8cfc41453057171326a6a3b026fa3cd2cc8f9dde0b8fcb87ed2e521165cc",
+      "published_at": "2017-07-04T11:00:47+09:00",
+      "proof": "\"datePublished\":\"2017-07-04T11:00:47+09:00\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "samsung-p2",
+      "source_sha256": "4f65e4be28f0c9d375815fe5a9c3a43a703618c9a8bb0daee6636300fab711f2",
+      "published_at": "2020-05-21T11:01:23+09:00",
+      "proof": "\"datePublished\":\"2020-05-21T11:01:23+09:00\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "samsung-taylor",
+      "source_sha256": "9a204182cabc20b3473c8799f94f84d5297f362a85088d789e679cea29828d92",
+      "published_at": "2021-11-24T08:00:51+09:00",
+      "proof": "\"datePublished\":\"2021-11-24T08:00:51+09:00\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-uae",
+      "source_sha256": "51cbb285c5382d6bd8e7cbdb2376c6b2d9a98df9d1f8f1a4417b686fbddd8fa8",
+      "published_at": "2022-08-30T06:27:00+00:00",
+      "proof": "\"datePublished\":\"2022-08-30T06:27:00Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-switzerland",
+      "source_sha256": "d390c9d8d8d23819a7f2a32654b7ba4e966276f659b556249d64877b7666be31",
+      "published_at": "2022-11-09T06:40:00+00:00",
+      "proof": "\"datePublished\":\"2022-11-09T06:40:00Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-spain",
+      "source_sha256": "07e824bbc892664cec97b014de1bb581f5576879d0f08cbae570d8a39764aa87",
+      "published_at": "2022-11-16T07:09:00+00:00",
+      "proof": "\"datePublished\":\"2022-11-16T07:09:00Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-hyderabad",
+      "source_sha256": "7b68ee2d8bc23defce0589dac0510fa35bb71f6ccaf1454489b767487afc211e",
+      "published_at": "2022-11-22T08:00:00+00:00",
+      "proof": "\"datePublished\":\"2022-11-22T08:00:00Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-israel",
+      "source_sha256": "8c085fb1d8b5f0e5aff2042e5bdb4cfe579425bb5537d6388b11e391e12f2c44",
+      "published_at": "2023-08-01T09:28:00+00:00",
+      "proof": "\"datePublished\":\"2023-08-01T09:28:00Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-canada-west",
+      "source_sha256": "215e0406f61b91c0f1a65cc9e6d455405a33c639276f3b158078aa924f7ab216",
+      "published_at": "2023-12-20T11:00:00+00:00",
+      "proof": "\"datePublished\":\"2023-12-20T11:00:00Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-malaysia",
+      "source_sha256": "b1bd5079bf1065cbc7077123a761f7695f95b2281ee6288579f9df5cb0a07866",
+      "published_at": "2024-08-22T01:01:00+00:00",
+      "proof": "\"datePublished\":\"2024-08-22T01:01:00Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-georgia",
+      "source_sha256": "c4c77d5aadbe9f8312e1f87d61359d82101e139d44afb3b4780bc93d100f34fe",
+      "published_at": "2025-01-07T21:30:06.199000+00:00",
+      "proof": "\"datePublished\":\"2025-01-07T21:30:06.199Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-thailand",
+      "source_sha256": "0213f90415e7dac266f94a6eded9770f968fbcb0d7a64d15a170d56b4eeeeebc",
+      "published_at": "2025-01-08T02:00:00+00:00",
+      "proof": "\"datePublished\":\"2025-01-08T02:00:00Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-mexico",
+      "source_sha256": "d7a3929e3f68d2f3317b2cdbd4f5972510fe204e8df20f33e14868bb19ee9a4c",
+      "published_at": "2025-01-14T13:40:00+00:00",
+      "proof": "\"datePublished\":\"2025-01-14T13:40:00Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "gev-us-capacity",
+      "source_sha256": "2b1a51e2be98b9d4c83ba637d20bb8a0898bd9ea8952e3ddde82ec70c08d10a7",
+      "published_at": "2025-01-29T04:44:11-05:00",
+      "proof": "\"datePublished\": \"2025-01-29T04:44:11-0500\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-north-carolina",
+      "source_sha256": "67488bd18ba4d8a78f1e6b6dd117fec672a36a2e270b247d9961438932877ade",
+      "published_at": "2025-06-04T15:30:06.656000+00:00",
+      "proof": "\"datePublished\":\"2025-06-04T15:30:06.656Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-taiwan",
+      "source_sha256": "6d5f5cd3b2bd98def628dfa05437b13c5c198aeda858a83c127fda454d875bd9",
+      "published_at": "2025-06-06T01:06:00+00:00",
+      "proof": "\"datePublished\":\"2025-06-06T01:06:00Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "aws-pennsylvania",
+      "source_sha256": "da8c17093abf3992be97126db397a0c21f7beb99f6fee2df75642b8b93f37b26",
+      "published_at": "2025-06-09T14:30:39.777000+00:00",
+      "proof": "\"datePublished\":\"2025-06-09T14:30:39.777Z\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    },
+    {
+      "case_id": "msft-wisconsin",
+      "source_sha256": "e49b1a65a809baebe66d50c6d848905f81bf964145cb03512d3880b9f486af62",
+      "published_at": "2025-09-18T14:00:11+00:00",
+      "proof": "\"datePublished\":\"2025-09-18T14:00:11+00:00\"",
+      "field": "JSON-LD.datePublished",
+      "time_quality": "source_reported_metadata_first_publication_unverified",
+      "reviewer_kind": "agent",
+      "reviewed_on": "2026-11-16"
+    }
+  ],
+  "notes": [
+    "발행일과 시간대가 있는 datePublished를 대조한 보충 자료다. 최초 공개를 독립 검증한 시각은 아니다.",
+    "날짜 변경·1970년·시간대 없는 값·dateModified는 공개 시각으로 사용하지 않는다. 원 동결 자료를 소급 변경하지 않는다."
+  ]
+}
