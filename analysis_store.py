@@ -9,6 +9,7 @@ import sqlite3
 import time
 
 CURRENT_EVENT_SECONDS = 26*3600
+FRESH_EVENT_SECONDS = 3600
 
 
 def epoch(value):
@@ -81,16 +82,21 @@ class Store:
 
     def claim(self):
         as_of=time.time()
-        age_params=(as_of-CURRENT_EVENT_SECONDS,as_of)
         newest_order='CASE WHEN published_epoch>0 AND published_epoch<=? THEN published_epoch ELSE 0 END DESC,id DESC'
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute("UPDATE analysis_jobs SET status='pending' WHERE namespace=? AND status='processing' AND available_at<=?", (self.namespace,time.time()))
-            current=db.execute('''SELECT 1 FROM analysis_jobs WHERE namespace=? AND status IN ('pending','error')
-                AND available_at<=? AND published_epoch>0 AND published_epoch BETWEEN ? AND ? LIMIT 1''',
-                (self.namespace,as_of,*age_params)).fetchone()
-            age_filter=' AND published_epoch>0 AND published_epoch BETWEEN ? AND ?' if current else ''
-            ready_params=(self.namespace,as_of,*age_params) if current else (self.namespace,as_of)
+            age_params=None
+            for window in (FRESH_EVENT_SECONDS,CURRENT_EVENT_SECONDS):
+                bounds=(as_of-window,as_of)
+                ready=db.execute('''SELECT 1 FROM analysis_jobs WHERE namespace=? AND status IN ('pending','error')
+                    AND available_at<=? AND published_epoch>0 AND published_epoch BETWEEN ? AND ? LIMIT 1''',
+                    (self.namespace,as_of,*bounds)).fetchone()
+                if ready:
+                    age_params=bounds
+                    break
+            age_filter=' AND published_epoch>0 AND published_epoch BETWEEN ? AND ?' if age_params else ''
+            ready_params=(self.namespace,as_of,*age_params) if age_params else (self.namespace,as_of)
             row = db.execute("SELECT value FROM analysis_cursors WHERE namespace=? AND name='dispatch'", (self.namespace,)).fetchone()
             dispatch = row[0] if row else 0
             reviewed = db.execute("SELECT value FROM analysis_cursors WHERE namespace=? AND name='review_dispatch'",(self.namespace,)).fetchone()
@@ -265,16 +271,20 @@ class Store:
                 AND published_epoch>0 AND published_epoch<=? AND enqueued_at BETWEEN published_epoch AND published_epoch+3600''',
                 (self.namespace,as_of)).fetchone()
             priority=dict((row[0],row[1:]) for row in db.execute('''SELECT
-                CASE WHEN published_epoch>0 AND published_epoch BETWEEN ? AND ? THEN 1 ELSE 0 END AS is_current,
+                CASE WHEN published_epoch>0 AND published_epoch BETWEEN ? AND ? THEN 2
+                     WHEN published_epoch>0 AND published_epoch BETWEEN ? AND ? THEN 1 ELSE 0 END AS age_band,
                 count(*),sum(CASE WHEN available_at<=? THEN 1 ELSE 0 END),min(published_epoch)
-                FROM analysis_jobs WHERE namespace=? AND status IN ('pending','processing','error') GROUP BY is_current''',
-                (as_of-CURRENT_EVENT_SECONDS,as_of,as_of,self.namespace)))
-        current=priority.get(1,(0,0,None));other=priority.get(0,(0,0,None))
+                FROM analysis_jobs WHERE namespace=? AND status IN ('pending','processing','error') GROUP BY age_band''',
+                (as_of-FRESH_EVENT_SECONDS,as_of,as_of-CURRENT_EVENT_SECONDS,as_of,as_of,self.namespace)))
+        fresh=priority.get(2,(0,0,None));warm=priority.get(1,(0,0,None));other=priority.get(0,(0,0,None))
+        current_oldest=min((v for v in (fresh[2],warm[2]) if v is not None),default=None)
+        current=(fresh[0]+warm[0],fresh[1]+warm[1],current_oldest)
         delays = sorted(row[0] for row in elapsed)
         return {'pending':counts.get('pending',0),'processing':counts.get('processing',0),'retrying':counts.get('error',0),
                 'done':counts.get('done',0),'event_count':events,'oldest_wait_seconds':round(max(0,as_of-oldest)) if oldest else 0,
                 'recent_p95_seconds':round(delays[(len(delays)*95+99)//100-1]) if delays else None,
-                'priority_window':{'window_seconds':CURRENT_EVENT_SECONDS,'current_unfinished':current[0],
+                'priority_window':{'window_seconds':CURRENT_EVENT_SECONDS,'fresh_window_seconds':FRESH_EVENT_SECONDS,
+                    'fresh_unfinished':fresh[0],'fresh_ready':fresh[1],'current_unfinished':current[0],
                     'current_ready':current[1],'other_unfinished':other[0],
                     'oldest_current_age_seconds':round(as_of-current[2]) if current[2] is not None else None},
                 'live_analysis':{**timing_summary(row[0] for row in live),'pending':pending[0],

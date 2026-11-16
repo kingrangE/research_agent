@@ -72,15 +72,17 @@ class AnalysisStoreTest(unittest.TestCase):
                 db.execute("UPDATE analysis_jobs SET status='error',available_at=? WHERE article_id IN ('1','3')",(t+100,))
                 db.execute("UPDATE analysis_jobs SET status='processing',available_at=? WHERE article_id='5'",(t+300,))
                 db.execute("UPDATE analysis_jobs SET status='superseded' WHERE article_id='6'")
-            window=self.store.summary()['priority_window']
-        self.assertEqual(window,{'window_seconds':CURRENT_EVENT_SECONDS,'current_unfinished':3,'current_ready':1,'other_unfinished':3,'oldest_current_age_seconds':CURRENT_EVENT_SECONDS})
+            summary=self.store.summary()
+            self.assertEqual(summary['oldest_wait_seconds'],0)
+            window=summary['priority_window']
+        self.assertEqual(window,{'window_seconds':CURRENT_EVENT_SECONDS,'fresh_window_seconds':3600,'fresh_unfinished':2,'fresh_ready':1,'current_unfinished':3,'current_ready':1,'other_unfinished':3,'oldest_current_age_seconds':CURRENT_EVENT_SECONDS})
         with patch('analysis_store.time.time',return_value=t+1):
             window=self.store.summary()['priority_window']
             self.assertEqual((window['current_unfinished'],window['current_ready'],window['other_unfinished'],window['oldest_current_age_seconds']),(3,2,3,2))
         with patch('analysis_store.time.time',return_value=t+301):
             self.assertEqual(self.store.summary()['priority_window']['current_ready'],3)
         self.assertEqual(Store(self.path,'other-model').summary()['priority_window'],
-                         {'window_seconds':CURRENT_EVENT_SECONDS,'current_unfinished':0,'current_ready':0,'other_unfinished':0,'oldest_current_age_seconds':None})
+                         {'window_seconds':CURRENT_EVENT_SECONDS,'fresh_window_seconds':3600,'fresh_unfinished':0,'fresh_ready':0,'current_unfinished':0,'current_ready':0,'other_unfinished':0,'oldest_current_age_seconds':None})
 
     def test_policy_review_is_idempotent_preserves_history_and_fair_dispatch(self):
         a=self.article(1)
@@ -228,6 +230,44 @@ class AnalysisStoreTest(unittest.TestCase):
         self.store.enqueue([{'article':a} for a in articles])
         self.assertEqual([self.store.claim()['article_id'] for _ in range(3)],['1','2','3'])
 
+    def test_fresh_work_preempts_older_current_work_even_on_the_oldest_turn(self):
+        from datetime import datetime, timezone
+        as_of=200000
+        with patch('analysis_store.time.time',return_value=as_of):
+            dates=[as_of-4*3600,as_of-600,as_of-60,as_of-CURRENT_EVENT_SECONDS-1]
+            self.store.enqueue([{'article':self.article(i,published_at=datetime.fromtimestamp(t,timezone.utc).isoformat())} for i,t in enumerate(dates)])
+            selected=[]
+            for _ in dates:
+                job=self.store.claim();selected.append(job['article_id']);self.finish(job)
+            self.assertEqual(selected,['1','2','0','3'])
+            self.assertEqual(self.store.summary()['done'],4)
+
+    def test_fresh_priority_does_not_bypass_retry_or_erase_older_jobs(self):
+        from datetime import datetime, timezone
+        as_of=200000
+        with patch('analysis_store.time.time',return_value=as_of):
+            for i,age in ((0,4000),(1,3600),(2,10)):
+                self.store.enqueue([{'article':self.article(i,published_at=datetime.fromtimestamp(as_of-age,timezone.utc).isoformat())}])
+            with self.store.db() as db:db.execute("UPDATE analysis_jobs SET status='error',available_at=? WHERE article_id='2'",(as_of+60,))
+            self.assertEqual(self.store.claim()['article_id'],'1')
+            self.assertEqual(self.store.claim()['article_id'],'0')
+            self.assertIsNone(self.store.claim())
+            with self.store.db() as db:self.assertEqual(db.execute('SELECT count(*) FROM analysis_jobs').fetchone()[0],3)
+        with patch('analysis_store.time.time',return_value=as_of+60):
+            self.assertEqual(self.store.claim()['article_id'],'2')
+
+    def test_older_current_review_does_not_take_the_fresh_work_reservation(self):
+        from datetime import datetime, timezone
+        as_of=200000
+        with patch('analysis_store.time.time',return_value=as_of):
+            for i,age in ((0,4000),(1,10)):
+                self.store.enqueue([{'article':self.article(i,published_at=datetime.fromtimestamp(as_of-age,timezone.utc).isoformat())}])
+            with self.store.db() as db:
+                db.execute("UPDATE analysis_jobs SET job_key='screen-review:'||id WHERE article_id='0'")
+                db.execute("INSERT OR REPLACE INTO analysis_cursors VALUES('test-model-v1','dispatch',3)")
+            self.assertEqual(self.store.claim()['article_id'],'1')
+            self.assertEqual(self.store.claim()['article_id'],'0')
+
     def test_current_age_work_precedes_backfill_but_keeps_all_records_and_retry_deadlines(self):
         from datetime import datetime, timezone
         as_of=200000
@@ -237,7 +277,7 @@ class AnalysisStoreTest(unittest.TestCase):
             self.store.enqueue([{'article':self.article(i,published_at=stamp(t))} for i,t in enumerate(dates)])
             with self.store.db() as db:
                 db.execute("UPDATE analysis_jobs SET status='error',available_at=? WHERE article_id='3'",(as_of+100,))
-            self.assertEqual([self.store.claim()['article_id'] for _ in range(4)],['1','2','0','4'])
+            self.assertEqual([self.store.claim()['article_id'] for _ in range(4)],['2','1','0','4'])
             self.assertIsNone(self.store.claim())
             with self.store.db() as db:
                 self.assertEqual(db.execute('SELECT count(*) FROM analysis_jobs').fetchone()[0],5)
