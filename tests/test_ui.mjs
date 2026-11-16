@@ -693,3 +693,15 @@ test('fresh dispatch scope is explicit and older responses never invent a fresh 
   assert.ok(!html.includes('발행 1시간 이내 미완료 0건'));
   assert.ok(html.includes('현재 대기가 계속되면 과거 분석은 오래 미뤄질 수 있습니다'));
 });
+
+
+test('short pinned versions are visible as needing new input rather than completed or rejected',()=>{
+  const run=ui();
+  run(`data={articles:[],sources:[],intelligence:{queue:{pending:0,processing:0,retrying:0,done:0,event_count:0,oldest_wait_seconds:0,insufficient_body:2}}};render()`);
+  let html=run(`$('#source-view').innerHTML`);
+  assert.ok(html.includes('고정된 본문이 인용 최소 길이보다 짧은 2개 버전'));
+  assert.ok(html.includes('분석 완료나 추천 제외 판정이 아닙니다'));
+  assert.ok(html.includes('새 본문 버전이 수집되면 별도 작업으로 분석합니다'));
+  run(`delete data.intelligence.queue.insufficient_body;render()`);
+  assert.ok(!run(`$('#source-view').innerHTML`).includes('본문 보강 필요'));
+});

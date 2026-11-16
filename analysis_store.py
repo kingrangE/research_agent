@@ -8,6 +8,8 @@ import re
 import sqlite3
 import time
 
+import archive
+
 CURRENT_EVENT_SECONDS = 26*3600
 FRESH_EVENT_SECONDS = 3600
 
@@ -86,6 +88,8 @@ class Store:
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute("UPDATE analysis_jobs SET status='pending' WHERE namespace=? AND status='processing' AND available_at<=?", (self.namespace,time.time()))
+            db.execute("UPDATE analysis_jobs SET status='insufficient_body' WHERE namespace=? AND status='error' AND body IS NOT NULL AND length(body)<?",
+                       (self.namespace,archive.MIN_BODY_CHARS))
             age_params=None
             for window in (FRESH_EVENT_SECONDS,CURRENT_EVENT_SECONDS):
                 bounds=(as_of-window,as_of)
@@ -132,9 +136,10 @@ class Store:
 
     def retry(self, job, error):
         delay = min(3600, 300 * 2 ** min(job['attempts']-1,4))
+        status='insufficient_body' if isinstance(job['body'],str) and len(job['body'])<archive.MIN_BODY_CHARS else 'error'
         with self.db() as db:
-            db.execute("UPDATE analysis_jobs SET status='error',available_at=?,last_error=? WHERE id=? AND namespace=? AND status='processing' AND attempts=?",
-                       (time.time()+delay,str(error)[:300],job['id'],self.namespace,job['attempts']))
+            db.execute("UPDATE analysis_jobs SET status=?,available_at=?,last_error=? WHERE id=? AND namespace=? AND status='processing' AND attempts=?",
+                       (status,time.time()+delay,str(error)[:300],job['id'],self.namespace,job['attempts']))
 
     def _latest(self, articles):
         if not articles:
@@ -280,7 +285,7 @@ class Store:
         current_oldest=min((v for v in (fresh[2],warm[2]) if v is not None),default=None)
         current=(fresh[0]+warm[0],fresh[1]+warm[1],current_oldest)
         delays = sorted(row[0] for row in elapsed)
-        return {'pending':counts.get('pending',0),'processing':counts.get('processing',0),'retrying':counts.get('error',0),
+        return {'insufficient_body':counts.get('insufficient_body',0),'pending':counts.get('pending',0),'processing':counts.get('processing',0),'retrying':counts.get('error',0),
                 'done':counts.get('done',0),'event_count':events,'oldest_wait_seconds':round(max(0,as_of-oldest)) if oldest else 0,
                 'recent_p95_seconds':round(delays[(len(delays)*95+99)//100-1]) if delays else None,
                 'priority_window':{'window_seconds':CURRENT_EVENT_SECONDS,'fresh_window_seconds':FRESH_EVENT_SECONDS,

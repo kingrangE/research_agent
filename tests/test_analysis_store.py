@@ -389,6 +389,30 @@ class AnalysisStoreTest(unittest.TestCase):
         with patch('analysis_store.time.time',return_value=1902):
             self.assertEqual(other.claim()['attempts'],3)
 
+    def test_fixed_short_body_waits_for_new_input_without_retrying_or_losing_versions(self):
+        a=self.article(1)
+        self.store.enqueue([{'article':a,'body':'속보','body_version':'short'}])
+        job=self.store.claim();self.store.retry(job,'인용 가능한 본문 부족')
+        with patch('analysis_store.time.time',return_value=2000000000):
+            self.assertIsNone(self.store.claim())
+        self.assertEqual(self.store.summary()['insufficient_body'],1)
+        self.assertEqual(self.store.summary()['done'],0)
+        with self.store.db() as db:
+            db.execute("UPDATE analysis_jobs SET status='error' WHERE id=?",(job['id'],))
+        reopened=Store(self.path,'test-model-v1')
+        self.assertIsNone(reopened.claim())
+        self.assertEqual(reopened.summary()['insufficient_body'],1)
+        self.assertEqual(self.store.readings([a])[0],[])
+        self.store.enqueue([{'article':a,'body':'속보','body_version':'short'}])
+        self.assertIsNone(self.store.claim())
+        self.store.enqueue([{'article':a,'body':'보강된 기사 본문입니다.','body_version':'full'}])
+        newer=self.store.claim();self.assertEqual(newer['body_version'],'full');self.finish(newer)
+        self.assertEqual(len(self.store.readings([a])[0]),1)
+        with self.store.db() as db:
+            old=db.execute('SELECT body,status,attempts FROM analysis_jobs WHERE id=?',(job['id'],)).fetchone()
+            self.assertEqual(tuple(old),('속보','insufficient_body',1))
+            self.assertEqual(db.execute('SELECT count(*) FROM analysis_jobs').fetchone()[0],2)
+
     def test_body_ready_supersedes_unprocessed_metadata_without_deleting_record(self):
         a=self.article(1)
         self.store.enqueue([{'article':a}])
