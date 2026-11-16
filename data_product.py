@@ -1,6 +1,7 @@
 """Source-bound article evidence; no model calls or event judgements."""
 
 import archive
+import event_facts
 
 RULE_VERSION = 'article-evidence-v1'
 
@@ -23,4 +24,4 @@ def attach(articles):
             **{k:record.get(k) if matches else None for k in ('article_version','first_seen_at','article_version_seen_at',
                                                           'body_version','body_observed_at','body_excerpt')},
         }
-    return articles
+    return event_facts.attach(articles)

@@ -58,6 +58,16 @@ test('supply evidence exposes conditions and escapes parties without inventing b
   assert.ok(!html.includes('href="javascript:'));
 });
 
+test('rule event facts stay visibly unreviewed and preserve literal source evidence', () => {
+  const run=ui();
+  const html=run(`eventFactsHTML({axis:'infrastructure',event_type:'facility_investment',stage:'mou',review_status:'pending_review',source_quality:'body_title_binding_unverified',actors:[{name:'<company>'}],amounts:[{raw:'1.5조원'}],evidence:[{quote:'<source>'}],source_history:[],review_history:[]})`);
+  assert.ok(html.includes('규칙 추출 · 검수 전'));
+  assert.ok(html.includes('MOU'));
+  assert.ok(html.includes('1.5조원'));
+  assert.ok(html.includes('&lt;source&gt;'));
+  assert.ok(html.includes('현재 제목의 일치 미검증'));
+});
+
 test('stock card escapes names and reasons and distinguishes inferred candidates', () => {
   const run = ui();
   const html = run(`stocksHTML({related_stocks:[{code:'003470',name:'<img src=x>',relation:'business',reason:'<script>alert(1)</script>'}]},true)`);

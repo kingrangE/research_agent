@@ -26,6 +26,7 @@ import data_product
 import market_history
 import business_ontology
 import supply
+import event_facts
 from analysis_store import epoch, CURRENT_EVENT_SECONDS
 
 ROOT = Path(__file__).resolve().parent
@@ -283,6 +284,16 @@ def demo_snapshot():
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path == '/api/events':
+            params=parse_qs(urlsplit(self.path).query)
+            try:
+                ids=params.get('article_id')
+                result=event_facts.snapshot(ids,params.get('axis',[None])[0],int(params.get('limit',['100'])[0]))
+            except (ValueError,TypeError):
+                self.respond(b'{"error":"Invalid event query"}','application/json',400)
+                return
+            self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == '/api/supply':
             params=parse_qs(urlsplit(self.path).query)
             try:
