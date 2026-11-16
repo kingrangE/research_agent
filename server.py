@@ -428,6 +428,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             try:
                 quotes = stocks.get_quotes(codes)
+                quotes = {code:{**quote,'recent_five_minutes':price_tracking.recent(code)} for code,quote in quotes.items()}
             except ValueError:
                 self.respond(b'{"error":"Unknown stock codes"}', "application/json", 400)
                 return

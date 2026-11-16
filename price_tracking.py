@@ -10,6 +10,9 @@ import time
 
 import archive
 import stocks
+import business_ontology
+import market_history
+from zoneinfo import ZoneInfo
 from news_ingestion import lease
 
 PATH=Path(__file__).resolve().parent/'.data'/'price_tracking.sqlite3'
@@ -121,6 +124,42 @@ def snapshot(article_id,now=None):
     return result
 
 
+def recent(code,now=None):
+    """Compare observed quotes at fixed UTC minute boundaries, never interpolate gaps."""
+    clock=moment(now or now_text());end=int(clock.timestamp()//60)*60;start=end-300
+    result={'status':'pending','change_percent':None,'start_at':datetime.fromtimestamp(start,timezone.utc).isoformat(),
+            'end_at':datetime.fromtimestamp(end,timezone.utc).isoformat(),'source':'Npay 증권','tolerance_seconds':30}
+    market='US' if code[0].isalpha() else 'KR'
+    day=clock.astimezone(ZoneInfo(market_history.ZONES[market])).date().isoformat()
+    with market_history.db() as connection:
+        calendar=market_history.calendar_snapshot(connection,market,day,day).get(day)
+    session=((calendar or {}).get('integrated') or {}).get('regularMarket') if market=='KR' else (calendar or {}).get('regularMarket')
+    if not session or (calendar or {}).get('calendar_unverified'):
+        return {**result,'status':'session_unverified'}
+    if not moment(session['startTime']).timestamp()<=start<end<min(moment(session['endTime']).timestamp(),clock.timestamp()+1):
+        return {**result,'status':'outside_session'}
+    with db() as connection:
+        poll=connection.execute('SELECT * FROM polls WHERE code=?',(code,)).fetchone()
+        if not poll or poll['status']!='ok' or not 0<=clock.timestamp()-poll['attempted']<=90:
+            return {**result,'status':'stale'}
+        rows=connection.execute('SELECT * FROM (SELECT *,row_number() OVER(PARTITION BY trade_time ORDER BY id DESC) n FROM samples WHERE code=? AND observed<=? AND trade_time BETWEEN ? AND ?) WHERE n=1 ORDER BY trade_time',
+                                (code,clock.timestamp(),start-30,end)).fetchall()
+    points=[{'at':r['trade_time'],**json.loads(r['payload'])} for r in rows]
+    first=[p for p in points if start-30<=p['at']<=start]
+    last=[p for p in points if end-30<=p['at']<=end]
+    if not first or not last:return result
+    first,last=first[-1],last[-1]
+    selected=[p for p in points if first['at']<=p['at']<=last['at']]
+    if (first['at']<moment(session['startTime']).timestamp() or
+            any(p.get('market_status')!='OPEN' for p in selected) or
+            any(b['at']-a['at']>90 for a,b in zip(selected,selected[1:]))):
+        return {**result,'status':'observation_gap'}
+    change=100*(last['price']/first['price']-1)
+    if abs(change)>40:return {**result,'status':'large_move_unverified'}
+    return {**result,'status':'ok','change_percent':change,
+            'actual_start_at':first['traded_at'],'actual_end_at':last['traded_at'],'observations':len(selected)}
+
+
 def cycle():
     clock=now_text();epoch=moment(clock).timestamp()
     articles=archive.browse(limit=60)['articles']
@@ -132,6 +171,10 @@ def cycle():
         if not 0<=epoch-reference<=ACTIVE_SECONDS:continue
         related=stocks.related_stocks(article['title'],article.get('published_at'))
         register(article,related,first_seen,clock)
+    # Keep reviewed theme members observable even without a new article mentioning them.
+    members=business_ontology.snapshot()['memberships']
+    securities={m['code']:m['security'] for m in members if m['kind']=='business'}
+    register({'id':'market-watch','published_at':clock},list(securities.values()),now=clock)
     with db() as connection:
         # Round-robin by last attempt keeps a popular ticker from starving other active stocks.
         codes=[r['code'] for r in connection.execute("""

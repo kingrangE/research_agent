@@ -130,3 +130,26 @@ class PriceTrackingTest(unittest.TestCase):
         self.assertEqual(row['latest']['market_status'],'CLOSE')
         self.assertEqual(len(row['points']),1)
         self.assertIsNone(row['change_percent'])
+
+    def test_fixed_five_minutes_require_session_endpoints_and_continuous_observations(self):
+        session={'2026-11-16':{'regularMarket':{'startTime':'2026-11-16T14:30:00Z','endTime':'2026-11-16T21:00:00Z'}}}
+        import market_history
+        with patch.object(market_history,'PATH',Path(self.temp.name)/'market.sqlite3'),patch.object(market_history,'calendar_snapshot',return_value=session):
+            self.assertIsNone(tracking.recent('NVDA.O',self.clock)['change_percent'])
+            for minute in range(40,46):
+                at=f'2026-11-16T14:{minute}:00Z'
+                tracking.record('NVDA.O',self.quote(100+minute-40,at),now=self.clock)
+            r=tracking.recent('NVDA.O',self.clock)
+            self.assertEqual(r['status'],'ok')
+            self.assertAlmostEqual(r['change_percent'],5)
+            self.assertEqual(r['observations'],6)
+            self.assertEqual(tracking.recent('NVDA.O','2026-11-16T14:48:00Z')['status'],'stale')
+            self.assertEqual(tracking.recent('NVDA.O','2026-11-16T14:31:00Z')['status'],'outside_session')
+            with tracking.db() as connection:
+                connection.execute('DELETE FROM samples WHERE trade_time=?',(tracking.moment('2026-11-16T14:42:00Z').timestamp(),))
+            self.assertEqual(tracking.recent('NVDA.O',self.clock)['status'],'observation_gap')
+
+    def test_recent_does_not_use_previous_session_or_unknown_calendar(self):
+        import market_history
+        with patch.object(market_history,'PATH',Path(self.temp.name)/'market.sqlite3'),patch.object(market_history,'calendar_snapshot',return_value={}):
+            self.assertEqual(tracking.recent('NVDA.O',self.clock)['status'],'session_unverified')
