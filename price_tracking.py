@@ -160,6 +160,24 @@ def recent(code,now=None):
             'actual_start_at':first['traded_at'],'actual_end_at':last['traded_at'],'observations':len(selected)}
 
 
+def timeline(code,now=None):
+    clock=moment(now or now_text())
+    market='US' if code[0].isalpha() else 'KR'
+    day=clock.astimezone(ZoneInfo(market_history.ZONES[market])).date().isoformat()
+    with market_history.db() as connection:
+        calendar=market_history.calendar_snapshot(connection,market,day,day).get(day)
+    session=((calendar or {}).get('integrated') or {}).get('regularMarket') if market=='KR' else (calendar or {}).get('regularMarket')
+    result={'code':code,'points':[],'as_of':clock.isoformat(),'status':'session_unverified','source':'Npay 증권'}
+    if not session or (calendar or {}).get('calendar_unverified'):return result
+    start=moment(session['startTime']).timestamp();end=min(clock.timestamp(),moment(session['endTime']).timestamp())
+    with db() as connection:
+        rows=connection.execute('SELECT * FROM (SELECT *,row_number() OVER(PARTITION BY trade_time ORDER BY id DESC) n FROM samples WHERE code=? AND observed<=? AND trade_time BETWEEN ? AND ?) WHERE n=1 ORDER BY trade_time DESC LIMIT 500',
+                                (code,clock.timestamp(),start,end)).fetchall()
+    result['points']=[{'at':r['trade_time'],'price':json.loads(r['payload'])['price']} for r in reversed(rows)]
+    result['status']='observed' if result['points'] else 'pending'
+    return result
+
+
 def cycle():
     clock=now_text();epoch=moment(clock).timestamp()
     articles=archive.browse(limit=60)['articles']
@@ -183,7 +201,7 @@ def cycle():
             FROM tracked_articles a,json_each(a.stocks) s
             LEFT JOIN polls p ON p.code=json_extract(s.value,'$.code')
             WHERE a.last_seen>=? ORDER BY attempted,code LIMIT 20""",(epoch-ACTIVE_SECONDS,))]
-    with stocks.LOCK:codes=[c for c in codes if c in stocks.CATALOGUE]
+    with stocks.LOCK:codes=[c for c in codes if c in stocks.CATALOGUE or c in stocks.MARKET_CODES]
     if codes:
         quotes=stocks.get_quotes(codes)
         for code in codes:record(code,quotes.get(code,{}))

@@ -862,7 +862,7 @@ test('older calendar results are visible as requiring revalidation rather than c
 
 test('consumer home hides service metrics and keeps ordering honest',()=>{
   const run=ui();
-  run(`data={product_mode:'data',articles:[],sources:[]};render()`);
+  run(`marketPreview=true;data={product_mode:'data',articles:[],sources:[]};render()`);
   assert.equal(run(`$('#stats').hidden`),true);
   assert.equal(run(`$('#page-title').textContent`),'지금 시장');
   assert.equal(run(`$('.reading-section').hidden`),true);
@@ -949,7 +949,7 @@ test('live movement response cannot overwrite a different article',async()=>{
 
 test('market home names the subject, shows whole-group average and keeps amounts in detail',()=>{
   const run=ui();
-  const html=run(`view='briefing';mode='live';data={product_mode:'data'};marketData={tracked:4,as_of:'2026-11-16T15:00:00Z',candidates:[{id:'power',name:'전력 <기기>',kind:'theme',mean_percent:1.2,observed:3,tracked:4,up:2,down:1,reason:'같은 시간 ETF +0.1%',stocks:[{code:'A',name:'A사',recent:{change_percent:2}}]}]};marketOrder=['power'];marketSelection='power';renderMarket();$('#market-view').innerHTML`);
+  const html=run(`marketPreview=true;view='briefing';mode='live';data={product_mode:'data'};marketData={tracked:4,as_of:'2026-11-16T15:00:00Z',candidates:[{id:'power',name:'전력 <기기>',kind:'theme',mean_percent:1.2,observed:3,tracked:4,up:2,down:1,reason:'같은 시간 ETF +0.1%',stocks:[{code:'A',name:'A사',recent:{change_percent:2}}]}]};marketOrder=['power'];marketSelection='power';renderMarket();$('#market-view').innerHTML`);
   assert.ok(html.includes('평균 +1.20%'));
   assert.ok(html.includes('관측 3/4종목'));
   assert.ok(html.includes('전력 &lt;기기&gt;'));
@@ -965,4 +965,14 @@ test('market news keeps direct and inferred connections distinct and preserves c
   assert.ok(html.includes('계약 &lt;발표&gt;'));
   assert.ok(html.indexOf('계약 정정')<html.indexOf('계약 &lt;발표&gt;'));
   assert.ok(html.includes('전체 뉴스에서 검색'));
+});
+
+test('stock timeline keeps observation gaps and rejects outside-range article markers',()=>{
+  const run=ui();
+  const html=run(`data={articles:[{id:'old',title:'과거 기사',published_at:'2020-01-01T00:00:00Z',related_stocks:[{code:'A'}]},{id:'current',title:'<새 기사>',published_at:'2026-11-16T15:01:00Z',timestamp_basis:'portal_display',related_stocks:[{code:'A'}]}]};timelineHTML({points:[{at:1794841200,price:100},{at:1794841260,price:101},{at:1794841500,price:102}]},'A')`);
+  assert.ok(html.includes('포털 표시'));
+  assert.ok(html.includes('&lt;새 기사&gt;'));
+  assert.ok(html.includes('차트 구간 밖 또는 시각 미확인'));
+  const path=html.match(/<path d="([^"]+)"/)[1];
+  assert.equal((path.match(/M/g)||[]).length,2);
 });

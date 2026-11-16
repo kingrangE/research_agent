@@ -66,7 +66,7 @@ function paintQuotes() {
 }
 async function loadQuotes() {
   if (mode !== 'live' || quoteInFlight || document.hidden) return;
-  const container = $('#stock-dialog').open ? $('#stock-detail') : $('#detail-dialog').open ? $('#detail') : view==='briefing' && mode==='live' && data?.product_mode==='data' ? $('#market-view') : $('#articles');
+  const container = $('#stock-dialog').open ? $('#stock-detail') : $('#detail-dialog').open ? $('#detail') : marketPreview && view==='briefing' && mode==='live' && data?.product_mode==='data' ? $('#market-view') : $('#articles');
   const codes = [...new Set([...container.querySelectorAll('[data-stock-code]')].filter(el=>{const r=el.getBoundingClientRect(); return r.width>0 && r.height>0 && r.bottom>0 && r.top<window.innerHeight;}).map(el=>el.dataset.stockCode))]
     .filter(code=>quoteAge(quotes[code])>=10000).slice(0,20);
   if (!codes.length) return;
@@ -326,6 +326,7 @@ function articleHTML(a, index) {
   return `<article class="article-card ${ranked ? 'ranked' : ''}"><div class="article-body"><div class="article-topline"><div class="article-meta">${ranked ? `<span class="article-rank" aria-label="읽기 순위 ${index+1}">${index+1}</span>` : ''}<span>${escape(a.source)}</span><span class="meta-dot">·</span><time title="${escape(dateTime(a.published_at))}">${escape(ago(a.published_at))}</time>${a.kind==='report' ? '<span class="kind-badge">리포트</span>' : ''}${ranked && e?.certainty ? `<span class="certainty-badge">${escape(e.certainty)} · 검수 전</span>` : ''}</div><button class="bookmark-button" data-save="${escape(a.id)}" aria-label="${isSaved(a.id) ? '저장 해제' : '자료 저장'}: ${escape(a.title)}" aria-pressed="${isSaved(a.id)}">${icon('bookmark')}</button></div><h3><button class="article-title" data-detail="${escape(a.id)}" aria-haspopup="dialog">${escape(a.title)}</button></h3>${(a.related_stocks || []).length ? stocksHTML(a) : '<span class="stock-empty">관련 종목 확인 전</span>'}${ranked ? `<details class="reading-reason"><summary>읽을 이유</summary><dl class="decision-notes"><div><dt>${proof ? (e.article_id && e.article_id!==a.id ? '대표 원문 근거' : '원문 근거') : '모델 해석'}</dt><dd>${proof ? `<q>${escape(proof)}</q>` : escape(ranked.reason)}</dd></div><div><dt>다음 확인 · 모델 제안</dt><dd>${escape(ranked.watch_for || assessment?.watch_for || '원문의 새 사실을 확인하세요.')}</dd></div></dl></details>` : ''}<div class="article-footer"><div class="article-tags">${a.themes.slice(0,2).map(t=>`<button class="tag" data-theme="${escape(t.id)}">${escape(t.name)}</button>`).join('')}${e?.articles.length > 1 ? `<span class="event-count">관련 기사 ${e.articles.length}건</span>` : ''}</div><button class="read-button" data-detail="${escape(a.id)}">뉴스 보기 <span aria-hidden="true">→</span></button></div></div></article>`;
 }
 function toggleBriefing() { briefingExpanded=!briefingExpanded; renderList(); document.querySelector('[data-toggle-briefing]')?.focus({preventScroll:true}); }
+let marketPreview=typeof window!=='undefined' && new URLSearchParams(window.location?.search || '').get('market-preview')==='1';
 let marketData=null, marketError='', marketBusy=false, marketRegion='KR', marketSelection='', marketOrder=[];
 const percentText=value=>Number.isFinite(value) ? `${value>0?'+':''}${value.toFixed(2)}%` : '—';
 function marketRows() {
@@ -347,7 +348,7 @@ function marketNewsHTML(selected) {
   }).join('') || '<p>최근 조회한 기사에서 연결된 새 기사를 찾지 못했어요.</p>'}<button data-market-archive="${escape(selected.name)}">전체 뉴스에서 검색</button></section>`;
 }
 function renderMarket() {
-  const active=view==='briefing' && mode==='live' && data?.product_mode==='data';
+  const active=marketPreview && view==='briefing' && mode==='live' && data?.product_mode==='data';
   $('#market-view').hidden=!active;
   if(!active)return;
   $('.reading-section').hidden=true;$('.context-column').hidden=true;
@@ -608,13 +609,45 @@ function renderDetail(id) {
   loadQuotes();
   movementRequest++;movementLoading=false;loadPriceMovement(id);
 }
+let timelineCode='', timelineRequest=0, timelineBusy=false, timelineData=null, chartArticle='';
+function timelineHTML(result,code) {
+  const points=(result.points || []).filter(p=>Number.isFinite(p.at) && Number.isFinite(p.price) && p.price>0);
+  if(points.length<2)return '<p>장중 차트에 표시할 관측을 수집하고 있어요.</p>';
+  const first=points[0].at,last=points.at(-1).at;
+  if(last<=first)return '<p>다음 거래 시세를 기다리고 있어요.</p>';
+  const lo=Math.min(...points.map(p=>p.price)),hi=Math.max(...points.map(p=>p.price));
+  const x=at=>8+344*(at-first)/(last-first),y=price=>hi===lo ? 48 : 88-80*(price-lo)/(hi-lo);
+  const path=points.map((p,i)=>`${i && p.at-points[i-1].at<=90?'L':'M'}${x(p.at)},${y(p.price)}`).join(' ');
+  const articles=allArticles().filter(a=>a.related_stocks?.some(s=>s.code===code)).sort((a,b)=>(Date.parse(b.published_at)||0)-(Date.parse(a.published_at)||0)).slice(0,8);
+  const chosen=articles.find(a=>a.id===chartArticle);
+  const marker=a=>Date.parse(a.published_at)/1000;
+  const markers=articles.filter(a=>Number.isFinite(marker(a)) && marker(a)>=first && marker(a)<=last);
+  return `<h3>장중 가격과 뉴스</h3><svg class="movement-chart" viewBox="0 0 360 96" role="img" aria-label="실제 관측 가격과 기사 표시 시각"><path d="${path}" fill="none" stroke="currentColor" stroke-width="2"/>${markers.map(a=>`<line x1="${x(marker(a))}" x2="${x(marker(a))}" y1="0" y2="96" stroke="${a.id===chartArticle?'#1761c5':'#7b8592'}" stroke-dasharray="3 3"><title>${escape(a.title)} · ${a.timestamp_basis==='portal_display'?'포털 표시':'기사 시각'}</title></line>`).join('')}</svg><p class="panel-description">${escape(quoteTime(new Date(first*1000).toISOString()))} ~ ${escape(quoteTime(new Date(last*1000).toISOString()))} · 저장된 관측 최대 500개 · 빈 구간은 연결하지 않아요.</p>${articles.map(a=>`<button class="related-link" data-chart-news="${escape(a.id)}" aria-pressed="${a.id===chartArticle}">${escape(a.title)}<small>${escape(dateTime(a.published_at))} · ${a.timestamp_basis==='portal_display'?'포털 표시':'기사 시각'}${!markers.includes(a)?' · 차트 구간 밖 또는 시각 미확인':''}</small></button>`).join('') || '<p>연결된 최근 기사가 없어요.</p>'}${chosen && safeLink(chosen.url)?`<a href="${escape(safeLink(chosen.url))}" target="_blank" rel="noopener noreferrer">선택한 기사 원문 보기 ↗</a>`:''}`;
+}
+async function loadTimeline() {
+  if(mode!=='live' || timelineBusy || !$('#stock-dialog').open || !timelineCode)return;
+  const code=timelineCode,request=++timelineRequest;timelineBusy=true;
+  try {
+    const response=await fetch('/api/stock-timeline?code='+encodeURIComponent(code),{signal:AbortSignal.timeout(10000)});
+    if(!response.ok)throw new Error();
+    const result=await response.json();
+    if(request!==timelineRequest || code!==timelineCode || !$('#stock-dialog').open)return;
+    timelineData=result;const target=$('#stock-timeline');
+    const focused=document.activeElement?.dataset?.chartNews;
+    target.innerHTML=timelineHTML(result,code);
+    if(focused)[...target.querySelectorAll('[data-chart-news]')].find(b=>b.dataset.chartNews===focused)?.focus({preventScroll:true});
+  } catch {if(request===timelineRequest && $('#stock-dialog').open)$('#stock-timeline').textContent='차트를 갱신하지 못했어요. 다음 조회에서 다시 확인해요.';}
+  finally {timelineBusy=false;}
+}
 function openStock(articleId, code) {
   const article = articleId==='market-watch' ? {id:articleId,title:'장중 종목 비교',related_stocks:marketRows().flatMap(c=>c.stocks).map(s=>({...s,relation:'theme',reason:'추적 중인 테마 소속 · 기사 직접 영향 미판정'}))} : findArticle(articleId);
   const stock = article?.related_stocks?.find(s=>s.code === code);
   if (!stock) return;
   $('#stock-detail').innerHTML = `<div class="detail-top"><span>관련 주식 상세</span><button data-close-stock aria-label="주식 상세 닫기">×</button></div><div class="detail-content"><h2 id="stock-title">${escape(stock.name)}</h2><p class="detail-meta">${escape(article.title)}</p>${stocksHTML({...article,related_stocks:[stock]},true)}<button class="text-button" data-theme-statistics="${escape(stock.code)}">같은 테마 종목의 움직임 보기</button></div>`;
+  timelineCode=code;timelineRequest++;timelineData=null;chartArticle='';
+  $('#stock-detail').innerHTML+='<section id="stock-timeline" class="detail-content" aria-label="장중 차트">차트 관측 확인 중</section>';
   $('#stock-dialog').showModal();
-  loadQuotes();
+  loadQuotes();loadTimeline();
 }
 async function load() {
   const current = ++requestId;
@@ -624,7 +657,7 @@ async function load() {
     if (!response.ok) throw new Error('응답 오류');
     const next = await response.json();
     if (current !== requestId) return;
-    data = next; loadMarket(); loadFailed=false; lastLoadedAt=new Date().toISOString(); render(); paintQuotes(); loadQuotes(); if(view==='feed' && mode==='live') await loadArchive(); return true;
+    data = next; if(marketPreview)loadMarket(); loadFailed=false; lastLoadedAt=new Date().toISOString(); render(); paintQuotes(); loadQuotes(); if(view==='feed' && mode==='live') await loadArchive(); return true;
   } catch {
     if (current !== requestId) return;
     loadFailed=true;
@@ -655,6 +688,7 @@ function toggleMode() { document.querySelector('.app-menu')?.removeAttribute?.('
 document.addEventListener('click', event => {
   const button = event.target.closest('button'); if (!button) return;
   if(button.dataset.marketArchive){view='feed';query=button.dataset.marketArchive;$('#search').value=query;render();loadArchive(true);}
+  if(button.dataset.chartNews){chartArticle=button.dataset.chartNews;if(timelineData)$('#stock-timeline').innerHTML=timelineHTML(timelineData,timelineCode);}
   if(button.dataset.marketSelect){marketSelection=button.dataset.marketSelect;renderMarket();loadQuotes();}
   if(button.dataset.marketStock)openStock('market-watch',button.dataset.marketStock);
   if(button.dataset.marketRegion && marketRegion!==button.dataset.marketRegion){marketRegion=button.dataset.marketRegion;marketData=null;marketOrder=[];marketSelection='';renderMarket();loadMarket();}
@@ -692,6 +726,7 @@ $('#business-asof').addEventListener('change',loadBusiness);
 $('#sort').addEventListener('change',event=>{sort=event.target.value; briefingExpanded=false;render();});
 $('#detail-dialog').addEventListener('click',event=>{if (event.target === $('#detail-dialog')) { const rect=event.target.getBoundingClientRect(); if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom) {event.target.close();detailId=null;} }});
 $('#stock-dialog').addEventListener('click',event=>{if (event.target === $('#stock-dialog')) {const r=event.target.getBoundingClientRect(); if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom) event.target.close();}});
+$('#stock-dialog').addEventListener('close',()=>{timelineCode='';timelineRequest++;});
 $('#detail-dialog').addEventListener('close',()=>{detailId=null;historyRequest++;movementRequest++;movementLoading=false;});
 document.addEventListener('keydown',event=>{if(event.key === '/' && !['INPUT','TEXTAREA'].includes(document.activeElement.tagName) && !$('#detail-dialog').open && !$('#stock-dialog').open) {event.preventDefault(); $('#search').focus();}});
 $('#today').textContent=new Date().toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'short',timeZone:'Asia/Seoul'});
@@ -699,4 +734,4 @@ render(); load();
 setInterval(()=>{if(mode === 'live' && !document.hidden && !loading) load();},5000);
 let quoteScrollTimer;
 document.addEventListener('scroll',()=>{clearTimeout(quoteScrollTimer);quoteScrollTimer=setTimeout(loadQuotes,150);},true);
-setInterval(()=>{if(mode === 'live' && !document.hidden) {paintQuotes();loadQuotes();if($('#detail-dialog').open && !$('#stock-dialog').open) loadPriceMovement();}},5000);
+setInterval(()=>{if(mode === 'live' && !document.hidden) {paintQuotes();loadQuotes();loadTimeline();if($('#detail-dialog').open && !$('#stock-dialog').open) loadPriceMovement();}},5000);

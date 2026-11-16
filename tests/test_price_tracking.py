@@ -96,7 +96,7 @@ class PriceTrackingTest(unittest.TestCase):
     def test_background_cycle_polls_related_stocks_without_event_classification(self):
         self.register()
         with patch('price_tracking.archive.browse',return_value={'articles':[self.article]}),patch('price_tracking.archive.provenance',return_value={}),patch('price_tracking.stocks.related_stocks',return_value=[self.stock]),patch.dict('price_tracking.stocks.CATALOGUE',{'NVDA.O':self.stock}),patch('price_tracking.stocks.get_quotes',return_value={'NVDA.O':self.quote()}),patch('price_tracking.now_text',return_value=self.clock):
-            self.assertEqual(tracking.cycle(),1)
+            self.assertEqual(tracking.cycle(),3)
         self.assertEqual(tracking.snapshot('news',now=self.clock)['stocks'][0]['status'],'baseline_only')
 
     def test_http_registers_an_unclassified_archived_article_and_rejects_unknown_ids(self):
@@ -153,3 +153,14 @@ class PriceTrackingTest(unittest.TestCase):
         import market_history
         with patch.object(market_history,'PATH',Path(self.temp.name)/'market.sqlite3'),patch.object(market_history,'calendar_snapshot',return_value={}):
             self.assertEqual(tracking.recent('NVDA.O',self.clock)['status'],'session_unverified')
+
+    def test_timeline_deduplicates_revisions_and_does_not_include_other_days(self):
+        import market_history
+        session={'2026-11-16':{'regularMarket':{'startTime':'2026-11-16T14:30:00Z','endTime':'2026-11-16T21:00:00Z'}}}
+        with patch.object(market_history,'PATH',Path(self.temp.name)/'market.sqlite3'),patch.object(market_history,'calendar_snapshot',return_value=session):
+            tracking.record('NVDA.O',self.quote(),now=self.clock)
+            tracking.record('NVDA.O',self.quote(101),now=self.clock)
+            tracking.record('NVDA.O',self.quote(99,'2026-11-13T15:00:00Z'),now=self.clock)
+            result=tracking.timeline('NVDA.O',self.clock)
+            self.assertEqual(len(result['points']),1)
+            self.assertEqual(result['points'][0]['price'],101)

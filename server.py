@@ -311,6 +311,15 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
             return
+        if path == '/api/stock-timeline':
+            code=parse_qs(urlsplit(self.path).query).get('code',[''])[0]
+            with stocks.LOCK:
+                known=code in stocks.CATALOGUE
+            if not known:
+                self.respond(b'{"error":"Unknown stock"}','application/json',400)
+                return
+            self.respond(json.dumps(price_tracking.timeline(code),ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == '/api/market-watch':
             import market_watch
             try:

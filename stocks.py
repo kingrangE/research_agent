@@ -23,6 +23,7 @@ NAME_MATCHER = None
 NAME_CODES = {}
 CATALOGUE_STATUS = {"status": "loading", "count": 0, "updated_at": None}
 QUOTES = {}
+MARKET_CODES = frozenset({'069500','SPY'})
 LOCK = threading.Lock()
 QUOTE_LOCK = threading.Lock()
 QUOTE_TTL = 10
@@ -298,7 +299,7 @@ def finish_quotes():
 
 def get_quotes(codes):
     with LOCK:
-        if any(code not in CATALOGUE for code in codes):
+        if any(code not in CATALOGUE and code not in MARKET_CODES for code in codes):
             raise ValueError('상장 목록에 없는 종목코드')
     with QUOTE_LOCK:
         finish_quotes()
