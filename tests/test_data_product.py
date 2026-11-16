@@ -53,9 +53,10 @@ class DataProductTest(unittest.TestCase):
         with patch('server.threading.Thread') as thread, \
              patch('server.intelligence.collector', side_effect=AssertionError('model worker')):
             server.start_workers('data')
-            self.assertEqual(thread.call_count, 3)
+            self.assertEqual(thread.call_count, 4)
             targets = [call.kwargs['target'] for call in thread.call_args_list]
             self.assertNotIn(server.intelligence.collector, targets)
+            self.assertIn(server.price_tracking.collector, targets)
         archive.store([self.article])
         with patch('server.intelligence.snapshot', side_effect=AssertionError('model snapshot')), \
              patch('server.stocks.related_stocks', return_value=[]), \
@@ -65,7 +66,7 @@ class DataProductTest(unittest.TestCase):
             self.assertEqual(len(server.archive_snapshot({})['articles']), 1)
         with patch('server.threading.Thread') as thread:
             server.start_workers('model')
-            self.assertEqual(thread.call_count, 4)
+            self.assertEqual(thread.call_count, 5)
 
 
 if __name__ == '__main__':

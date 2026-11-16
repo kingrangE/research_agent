@@ -912,3 +912,35 @@ test('consumer excerpt rejects unsupported evidence versions',()=>{
  assert.ok(html.includes('지원하지 않는 근거 버전'));
  assert.ok(!html.includes('검증하지 못한 형식'));
 });
+
+test('live movement distinguishes first sample, measured zero and failed refresh',()=>{
+ const run=ui();
+ const make=extra=>({article_id:'a',reference_basis:'portal_display',reference_at:'2026-11-16T14:40:00Z',stocks:[{code:'NVDA.O',name:'엔비디아',status:'baseline_only',baseline:{traded_at:'2026-11-16T14:41:00Z'},latest:{traded_at:'2026-11-16T14:41:00Z'},points:[],change_percent:null,...extra}]});
+ let html=run(`priceMovementHTML(${JSON.stringify(make({}))})`);
+ assert.ok(html.includes('다음 시세부터'));
+ assert.ok(!html.includes('0.00%'));
+ html=run(`priceMovementHTML(${JSON.stringify(make({status:'tracking',change_percent:0,stale:true}))})`);
+ assert.ok(html.includes('0.00%'));
+ assert.ok(html.includes('갱신 지연'));
+ assert.ok(html.includes('추적 이후'));
+});
+
+test('movement chart uses real timestamp spacing and escapes names',()=>{
+ const run=ui();
+ const html=run(`priceMovementHTML({article_id:'a',reference_basis:'published',stocks:[{code:'A',name:'<script>',status:'tracking',change_percent:2,points:[{at:1,price:100},{at:2,price:101},{at:11,price:102}],baseline:{traded_at:'2026-11-16T00:00:00Z'},latest:{traded_at:'2026-11-16T00:01:00Z'}}]})`);
+ assert.ok(html.includes('4,60 39.2,32 356,4'));
+ assert.ok(html.includes('+2.00%'));
+ assert.ok(html.includes('&lt;script&gt;'));
+ assert.ok(!html.includes('<script>'));
+});
+
+test('live movement response cannot overwrite a different article',async()=>{
+ const run=ui({document:{querySelector:selector=>{if(!run.elements)run.elements={};return run.elements[selector] || (run.elements[selector]={querySelectorAll:()=>[],open:true});},querySelectorAll:()=>[],hidden:false},fetch:async()=>{
+   run(`detailId='other'`);
+   return {ok:true,json:async()=>({stocks:[]})};
+ }});
+ run(`detailId='a'`);
+ await run(`loadPriceMovement('a')`);
+ assert.equal(run(`$('#price-movement').innerHTML`),undefined);
+ assert.equal(run('movementLoading'),false);
+});

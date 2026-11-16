@@ -34,6 +34,7 @@ import event_reactions
 import comparable_events
 import data_worker
 import theme_statistics
+import price_tracking
 from analysis_store import epoch, CURRENT_EVENT_SECONDS
 
 ROOT = Path(__file__).resolve().parent
@@ -310,6 +311,21 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
             return
+        if path == '/api/price-movement':
+            article_id=parse_qs(urlsplit(self.path).query).get('article_id',[''])[0]
+            if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',article_id):
+                self.respond(b'{"error":"Invalid article"}','application/json',400)
+                return
+            articles=archive.browse(limit=1,article_ids=[article_id])['articles']
+            if not articles:
+                self.respond(b'{"error":"Article not found"}','application/json',404)
+                return
+            article=articles[0]
+            related=classify(article)['related_stocks']
+            provenance=archive.provenance([article['url']]).get(article['url'],{})
+            price_tracking.register(article,related,provenance.get('first_seen_at'))
+            self.respond(json.dumps(price_tracking.snapshot(article_id),ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == '/api/reactions':
             params=parse_qs(urlsplit(self.path).query)
             try:
@@ -443,7 +459,7 @@ def start_workers(product_mode):
         os.environ['LLM_ENABLED'] = '1'
     else:
         os.environ['LLM_ENABLED'] = '0'
-    for target in (archive.body_collector, collector, stocks.catalogue_collector):
+    for target in (archive.body_collector, collector, stocks.catalogue_collector, price_tracking.collector):
         threading.Thread(target=target, daemon=True).start()
     if product_mode == 'model':
         threading.Thread(target=intelligence.collector, args=(analysis_articles,), daemon=True).start()
