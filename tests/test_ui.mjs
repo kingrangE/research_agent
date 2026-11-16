@@ -14,6 +14,17 @@ function ui(extra={}) {
   return expression => vm.runInContext(expression, context);
 }
 
+test('comparable observations show insufficiency, losses and exclusions without invented zero returns', () => {
+  const run=ui();
+  const html=run(`comparableHTML({claim:'과거 관측 분포',market:'US',symbol:'AAPL',summary:{events:1,nonoverlapping_clusters:1,positive:0,negative:1,zero:0,median:-.02,status:'insufficient_sample'},query_unknown_fields:[],included:[{title:'<script>',url:'javascript:alert(1)',value:-.02,review_status:'pending_review',input_url:'/api/reactions?run_id=a'}],excluded:[{title:'누락',url:'https://example.com',reasons:['return_missing:missing_price']}],scope:{stage:'announced'},baseline:{definition:'방향만 완화',summary:{events:1},positive_frequency_difference:null},limitations:['매수 추천 아님'],version:'test'})`);
+  assert.ok(html.includes('표본 부족'));
+  assert.ok(html.includes('-2.00%'));
+  assert.ok(html.includes('미산정'));
+  assert.ok(html.includes('missing_price'));
+  assert.ok(html.includes('&lt;script&gt;'));
+  assert.ok(!html.includes('href="javascript:'));
+});
+
 test('data product uses sources without AI ranking and rejects unknown evidence versions', () => {
   const run=ui();
   run(`data={product_mode:'data',articles:[{id:'a',title:'기사',source:'원문',themes:[],score:25}],sources:[],intelligence:{status:'disabled',events:[],ranking:[]}};render()`);

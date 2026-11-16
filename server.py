@@ -31,6 +31,7 @@ import macro_events
 import fx_data
 import trade_events
 import event_reactions
+import comparable_events
 import theme_statistics
 from analysis_store import epoch, CURRENT_EVENT_SECONDS
 
@@ -289,6 +290,15 @@ def demo_snapshot():
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
+        if path == '/api/comparable-events':
+            params=parse_qs(urlsplit(self.path).query)
+            try:
+                result=comparable_events.snapshot(**{k:params[k][0] for k in ('article_id','market','symbol','basis','window','as_of') if k in params})
+            except (ValueError,TypeError):
+                self.respond(b'{"error":"Invalid comparable event query"}','application/json',400)
+                return
+            self.respond(json.dumps(result,ensure_ascii=False).encode(),'application/json; charset=utf-8')
+            return
         if path == '/api/theme-statistics':
             params=parse_qs(urlsplit(self.path).query)
             try:
