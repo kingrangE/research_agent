@@ -489,3 +489,7 @@ dialog::backdrop{background:#172b2677;backdrop-filter:blur(3px)}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;scroll-behavior:auto!important}
 }
 @media(max-width:700px){.market-explorer{grid-template-columns:minmax(0,1fr);gap:24px}.market-table th,.market-table td{padding:12px 4px}.market-toolbar{margin-bottom:20px}}
+.market-news{margin-top:32px}
+.market-news-row{padding:16px 0;border-bottom:1px solid var(--line)}
+.market-news-row>small{display:block;color:var(--muted);margin-bottom:8px}
+.market-news-row>button{display:block;text-align:left;font-size:16px;line-height:1.6;min-height:44px;margin-bottom:8px}

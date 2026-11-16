@@ -332,6 +332,20 @@ function marketRows() {
   const current=marketData?.candidates || [];
   return marketOrder.map(id=>current.find(c=>c.id===id)).filter(Boolean);
 }
+function marketNewsHTML(selected) {
+  const codes=new Set(selected.stocks.map(s=>s.code));
+  const seen=new Set();
+  const articles=allArticles().filter(a=>{
+    if(!a.related_stocks?.some(s=>codes.has(s.code)) || seen.has(a.url || a.id))return false;
+    seen.add(a.url || a.id);return true;
+  }).sort((a,b)=>(Date.parse(b.published_at)||0)-(Date.parse(a.published_at)||0));
+  return `<section class="market-news"><h3>관련 뉴스</h3><p class="panel-description">최근 조회한 기사 중 연결된 자료 · 최신순</p>${articles.slice(0,8).map(a=>{
+    const related=a.related_stocks.filter(s=>codes.has(s.code));
+    const direct=related.some(s=>['direct','body'].includes(s.relation));
+    const documented=related.some(s=>s.relation==='documented');
+    return `<article class="market-news-row"><small>${escape(a.source)} · ${escape(dateTime(a.published_at))}${a.timestamp_basis==='portal_display'?' · 포털 표시':''} · ${direct?'직접 언급':documented?'공개 사업 관계':'같은 사업·테마'}</small><button data-detail="${escape(a.id)}">${escape(a.title)}</button><div class="stock-chips">${related.map(s=>`<button class="stock-chip" data-stock="${escape(s.code)}" data-article="${escape(a.id)}">${escape(s.name)} <span data-stock-code="${escape(s.code)}" data-compact>${changeHTML(s.code)}</span></button>`).join('')}</div></article>`;
+  }).join('') || '<p>최근 조회한 기사에서 연결된 새 기사를 찾지 못했어요.</p>'}<button data-market-archive="${escape(selected.name)}">전체 뉴스에서 검색</button></section>`;
+}
 function renderMarket() {
   const active=view==='briefing' && mode==='live' && data?.product_mode==='data';
   $('#market-view').hidden=!active;
@@ -343,7 +357,7 @@ function renderMarket() {
   const rows=marketRows();
   const selected=rows.find(c=>c.id===marketSelection);
   const pending=(marketData?.candidates || []).filter(c=>!marketOrder.includes(c.id)).length;
-  const html=`<div class="market-toolbar"><div role="group" aria-label="시장 선택"><button data-market-region="KR" aria-pressed="${marketRegion==='KR'}">국내</button><button data-market-region="US" aria-pressed="${marketRegion==='US'}">미국</button></div><span>${marketData ? `추적 ${marketData.tracked}종목 · ${escape(quoteTime(marketData.as_of))} 기준` : '관측 조회 중'}</span></div>${marketError ? `<p role="status">${escape(marketError)}</p>` : ''}<div class="market-explorer"><section aria-label="주목할 대상"><h2>지금 주목할 테마·종목</h2><p class="panel-description">최근 5분 · 시장 대비 차이 기준 · 검증 중</p>${pending ? `<button data-market-apply>새 항목 ${pending}개 반영</button>` : ''}${rows.map(c=>`<button class="market-choice" data-market-select="${escape(c.id)}" aria-pressed="${c.id===marketSelection}"><strong>${escape(c.name)}</strong><span>${c.kind==='theme'?'평균 ':''}${percentText(c.mean_percent)}${c.kind==='theme'?` · 관측 ${c.observed}/${c.tracked}종목, ${c.up}상승·${c.down}하락`:''}</span><small>${escape(c.reason)}</small></button>`).join('') || `<p>${marketBusy && !marketData ? '관측을 불러오고 있어요.' : '현재 비교 기준에 맞는 항목이 없어요. 정규장과 시세 수집 상태에 따라 달라져요.'}</p><button data-view="feed">전체 뉴스 보기</button>`}</section><section aria-label="종목 비교">${selected ? `<h2>${escape(selected.name)}</h2><p class="panel-description">같은 최근 5분 구간의 종목 비교</p><table class="market-table"><thead><tr><th>종목</th><th>금일</th><th>최근 5분</th></tr></thead><tbody>${selected.stocks.map(s=>`<tr><td><button data-market-stock="${escape(s.code)}">${escape(s.name)}</button></td><td><span data-stock-code="${escape(s.code)}" data-compact>${changeHTML(s.code)}</span></td><td>${percentText(s.recent.change_percent)}</td></tr>`).join('')}</tbody></table>` : '<h2>종목과 관련 뉴스</h2><p>왼쪽에서 살펴볼 대상을 선택하세요.</p>'}</section></div>`;
+  const html=`<div class="market-toolbar"><div role="group" aria-label="시장 선택"><button data-market-region="KR" aria-pressed="${marketRegion==='KR'}">국내</button><button data-market-region="US" aria-pressed="${marketRegion==='US'}">미국</button></div><span>${marketData ? `추적 ${marketData.tracked}종목 · ${escape(quoteTime(marketData.as_of))} 기준` : '관측 조회 중'}</span></div>${marketError ? `<p role="status">${escape(marketError)}</p>` : ''}<div class="market-explorer"><section aria-label="주목할 대상"><h2>지금 주목할 테마·종목</h2><p class="panel-description">최근 5분 · 시장 대비 차이 기준 · 검증 중</p>${pending ? `<button data-market-apply>새 항목 ${pending}개 반영</button>` : ''}${rows.map(c=>`<button class="market-choice" data-market-select="${escape(c.id)}" aria-pressed="${c.id===marketSelection}"><strong>${escape(c.name)}</strong><span>${c.kind==='theme'?'평균 ':''}${percentText(c.mean_percent)}${c.kind==='theme'?` · 관측 ${c.observed}/${c.tracked}종목, ${c.up}상승·${c.down}하락`:''}</span><small>${escape(c.reason)}</small></button>`).join('') || `<p>${marketBusy && !marketData ? '관측을 불러오고 있어요.' : '현재 비교 기준에 맞는 항목이 없어요. 정규장과 시세 수집 상태에 따라 달라져요.'}</p><button data-view="feed">전체 뉴스 보기</button>`}</section><section aria-label="종목 비교">${selected ? `<h2>${escape(selected.name)}</h2><p class="panel-description">같은 최근 5분 구간의 종목 비교</p><table class="market-table"><thead><tr><th>종목</th><th>금일</th><th>최근 5분</th></tr></thead><tbody>${selected.stocks.map(s=>`<tr><td><button data-market-stock="${escape(s.code)}">${escape(s.name)}</button></td><td><span data-stock-code="${escape(s.code)}" data-compact>${changeHTML(s.code)}</span></td><td>${percentText(s.recent.change_percent)}</td></tr>`).join('')}</tbody></table>${marketNewsHTML(selected)}` : '<h2>종목과 관련 뉴스</h2><p>왼쪽에서 살펴볼 대상을 선택하세요.</p>'}</section></div>`;
   const container=$('#market-view');
   if(container.renderedHTML!==html){
     const focused=document.activeElement?.dataset || {};
@@ -640,6 +654,7 @@ async function loadArchive(reset=false) {
 function toggleMode() { document.querySelector('.app-menu')?.removeAttribute?.('open'); mode = mode === 'live' ? 'demo' : 'live'; briefingExpanded=false;loadFailed=false;lastLoadedAt=null;archiveData=null;archiveRequested=false;archiveError='';archiveCursor='';archiveCursors=[]; data = null; theme = ''; query = ''; kind = 'all'; $('#search').value = ''; $('#stock-dialog').close(); $('#detail-dialog').close(); detailId = null; loading = true; render(); load(); }
 document.addEventListener('click', event => {
   const button = event.target.closest('button'); if (!button) return;
+  if(button.dataset.marketArchive){view='feed';query=button.dataset.marketArchive;$('#search').value=query;render();loadArchive(true);}
   if(button.dataset.marketSelect){marketSelection=button.dataset.marketSelect;renderMarket();loadQuotes();}
   if(button.dataset.marketStock)openStock('market-watch',button.dataset.marketStock);
   if(button.dataset.marketRegion && marketRegion!==button.dataset.marketRegion){marketRegion=button.dataset.marketRegion;marketData=null;marketOrder=[];marketSelection='';renderMarket();loadMarket();}

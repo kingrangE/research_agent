@@ -956,3 +956,13 @@ test('market home names the subject, shows whole-group average and keeps amounts
   assert.ok(html.includes('최근 5분'));
   assert.ok(!html.includes('선택한 움직임'));
 });
+
+test('market news keeps direct and inferred connections distinct and preserves corrections',()=>{
+  const run=ui();
+  const html=run(`data={articles:[{id:'a',title:'계약 <발표>',url:'https://example.com/a',source:'매체',published_at:'2026-11-16T12:00:00Z',related_stocks:[{code:'A',name:'A사',relation:'direct'}]},{id:'b',title:'계약 정정',url:'https://example.com/b',source:'매체',published_at:'2026-11-16T12:01:00Z',related_stocks:[{code:'A',name:'A사',relation:'theme'}]}]};marketNewsHTML({name:'테마',stocks:[{code:'A'}]})`);
+  assert.ok(html.includes('직접 언급'));
+  assert.ok(html.includes('같은 사업·테마'));
+  assert.ok(html.includes('계약 &lt;발표&gt;'));
+  assert.ok(html.indexOf('계약 정정')<html.indexOf('계약 &lt;발표&gt;'));
+  assert.ok(html.includes('전체 뉴스에서 검색'));
+});
