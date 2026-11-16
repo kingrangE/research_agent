@@ -546,7 +546,7 @@ test('initial dashboard shows model order without manually changing sort', () =>
   assert.equal(run(`$('#sort').value`),'context');
   const html=run(`$('#articles').innerHTML`);
   assert.ok(html.indexOf('>중요</button>')<html.indexOf('>최신</button>'));
-  assert.ok(run(`$('#list-heading').firstChild.textContent`).includes('주식 판단'));
+  assert.ok(run(`$('#list-heading').firstChild.textContent`).includes('먼저 살펴볼 뉴스'));
 });
 
 
@@ -562,16 +562,16 @@ test('stock decision briefing does not fill remaining slots with background or u
   assert.ok(run(`$('#articles').innerHTML`).includes('주식 판단 재료'));
 });
 
-test('decision card puts compact stocks before the event and exposes why and next check safely', () => {
+test('decision card puts the headline before compact stocks and exposes why and next check safely', () => {
   const run=ui();
   run(`data={articles:[{id:'a',title:'공급 계약',source:'공개 피드',themes:[],related_stocks:[{code:'005930',name:'삼성전자'}]}],intelligence:{ranking_stale:false,events:[{event_id:'e',certainty:'계획',articles:[{id:'a'}]}],assessments:[{event_id:'e',watch_for:'계약 공시 확인'}],ranking:[{event_id:'e',reason:'<수주>가 이익에 미칠 영향'}]}}`);
   const html=run(`articleHTML(data.articles[0],0)`);
-  assert.ok(html.indexOf('stock-chip')<html.indexOf('class="article-title"'));
+  assert.ok(html.indexOf('class="article-title"')<html.indexOf('stock-chip'));
   assert.ok(html.includes('<dt>모델 해석</dt>'));
   assert.ok(html.includes('<dt>다음 확인 · 모델 제안</dt><dd>계약 공시 확인</dd>'));
   assert.ok(html.includes('&lt;수주&gt;'));
   assert.ok(html.includes('계획'));
-  assert.ok(html.includes('기사·근거 보기'));
+  assert.ok(html.includes('뉴스 보기'));
   run(`data.intelligence.ranking_stale=true`);
   const stale=run(`articleHTML(data.articles[0],0)`);
   assert.ok(!stale.includes('왜 지금'));
@@ -637,16 +637,16 @@ test('article detail shows structured facts and keeps evidence and scoring behin
   run(`data={articles:[{id:'a',title:'신규 계약',source:'공개 피드',themes:[],score_parts:{freshness:40},reason:'제목 설명',related_stocks:[{code:'005930',name:'삼성전자'}]}],intelligence:{events:[{event_id:'e',summary:'새 공급 계약을 발표했다.',certainty:'확정',event_type:'수주',amount:'100억원',timing:'미확인',timing_original:'<2026-11-11>',model:'test-model',articles:[{id:'a',evidence:['<검증된 원문>'],url:'javascript:bad'}]}],assessments:[{event_id:'e',reason:'매출 변화 확인',watch_for:'공시 확인',stock_relevance:'주식 판단 재료'}]}};renderDetail('a')`);
   const html=run(`$('#detail').innerHTML`);
   const [visible,more]=html.split('<details class="detail-more">');
-  assert.ok(visible.includes('핵심 사건'));
+  assert.ok(visible.includes('핵심 내용'));
   assert.ok(visible.includes('<dt>규모</dt><dd>100억원</dd>'));
-  assert.ok(visible.includes('<dt>사건 상태</dt><dd>확정</dd>'));
-  assert.ok(visible.includes('<dt>시점 · 기사 기준</dt><dd>미확인</dd>'));
+  assert.ok(more.includes('<dt>사건 상태</dt><dd>확정</dd>'));
+  assert.ok(!visible.includes('<dt>시점</dt><dd>미확인</dd>'));
   assert.ok(!visible.includes('2026-11-11'));
   assert.ok(more.includes('원문에서 대조하지 못한 모델 시점: &lt;2026-11-11&gt;'));
   assert.ok(!more.includes('<2026-11-11>'));
   const history=run(`eventHistoryHTML({history:[{timing:'미확인',timing_original:'<이전 모델 날짜>',summary:'계약 체결'}]})`);
   assert.ok(history.includes('원문에서 대조하지 못한 모델 시점: &lt;이전 모델 날짜&gt;'));
-  assert.ok(visible.includes('매출 변화 확인'));
+  assert.ok(more.includes('매출 변화 확인'));
   assert.ok(visible.includes('공시 확인'));
   assert.ok(visible.includes('stock-chip'));
   assert.ok(!visible.includes('blockquote'));
@@ -858,4 +858,57 @@ test('older calendar results are visible as requiring revalidation rather than c
  const run=ui();
  assert.ok(run(`reactionsHTML({runs:[{calendar_policy_current:false,market:'US',symbol:'AAPL',basis:'public',windows:[],run_id:'abc'}]})`).includes('이전 거래일 기준 · 재검증 전'));
  assert.ok(run(`themeStatisticsHTML({runs:[{calendar_policy_current:false,as_of:'2026-11-16T00:00:00Z',membership_as_of:'2026-11-16',themes:[],notes:[],run_id:'abc'}]})`).includes('현재 통계로 사용하지 않습니다'));
+});
+
+test('consumer home hides service metrics and keeps ordering honest',()=>{
+  const run=ui();
+  run(`data={product_mode:'data',articles:[],sources:[]};render()`);
+  assert.equal(run(`$('#stats').hidden`),true);
+  assert.equal(run(`$('#page-title').textContent`),'지금 볼 뉴스');
+  assert.ok(run(`$('#list-status').textContent`).includes('최신순'));
+  assert.ok(!run(`$('#page-description').textContent`).includes('분석'));
+  run(`view='sources';render()`);
+  assert.equal(run(`$('#stats').hidden`),false);
+});
+
+test('article detail keeps raw versions collapsed and visible excerpt bounded and escaped',()=>{
+  const run=ui();
+  run(`data={articles:[{id:'a',title:'새 뉴스',url:'https://example.com/news',source:'매체',themes:[],evidence:{rule_version:'article-evidence-v1',body_excerpt:'<script>'+ '긴 본문'.repeat(200),source_status:'body_available'},related_stocks:[]}]};renderDetail('a')`);
+  const [visible,more]=run(`$('#detail').innerHTML`).split('<details class="detail-more">');
+  assert.ok(visible.includes('&lt;script&gt;'));
+  assert.ok(!visible.includes('<script>'));
+  assert.ok(!visible.includes('기사 버전'));
+  assert.ok(more.includes('기사 버전'));
+  assert.ok(visible.includes('현재 제목과 본문이 일치하는지'));
+  assert.ok(!visible.includes('긴 본문'.repeat(100)));
+  assert.ok(run(`$('#detail').innerHTML`).includes('원문 보기'));
+});
+
+test('headline precedes compact stocks and generic analysis clutter is absent',()=>{
+  const run=ui();
+  run(`data={articles:[]};sort='latest'`);
+  const html=run(`articleHTML({id:'a',title:'반도체 수주',source:'매체',themes:[],related_stocks:[{name:'삼성전자',code:'005930'}]},0)`);
+  assert.ok(html.indexOf('article-title')<html.indexOf('stock-chips'));
+  assert.ok(!html.includes('주식 영향 검토 전'));
+  assert.ok(!html.includes('article-reason'));
+});
+
+test('initial load is pending rather than an empty dataset',()=>{
+ const run=ui();run('render()');
+ assert.ok(run(`$('#articles').innerHTML`).includes('자료를 불러오고 있어요'));
+ assert.ok(run(`$('#list-status').textContent`).includes('불러오고'));
+});
+
+test('stock details lead with quote and keep longer mechanisms in disclosure',()=>{
+ const run=ui();
+ const html=run(`stocksHTML({id:'a',related_stocks:[{code:'A',name:'기업',reason:'연결 이유',mechanism:'길게 설명한 영향 경로',sources:[]}]},true)`);
+ assert.ok(html.indexOf('stock-quote')<html.indexOf('stock-reason'));
+ assert.ok(html.indexOf('길게 설명한 영향 경로')>html.indexOf('<details class="stock-evidence">'));
+});
+
+test('consumer excerpt rejects unsupported evidence versions',()=>{
+ const run=ui();
+ const html=run(`articleSummaryHTML({evidence:{rule_version:'future',body_excerpt:'검증하지 못한 형식'}})`);
+ assert.ok(html.includes('지원하지 않는 근거 버전'));
+ assert.ok(!html.includes('검증하지 못한 형식'));
 });
