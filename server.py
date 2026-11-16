@@ -22,7 +22,7 @@ import relations
 import intelligence
 import archive
 import news_ingestion
-from analysis_store import epoch
+from analysis_store import epoch, CURRENT_EVENT_SECONDS
 
 ROOT = Path(__file__).resolve().parent
 INTERVAL = 30
@@ -141,6 +141,12 @@ def snapshot():
     portal_articles=archive.browse(limit=90,source_id='naver')
     state['articles'].extend(portal_articles['articles'])
     analysis = intelligence.snapshot()
+    ranked_ids={r['event_id'] for r in analysis.get('ranking',[])}
+    representatives={e['article_id'] for e in analysis.get('events',[]) if e['event_id'] in ranked_ids and e.get('article_id')}
+    if representatives:
+        restored=archive.browse(limit=len(representatives),article_ids=sorted(representatives))['articles']
+        urls={a['url'] for a in restored}
+        state['articles']=restored+[a for a in state['articles'] if a['url'] not in urls]
     readings = {a['id']:a for event in analysis.get('events',[]) for a in event['articles']}
     articles = [classify({k:v for k,v in a.items() if k != 'feed_xml'},reading=readings.get(a['id'])) for a in deduplicate(state['articles'])]
     articles.sort(key=lambda a: (a["score"], epoch(a.get("published_at"))), reverse=True)
@@ -191,8 +197,10 @@ def archive_snapshot(params):
 
 def analysis_articles():
     with LOCK:
-        articles = [dict(a) for a in STATE['articles']]
-    articles.extend(archive.browse(limit=90,source_id='naver')['articles'])
+        articles = [dict(a) for a in STATE['articles']] if STATE.get('archive_error') else []
+    as_of=time.time()
+    articles.extend(archive.browse(limit=None,published_between=(int(as_of-CURRENT_EVENT_SECONDS),int(as_of)+1))['articles'])
+    articles=[a for a in articles if 0<epoch(a.get('published_at'))<=as_of and as_of-epoch(a.get('published_at'))<=CURRENT_EVENT_SECONDS]
     return sorted(deduplicate(articles), key=lambda a: epoch(a.get('published_at')), reverse=True)
 
 

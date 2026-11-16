@@ -30,6 +30,45 @@ class DashboardTest(unittest.TestCase):
         return {"id": "test", "title": title, "url": "https://example.com/1", "source": "테스트", "source_id": "finance",
                 "kind": "news", "category": "증권", "published_at": "2026-11-11T00:00:00+00:00", "copies": 1, **values}
 
+    def test_analysis_pool_covers_archive_beyond_recent_page_and_honors_exact_age_bounds(self):
+        t=datetime(2026,11,16,12,tzinfo=timezone.utc).timestamp()+0.5
+        stamp=lambda seconds:datetime.fromtimestamp(seconds,timezone.utc).isoformat()
+        rows=[self.article(f'기사 {i}',id=str(i),source_id='naver',url=f'https://example.com/{i}',published_at=stamp(t-100-i)) for i in range(120)]
+        edges=[self.article('경계',id='boundary',url='https://example.com/boundary',published_at=stamp(t-server.CURRENT_EVENT_SECONDS)),
+               self.article('지난 범위',id='old',url='https://example.com/old',published_at=stamp(t-server.CURRENT_EVENT_SECONDS-0.1)),
+               self.article('미래',id='future',url='https://example.com/future',published_at=stamp(t+0.1)),
+               self.article('시각 미상',id='unknown',url='https://example.com/unknown',published_at=None)]
+        server.archive.store(rows+edges)
+        server.archive.store([{**rows[0],'title':'정정된 최신 제목'}])
+        with patch.dict(server.STATE,{'articles':[rows[0]],'archive_error':None}),patch('server.time.time',return_value=t):
+            result=server.analysis_articles()
+        self.assertEqual(len(result),121)
+        self.assertEqual(next(a['title'] for a in result if a['id']=='0'),'정정된 최신 제목')
+        self.assertIn('boundary',{a['id'] for a in result})
+        self.assertTrue({'old','future','unknown'}.isdisjoint({a['id'] for a in result}))
+        self.assertEqual(server.archive.summary()['articles'],124)
+        server.archive.store([{**rows[1],'published_at':stamp(t+1)}])
+        with patch.dict(server.STATE,{'articles':[rows[1]],'archive_error':None}),patch('server.time.time',return_value=t):
+            self.assertNotIn('1',{a['id'] for a in server.analysis_articles()})
+        fallback=self.article('보관 실패 중 새 기사',id='memory',url='https://example.com/memory',published_at=stamp(t))
+        with patch.dict(server.STATE,{'articles':[fallback],'archive_error':'write failed'}),patch('server.time.time',return_value=t):
+            self.assertIn('memory',{a['id'] for a in server.analysis_articles()})
+
+    def test_snapshot_restores_ranked_representative_outside_recent_page_without_bulk_articles(self):
+        now=datetime.now(timezone.utc)
+        older=self.article('중요한 과거 기사',id='important',source_id='naver',url='https://example.com/important',published_at=(now-timedelta(hours=3)).isoformat())
+        recent=[self.article(f'최신 {i}',id=str(i),source_id='naver',url=f'https://example.com/{i}',published_at=(now-timedelta(seconds=i)).isoformat()) for i in range(95)]
+        server.archive.store([older]+recent)
+        event={'event_id':'e','article_id':'important','articles':[{'id':'important','article_title':older['title']} ]}
+        with patch.dict(server.STATE,{'articles':[],'sources':[]}),patch('server.intelligence.snapshot',return_value={'ranking':[{'event_id':'e'}],'events':[event]}),patch('server.stocks.related_stocks',return_value=[]),patch('server.stocks.body_related_stocks',return_value=[]),patch('server.news_ingestion.status',return_value={}):
+            result=server.snapshot()
+            server.STATE['articles']=[{**older,'title':'이전 제목'}]
+            restored=server.snapshot()
+        self.assertEqual(next(a['title'] for a in restored['articles'] if a['id']=='important'),older['title'])
+        self.assertIn('important',{a['id'] for a in result['articles']})
+        self.assertEqual(len(result['articles']),91)
+        self.assertNotIn('94',{a['id'] for a in result['articles']})
+
     def test_feed_skips_unsafe_links_and_preserves_missing_date(self):
         xml = b'<rss><channel><item><title>Safe &amp; sound</title><link>https://example.com/a</link><pubDate>not-a-date</pubDate></item><item><title>Bad</title><link>javascript:alert(1)</link></item></channel></rss>'
         articles = server.parse_feed(xml, server.SOURCES[0])

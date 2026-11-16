@@ -73,9 +73,14 @@ def restore():
     return [{**json.loads(payload),'collected_at':seen,'copies':1} for payload,seen in rows]
 
 
-def browse(limit=30, before=None, query='', source='', since='', until='', words=(), kind='all', source_id=''):
+def browse(limit=30, before=None, query='', source='', since='', until='', words=(), kind='all', source_id='', published_between=None, article_ids=None):
     """Latest version of every stored URL; model assessments never filter this path."""
     conditions=['n=1']; values=[]
+    if published_between is not None:
+        conditions.append('published BETWEEN ? AND ?');values.extend(published_between)
+    if article_ids is not None:
+        conditions.append("json_extract(payload,'$.id') IN ("+','.join('?' for _ in article_ids)+')' if article_ids else '0')
+        values.extend(article_ids)
     if query:
         conditions.append("(instr(lower(json_extract(payload,'$.title')),lower(?))>0 OR instr(lower(json_extract(payload,'$.source')),lower(?))>0)")
         values.extend([query,query])
@@ -99,9 +104,10 @@ def browse(limit=30, before=None, query='', source='', since='', until='', words
         sources=[r[0] for r in connection.execute("SELECT DISTINCT json_extract(payload,'$.source') FROM items ORDER BY 1") if r[0]]
         if before:
             where+=' AND (published<? OR (published=? AND url<?))';values.extend([before[0],before[0],before[1]])
-        rows=connection.execute(base+'SELECT payload,last_seen,published,url FROM latest WHERE '+where+' ORDER BY published DESC,url DESC LIMIT ?',[*values,limit+1]).fetchall()
+        sql=base+'SELECT payload,last_seen,published,url FROM latest WHERE '+where+' ORDER BY published DESC,url DESC'
+        rows=connection.execute(sql+(' LIMIT ?' if limit is not None else ''),[*values,limit+1] if limit is not None else values).fetchall()
     return {'articles':[{**json.loads(r[0]),'collected_at':r[1],'copies':1} for r in rows[:limit]],
-            'total':total,'sources':sources,'next':list(rows[limit-1][2:]) if len(rows)>limit else None}
+            'total':total,'sources':sources,'next':list(rows[limit-1][2:]) if limit is not None and len(rows)>limit else None}
 
 
 def get_body(url):

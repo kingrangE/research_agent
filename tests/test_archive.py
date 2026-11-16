@@ -34,6 +34,19 @@ class ArchiveTest(unittest.TestCase):
     def item(self,title='개인투자용국채 청약',url='https://www.hankyung.com/article/1',**extra):
         return {'id':url.rsplit('/',1)[-1],'source_id':'finance','title':title,'url':url,'published_at':'2026-11-11T00:00:00Z','collected_at':'first',**extra}
 
+    def test_internal_full_window_and_id_lookup_use_latest_metadata_without_affecting_paging(self):
+        rows=[self.item(f'기사 {i}',f'https://example.com/{i}',id=str(i)) for i in range(95)]
+        archive.store(rows)
+        self.assertEqual(len(archive.browse()['articles']),30)
+        full=archive.browse(limit=None,published_between=(1762819199,1794355201))
+        self.assertEqual(len(full['articles']),95)
+        self.assertIsNone(full['next'])
+        self.assertEqual(archive.browse(article_ids=[])['total'],0)
+        self.assertEqual(archive.browse(article_ids=["x') OR 1=1--"])['total'],0)
+        archive.store([{**rows[0],'title':'현재 제목','published_at':'2099-01-01T00:00:00Z'}])
+        self.assertEqual(archive.browse(article_ids=['0'])['articles'][0]['title'],'현재 제목')
+        self.assertEqual(archive.browse(limit=None,published_between=(1762819199,1794355201))['total'],94)
+
     def test_all_topics_are_retained_and_poll_time_does_not_create_revisions(self):
         rows=[self.item(),self.item('기업 수상','https://www.hankyung.com/article/2'),self.item('대규모 수주','https://www.hankyung.com/article/3')]
         archive.store(rows)
