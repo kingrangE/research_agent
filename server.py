@@ -125,6 +125,11 @@ def classify(article, now=None, reading=None):
         direct.extend(stock for stock in body_stocks if stock['code'] not in codes)
         codes = {stock['code'] for stock in direct}
         related = direct + [stock for stock in related if stock['code'] not in codes][:max(0,8-len(direct))]
+    article_url=safe_url(article.get('url'))
+    if article_url:
+        source={'title':'기사 제목 · 종목 명칭 대조','url':article_url,'published_on':(article.get('published_at') or '')[:10],
+                'excerpt':article['title']}
+        related=[{**stock,'sources':[source,*stock.get('sources',[])]} if stock['relation']=='direct' else stock for stock in related]
     return {**article, "themes": matches, "score": score, "reason": reason, "question": question,
             "score_parts": {"freshness": score}, "related_stocks": related,
             "stock_analysis": relations.context(article["title"])}

@@ -101,11 +101,32 @@ class DashboardTest(unittest.TestCase):
         with patch('server.stocks.related_stocks',return_value=[title_stock]), \
              patch('server.stocks.body_related_stocks',return_value=[title_stock,body_stock]) as body:
             result=server.classify(self.article('실적 발표'),reading=reading)
-            self.assertEqual(result['related_stocks'],[title_stock,body_stock])
+            self.assertEqual([s['code'] for s in result['related_stocks']],['A','B'])
+            self.assertEqual(result['related_stocks'][1],body_stock)
             body.assert_called_once()
             result=server.classify(self.article('실적 정정'),reading=reading)
-            self.assertEqual(result['related_stocks'],[title_stock])
+            self.assertEqual([s['code'] for s in result['related_stocks']],['A'])
             body.assert_called_once()
+
+    def test_title_stock_sources_bind_to_each_article_without_mutating_shared_links(self):
+        issuer_source={'title':'상장 종목 목록','url':'https://exchange.example/list'}
+        direct={'code':'A','relation':'direct','sources':[issuer_source]}
+        inferred={'code':'B','relation':'value_chain','sources':[issuer_source]}
+        with patch('server.stocks.related_stocks',return_value=[direct,inferred]):
+            first=server.classify(self.article('회사A 실적 발표',url='https://example.com/first'))
+            second=server.classify(self.article('회사A 실적 정정',url='https://example.com/second'))
+            missing=server.classify(self.article(url=None))
+            unsafe=server.classify(self.article(url='javascript:alert(1)'))
+        for result,title,url in ((first,'회사A 실적 발표','https://example.com/first'),(second,'회사A 실적 정정','https://example.com/second')):
+            sources=result['related_stocks'][0]['sources']
+            self.assertEqual(sources[0]['excerpt'],title)
+            self.assertEqual(sources[0]['url'],url)
+            self.assertEqual(sources[0]['title'],'기사 제목 · 종목 명칭 대조')
+            self.assertEqual(sources[1],issuer_source)
+            self.assertEqual(result['related_stocks'][1],inferred)
+        self.assertEqual(direct['sources'],[issuer_source])
+        self.assertEqual(missing['related_stocks'],[direct,inferred])
+        self.assertEqual(unsafe['related_stocks'],[direct,inferred])
 
     def test_polling_interval_accounts_for_collection_duration(self):
         with patch("server.refresh") as refresh, patch("server.time.monotonic", side_effect=[100, 105]), \
