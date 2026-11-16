@@ -831,3 +831,9 @@ test('theme statistics display coverage and keep unavailable statistics empty',(
  assert.ok(!html.includes('0.0%'));
  assert.ok(html.includes('inputs=true'));
 });
+
+test('older calendar results are visible as requiring revalidation rather than current evidence',()=>{
+ const run=ui();
+ assert.ok(run(`reactionsHTML({runs:[{calendar_policy_current:false,market:'US',symbol:'AAPL',basis:'public',windows:[],run_id:'abc'}]})`).includes('이전 거래일 기준 · 재검증 전'));
+ assert.ok(run(`themeStatisticsHTML({runs:[{calendar_policy_current:false,as_of:'2026-11-16T00:00:00Z',membership_as_of:'2026-11-16',themes:[],notes:[],run_id:'abc'}]})`).includes('현재 통계로 사용하지 않습니다'));
+});

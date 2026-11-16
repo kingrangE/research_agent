@@ -81,7 +81,7 @@ def verify():
     reported={r['case_id']:r for r in metadata['entries']}
     metadata_fingerprint=event_corpus.fingerprint(metadata)
     with h.db() as db:
-        calendars={market:{row['day']:{**json.loads(row['payload']),'response_id':row['response_id']} for row in db.execute('SELECT * FROM calendars WHERE market=?',(market,))} for market in ('KR','US')}
+        calendars={market:h.calendar_snapshot(db,market) for market in ('KR','US')}
     for case,probe in zip(corpus['cases'],probes(corpus)):
         market=probe['market'];symbol=probe['symbol'];benchmark=probe['benchmark']
         supplement=reported.get(case['id'])
@@ -101,7 +101,7 @@ def verify():
         expected={d for d,r in calendars[market].items() if probe['since']<=d<=probe['until'] and r['regular_open']}
         observed={r['day'] for r in selected}
         total_days=(date.fromisoformat(probe['until'])-date.fromisoformat(probe['since'])).days+1
-        known=sum(probe['since']<=d<=probe['until'] for d in calendars[market])
+        known=sum(probe['since']<=d<=probe['until'] and not row.get('calendar_unverified') for d,row in calendars[market].items())
         entry={'case_id':case['id'],'market':market,'symbol':symbol,'source_verified_days':checked,
                'source_values_match':source_valid,'calendar_unknown_days':total_days-known,
                'missing_open_days':sorted(expected-observed),'coverage_complete':known==total_days and expected<=observed,'price_references':[{'day':r['day'],'revision':r['revision'],'response_id':r['response_id']} for r in selected],
@@ -111,8 +111,8 @@ def verify():
         if event_time and source_valid:
             inputs={'event':{'article_id':case['id'],'event_id':case['independent_event_id'],'source_key':case['source']['sha256'],
                             'rule_version':corpus['version'],'review_status':'single_agent_source_review','published_at':event_time},
-                    'market':market,'symbol':symbol,'benchmark':benchmark,'basis':'public','adjusted':False,'as_of':h.now(),
-                    'stock_prices':stock,'benchmark_prices':bench,'calendar':calendars[market]}
+                    'calendar_policy':h.CALENDAR_POLICY,'market':market,'symbol':symbol,'benchmark':benchmark,'basis':'public','adjusted':False,'as_of':h.now(),
+                    'stock_prices':stock,'benchmark_prices':bench,'calendar':{d:c for d,c in calendars[market].items() if probe['since']<=d<=probe['until']}}
             result=event_reactions.calculate(inputs)
             event_window=next((w for w in result['windows'] if w['name']=='event_day'),None)
             entry['calculation']=result;entry['inputs']=inputs
@@ -124,7 +124,7 @@ def verify():
             elif event_window:entry['status']=event_window['status']
             else:entry['status']=result['status']
         results.append(entry)
-    output={'version':'corpus-price-check-v1','corpus_fingerprint':event_corpus.fingerprint(corpus),'publication_metadata_fingerprint':metadata_fingerprint,'checked_at':h.now(),
+    output={'version':'corpus-price-check-v1','calendar_policy':h.CALENDAR_POLICY,'corpus_fingerprint':event_corpus.fingerprint(corpus),'publication_metadata_fingerprint':metadata_fingerprint,'checked_at':h.now(),
             'cases':results,'scope':'오프라인 개발 검수 · 최종 자료는 실시간 검색·추천 표본으로 사용하지 않음',
             'source_verified_cases':sum(r['source_values_match'] for r in results),
             'verified_daily_return_cases':sum(r['return_matches'] for r in results),

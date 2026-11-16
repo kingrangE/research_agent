@@ -1,0 +1,621 @@
+{
+  "version": "us-cash-exceptions-v1",
+  "timezone": "America/New_York",
+  "reviewed_on": "2026-11-16",
+  "reviewer_kind": "agent",
+  "sources": {
+    "nyse2019_2021": {
+      "url": "https://ir.theice.com/press/news-details/2018/NYSE-Group-Announces-2019-2020-and-2021-Holiday-and-Early-Closings-Calendar/default.aspx",
+      "published_on": "2018-12-04"
+    },
+    "nyse2022_2024": {
+      "url": "https://ir.theice.com/press/news-details/2021/NYSE-Group-Announces-2022-2023-and-2024-Holiday-and-Early-Closings-Calendar/default.aspx",
+      "published_on": "2021-12-27"
+    },
+    "nyse2024_2026": {
+      "url": "https://ir.theice.com/press/news-details/2023/NYSE-Group-Announces-2024-2025-and-2026-Holiday-and-Early-Closings-Calendar/default.aspx",
+      "published_on": "2023-11-10"
+    },
+    "carter2025": {
+      "url": "https://ir.theice.com/press/news-details/2024/The-New-York-Stock-Exchange-Will-Close-Markets-on-January-9-to-Honor-the-Passing-of-Former-President-Jimmy-Carter-on-National-Day-of-Mourning/default.aspx",
+      "published_on": "2024-12-30"
+    },
+    "nasdaq2020": {
+      "url": "https://www.nasdaqtrader.com/TraderNews.aspx?id=ETA2020-85",
+      "published_on": "2020-12-15"
+    }
+  },
+  "exceptions": {
+    "2019-01-01": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2019-01-21": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2019-02-18": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2019-04-19": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2019-05-27": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2019-07-03": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2019-07-04": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2019-09-02": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2019-11-28": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2019-11-29": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2019-12-24": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2019-12-25": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2020-01-01": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2020-01-20": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2020-02-17": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2020-04-10": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2020-05-25": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2020-07-03": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2020-09-07": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2020-11-26": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2020-11-27": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2020-12-24": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2019_2021",
+        "nasdaq2020"
+      ]
+    },
+    "2020-12-25": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021",
+        "nasdaq2020"
+      ]
+    },
+    "2021-01-01": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021",
+        "nasdaq2020"
+      ]
+    },
+    "2021-01-18": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2021-02-15": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2021-04-02": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2021-05-31": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2021-07-05": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2021-09-06": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2021-11-25": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2021-11-26": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2021-12-24": {
+      "state": "closed",
+      "sources": [
+        "nyse2019_2021"
+      ]
+    },
+    "2022-01-17": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2022-02-21": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2022-04-15": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2022-05-30": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2022-06-20": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2022-07-04": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2022-09-05": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2022-11-24": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2022-11-25": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2022-12-26": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-01-02": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-01-16": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-02-20": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-04-07": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-05-29": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-06-19": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-07-03": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-07-04": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-09-04": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-11-23": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-11-24": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2023-12-25": {
+      "state": "closed",
+      "sources": [
+        "nyse2022_2024"
+      ]
+    },
+    "2024-01-01": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-01-15": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-02-19": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-03-29": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-05-27": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-06-19": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-07-03": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-07-04": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-09-02": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-11-28": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-11-29": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-12-24": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2024-12-25": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-01-01": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-01-09": {
+      "state": "closed",
+      "sources": [
+        "carter2025"
+      ]
+    },
+    "2025-01-20": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-02-17": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-04-18": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-05-26": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-06-19": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-07-03": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-07-04": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-09-01": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-11-27": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-11-28": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-12-24": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2025-12-25": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-01-01": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-01-19": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-02-16": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-04-03": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-05-25": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-06-19": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-07-03": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-09-07": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-11-26": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-11-27": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-12-24": {
+      "state": "early_close",
+      "close_time": "13:00:00",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    },
+    "2026-12-25": {
+      "state": "closed",
+      "sources": [
+        "nyse2024_2026"
+      ]
+    }
+  },
+  "scope": "미국 현금 주식 정규장에 대한 검토된 거래소 공표 예외. 선물·옵션·장외 세션 전체를 뜻하지 않음.",
+  "known_from_basis": "current_source_review_not_historical_page_snapshot",
+  "notes": [
+    "표에 없는 날짜를 임의 휴장 또는 개장으로 추정하지 않는다.",
+    "과거 공표 페이지의 수정 이력을 모두 확보한 것은 아니다.",
+    "돌발 추가 휴장은 별도 공식 근거 확인이 필요하다."
+  ]
+}

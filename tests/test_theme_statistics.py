@@ -68,5 +68,5 @@ class ThemeTest(unittest.TestCase):
         with patch.object(h,'PATH',Path(tmp.name)/'market.sqlite3'),patch.object(t,'load_inputs',return_value=fixture()):
             self.assertEqual(t.snapshot()['runs'],[])
             result=t.run();self.assertEqual(t.run()['run_id'],result['run_id'])
-            self.assertEqual(t.snapshot()['runs'][0],result)
+            self.assertEqual(t.snapshot()['runs'][0],{**result,'calendar_policy_current':False})
         self.assertRaises(ValueError,t.load_inputs,membership_basis='unsupported')

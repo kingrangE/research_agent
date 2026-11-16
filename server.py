@@ -301,7 +301,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/reactions':
             params=parse_qs(urlsplit(self.path).query)
             try:
-                result=event_reactions.snapshot(params.get('article_id',[None])[0],params.get('run_id',[None])[0])
+                result=event_reactions.snapshot(params.get('article_id',[None])[0],params.get('run_id',[None])[0],params.get('inputs',['false'])[0]=='true')
             except (ValueError,TypeError):
                 self.respond(b'{"error":"Invalid reaction query"}','application/json',400)
                 return

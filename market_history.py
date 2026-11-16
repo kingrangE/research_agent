@@ -16,10 +16,13 @@ from urllib.parse import urlencode
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 from zoneinfo import ZoneInfo
 
+import calendar_reference
+
 PATH = Path(__file__).resolve().parent / '.data' / 'market.sqlite3'
 BASE = 'https://openapi.tossinvest.com'
 SPEC = BASE + '/openapi-docs/latest/openapi.json'
 POLICY = 'toss-daily-v1'
+CALENDAR_POLICY = calendar_reference.POLICY
 ZONES = {'KR':'Asia/Seoul', 'US':'America/New_York'}
 INDICES = {'KOSPI', 'KOSDAQ'}
 
@@ -228,7 +231,16 @@ def save_calendar(connection, market, requested, response):
             if timestamp(session['startTime'])>=timestamp(session['endTime']):
                 raise ValueError('거래 세션 시각 오류')
         payload = {**item,'regular_open':session is not None}
+        existing=connection.execute('SELECT r.params FROM calendars c JOIN responses r ON r.id=c.response_id WHERE c.market=? AND c.day=?',(market,item['date'])).fetchone()
+        if key!='today' and existing and json.loads(existing['params']).get('date')==item['date']:continue
         connection.execute('INSERT OR REPLACE INTO calendars VALUES(?,?,?,?)',(market,item['date'],encode(payload),response_id))
+
+
+
+def calendar_snapshot(connection,market,since=None,until=None):
+    rows=connection.execute('SELECT * FROM calendars WHERE market=? AND (? IS NULL OR day>=?) AND (? IS NULL OR day<=?)',
+                            (market,since,since,until,until)).fetchall()
+    return {r['day']:{**calendar_reference.resolve(market,json.loads(r['payload'])),'response_id':r['response_id']} for r in rows}
 
 
 def collect(market, symbol, since, until, pages=3, adjusted=False, client=None):
@@ -316,17 +328,17 @@ def coverage(market=None, symbol=None):
         with db() as connection:
             jobs = [json.loads(r[0]) for r in connection.execute('SELECT payload FROM jobs')]
             for job in jobs:
-                calendar = connection.execute('SELECT day,payload FROM calendars WHERE market=? AND day BETWEEN ? AND ?',
-                    (job['market'],job['since'],job['until'])).fetchall()
+                calendar = calendar_snapshot(connection,job['market'],job['since'],job['until'])
                 days = {r[0] for r in connection.execute('SELECT DISTINCT day FROM bars WHERE market=? AND symbol=? AND adjusted=? AND day BETWEEN ? AND ?',
                     (job['market'],job['symbol'],int(job['adjusted']),job['since'],job['until']))}
                 meta=connection.execute("SELECT payload FROM responses WHERE market=? AND symbol=? AND kind='security' ORDER BY id DESC LIMIT 1",(job['market'],job['symbol'])).fetchone()
                 security=json.loads(meta[0])['result'][0] if meta else {}
-                outside=[r[0] for r in calendar if (security.get('listDate') and r[0]<security['listDate']) or
-                         (security.get('delistDate') and r[0]>security['delistDate'])]
-                job.update(missing_open_days=[r[0] for r in calendar if json.loads(r[1])['regular_open'] and r[0] not in days and r[0] not in outside],
+                outside=[day for day in calendar if (security.get('listDate') and day<security['listDate']) or
+                         (security.get('delistDate') and day>security['delistDate'])]
+                job.update(missing_open_days=[day for day,row in calendar.items() if row['regular_open'] and day not in days and day not in outside],
                     outside_current_master_listing_days=outside,
-                    calendar_unknown_days=(date.fromisoformat(job['until'])-date.fromisoformat(job['since'])).days+1-len(calendar))
+                    calendar_unknown_days=(date.fromisoformat(job['until'])-date.fromisoformat(job['since'])).days+1-len(calendar)+sum(bool(v.get('calendar_unverified')) for v in calendar.values()),
+                    calendar_source_conflicts=sum(bool(v.get('calendar_source_conflict')) for v in calendar.values()),calendar_policy=CALENDAR_POLICY)
                 job['coverage_status']='incomplete' if job['calendar_unknown_days'] or not job.get('prices_complete') else 'gaps' if job['missing_open_days'] else 'checked'
             series = []
             for row in connection.execute('SELECT market,symbol,adjusted,count(DISTINCT day) days,count(*) versions,min(day) first,max(day) last,max(last_seen) updated_at FROM bars GROUP BY market,symbol,adjusted'):
@@ -335,13 +347,11 @@ def coverage(market=None, symbol=None):
                     AND id=(SELECT max(id) FROM bars WHERE market=b.market AND symbol=b.symbol AND adjusted=b.adjusted AND day=b.day) ORDER BY day''',
                     (row['market'],row['symbol'],row['adjusted'])).fetchall()
                 days = {json.loads(x[0])['day'] for x in current}
-                calendar = connection.execute('SELECT day,payload FROM calendars WHERE market=? AND day BETWEEN ? AND ?',
-                    (row['market'],row['first'],row['last'])).fetchall()
-                known = {r[0]:json.loads(r[1]) for r in calendar}
+                known = calendar_snapshot(connection,row['market'],row['first'],row['last'])
                 meta = connection.execute("SELECT id,payload,observed_at FROM responses WHERE market=? AND symbol=? AND kind='security' ORDER BY id DESC LIMIT 1",(row['market'],row['symbol'])).fetchone()
                 security = json.loads(meta['payload'])['result'][0] if meta else None
                 item.update(missing_open_days=[day for day,v in known.items() if v['regular_open'] and day not in days],
-                    calendar_days_checked=len(known),suspension_history='unavailable',corporate_actions='unavailable',turnover='unavailable',
+                    calendar_days_checked=len(known)-sum(bool(v.get('calendar_unverified')) for v in known.values()),calendar_source_conflicts=sum(bool(v.get('calendar_source_conflict')) for v in known.values()),calendar_policy=CALENDAR_POLICY,suspension_history='unavailable',corporate_actions='unavailable',turnover='unavailable',
                     timezone=ZONES[row['market']],security=security,security_response_id=meta['id'] if meta else None,
                     security_observed_at=meta['observed_at'] if meta else None,
                     historical_identity='current_metadata_only',

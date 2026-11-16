@@ -37,6 +37,17 @@ class HistoryTest(unittest.TestCase):
         p=patch.object(h,'PATH',Path(temp.name)/'market.sqlite3')
         p.start(); self.addCleanup(p.stop)
 
+    def test_neighbor_calendar_cannot_overwrite_direct_holiday(self):
+        direct=calendar('2020-12-25',market='US',opened=False)
+        later=calendar('2020-12-27',market='US',opened=False)
+        later['result']['previousBusinessDay']=calendar('2020-12-25',market='US',opened=True)['result']['today']
+        with h.db() as db:
+            h.save_calendar(db,'US','2020-12-25',direct)
+            h.save_calendar(db,'US','2020-12-27',later)
+            saved=db.execute('SELECT payload FROM calendars WHERE market=? AND day=?',('US','2020-12-25')).fetchone()
+        import json
+        self.assertFalse(json.loads(saved[0])['regular_open'])
+
     def test_historical_cutoff_precedes_recent_row_limit(self):
         with h.db() as db:
             rows=[('2020-01-02','100')]+[((datetime(2025,1,1)+timedelta(days=i)).date().isoformat(),'105') for i in range(401)]

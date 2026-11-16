@@ -7,6 +7,8 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import re
+
+import calendar_reference
 from urllib.parse import urlsplit
 
 PATH=Path(__file__).parent/'data/evaluation/event_corpus_v1.json'
@@ -83,7 +85,8 @@ def report(data):
         check=json.loads(PRICE_CHECK.read_text())
         frozen=PRICE_CHECK.parent/'price_checks'/(check.get('run_id','')+'.json')
         if re.fullmatch('[a-f0-9]{64}',check.get('run_id','')) and check.get('corpus_fingerprint')==fingerprint(data) and frozen.exists() and fingerprint(json.loads(frozen.read_text()))==check['run_id']:
-            result['latest_private_price_check']={k:check[k] for k in ('checked_at','source_verified_cases','verified_daily_return_cases','complete_coverage_cases','run_id','not_expert_or_second_reviewer')}
+            result['latest_private_price_check']={k:check[k] for k in ('checked_at','source_verified_cases','verified_daily_return_cases','complete_coverage_cases','run_id','not_expert_or_second_reviewer','calendar_policy') if k in check}
+            result['latest_private_price_check']['calendar_policy_current']=check.get('calendar_policy')==calendar_reference.POLICY
     return result
 
 

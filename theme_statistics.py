@@ -48,6 +48,7 @@ def calculate(inputs):
                  '시장 모형은 각 관측 창 이전 최대 120일·최소 60일로 추정합니다. 업종 보정은 하지 않습니다.',
                  '거래량 1,000주 미만인 시작·종료 봉은 제외합니다. 실제 거래대금이 없어 완전한 유동성 검증은 아닙니다.',
                  '일 단위 관측이며 장중 확산·선행 예측·인과·합성 테마 점수가 아닙니다.']}
+    if inputs.get('calendar_policy'):output['calendar_policy']=inputs['calendar_policy']
     for theme in inputs['business']['themes']:
         for market in ('KR','US'):
             selected={};duplicates=[]
@@ -61,6 +62,8 @@ def calculate(inputs):
             points=[p for p in reactions.sessions(calendar,market) if h.timestamp(p['close'])<=clock]
             # A date-only membership source is not an intraday availability guarantee.
             last=points[-1]['day'] if points else None
+            localday=clock.astimezone(h.ZoneInfo(h.ZONES[market])).date().isoformat()
+            if any(v.get('calendar_unverified') and d<=localday and (not last or d>=last) for d,v in calendar.items()):points=[];last=None
             series={m['code']:daily_returns(source['prices'].get(m['code'],[]),points,calendar,clock) for m in selected.values()}
             benchmark=daily_returns(source['benchmark_prices'],points,calendar,clock,False)
             latest={code:values[last] for code,values in series.items() if last in values} if last else {}
@@ -106,11 +109,11 @@ def load_inputs(as_of=None,membership_basis='as_of'):
     for market in ('KR','US'):
         benchmark='KOSPI' if market=='KR' else 'SPY'
         with h.db() as db:
-            calendar={r['day']:{**json.loads(r['payload']),'response_id':r['response_id']} for r in db.execute('SELECT * FROM calendars WHERE market=?',(market,))}
+            calendar=h.calendar_snapshot(db,market)
         codes={m['security']['provider_symbol']:m['code'] for m in knowledge['memberships'] if m['security']['country']==market}
         markets[market]={'calendar':calendar,'benchmark':benchmark,'benchmark_prices':h.observations(market,benchmark,until=moment.astimezone(h.ZoneInfo(h.ZONES[market])).date().isoformat()),
                          'prices':{code:h.observations(market,symbol,until=moment.astimezone(h.ZoneInfo(h.ZONES[market])).date().isoformat()) for symbol,code in codes.items()}}
-    return {'as_of':moment.isoformat(),'membership_basis':membership_basis,'business':knowledge,'markets':markets}
+    return {'calendar_policy':h.CALENDAR_POLICY,'as_of':moment.isoformat(),'membership_basis':membership_basis,'business':knowledge,'markets':markets}
 
 
 def schema(db):db.execute('CREATE TABLE IF NOT EXISTS theme_runs (id TEXT PRIMARY KEY,as_of TEXT,inputs TEXT,result TEXT,created_at TEXT)')
@@ -130,7 +133,7 @@ def snapshot(as_of=None,run_id=None,include_inputs=False):
     if not h.PATH.exists():return {'version':VERSION,'runs':[]}
     with h.db() as db:
         schema(db);rows=db.execute("SELECT id,inputs,result FROM theme_runs WHERE (? IS NULL OR json_extract(result,'$.membership_as_of')=?) AND (? IS NULL OR id=?) ORDER BY created_at DESC LIMIT 2",(as_of,as_of,run_id,run_id)).fetchall()
-    return {'version':VERSION,'runs':[{**json.loads(r['result']),**({'inputs':json.loads(r['inputs'])} if include_inputs else {})} for r in rows]}
+    return {'version':VERSION,'runs':[{**json.loads(r['result']),'calendar_policy_current':json.loads(r['result']).get('calendar_policy')==h.CALENDAR_POLICY,**({'inputs':json.loads(r['inputs'])} if include_inputs else {})} for r in rows]}
 
 
 if __name__=='__main__':

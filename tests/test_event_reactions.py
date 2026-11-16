@@ -85,12 +85,38 @@ class ReactionTest(unittest.TestCase):
         data=inputs(8);del data['calendar'][data['stock_prices'][-3]['day']]
         self.assertEqual(r.calculate(data)['status'],'calendar_or_future_session_missing')
 
+    def test_real_calendar_consumer_uses_exchange_holiday_without_rewriting_vendor(self):
+        from tests.test_market_history import calendar
+        tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+        event={'article_id':'holiday','event_id':'holiday','source_key':'source','rule_version':'fixture','review_status':'fixture','axis':'rates',
+               'published_at':'2020-12-25T10:00:00-05:00','available_at':None,'url':'https://example.com'}
+        with patch.object(h,'PATH',Path(tmp.name)/'market.sqlite3'),patch.object(r.event_facts,'snapshot',return_value={'proposals':[event]}):
+            with h.db() as db:
+                for day,opened in [('2020-12-24',True),('2020-12-25',True),('2020-12-26',False),('2020-12-27',False),('2020-12-28',True)]:
+                    response=calendar(day,market='US',opened=opened)
+                    if opened:response['result']['today']['regularMarket']={'startTime':day+'T09:30:00-05:00','endTime':day+'T16:00:00-05:00'}
+                    h.save_calendar(db,'US',day,response)
+                original=json.loads(db.execute('SELECT payload FROM calendars WHERE market=? AND day=?',('US','2020-12-25')).fetchone()[0])
+            data=r.load_inputs('holiday','US','AAPL',as_of='2021-01-02T00:00:00Z')
+            observed=r.calculate(data)
+            self.assertEqual(observed['windows'][1]['end']['day'],'2020-12-28')
+            self.assertTrue(any(c['day']=='2020-12-25' and c['source_conflict'] for c in observed['windows'][1]['calendar_evidence']))
+            event['published_at']='2020-12-24T14:00:00-05:00'
+            after_early_close=r.calculate(r.load_inputs('holiday','US','AAPL',as_of='2021-01-02T00:00:00Z'))
+            self.assertEqual(after_early_close['windows'][1]['end']['day'],'2020-12-28')
+            self.assertEqual(after_early_close['windows'][1]['start']['close'],'2020-12-24T13:00:00-05:00')
+            self.assertTrue(original['regular_open'])
+            self.assertIsNone(observed['windows'][1]['raw_return'])
+
     def test_frozen_replay_api_and_missing_run(self):
         tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
         with patch.object(h,'PATH',Path(tmp.name)/'market.sqlite3'),patch.object(r,'load_inputs',return_value=inputs()):
             result=r.run('a','KR','005930');self.assertTrue(r.replay(result['run_id']))
             self.assertEqual(r.run('a','KR','005930')['run_id'],result['run_id'])
             self.assertEqual(len(r.snapshot('a')['runs']),1)
+            self.assertFalse(r.snapshot('a')['runs'][0]['calendar_policy_current'])
+            self.assertEqual(r.snapshot(run_id=result['run_id'],include_inputs=True)['runs'][0]['inputs'],inputs())
+            self.assertRaises(ValueError,r.snapshot,include_inputs=True)
             handler=object.__new__(server.Handler);handler.respond=Mock();handler.path='/api/reactions?article_id=a';handler.do_GET()
             self.assertEqual(json.loads(handler.respond.call_args.args[0])['runs'][0]['run_id'],result['run_id'])
             self.assertRaises(ValueError,r.snapshot,run_id='bad')

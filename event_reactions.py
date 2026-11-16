@@ -17,10 +17,11 @@ VERSION='daily-reaction-v1'
 def sessions(calendar,market):
     result=[]
     for day,row in sorted(calendar.items()):
-        if not row['regular_open']:continue
+        if not row['regular_open'] or row.get('calendar_unverified'):continue
         session=(row.get('integrated') or {}).get('regularMarket') if market=='KR' else row.get('regularMarket')
         if not session:raise ValueError('개장 캘린더에 세션 누락')
-        result.append({'day':day,'open':session['startTime'],'close':session['endTime'],'response_id':row.get('response_id')})
+        result.append({'day':day,'open':session['startTime'],'close':session['endTime'],'response_id':row.get('response_id'),
+                       **({'calendar_reference':row['calendar_reference'],'calendar_source_conflict':row.get('calendar_source_conflict',False)} if row.get('calendar_reference') else {})})
     return result
 
 
@@ -51,7 +52,7 @@ def price_return(rows,start,end,clock):
 def calendar_complete(calendar,start,end):
     current=datetime.fromisoformat(start).date();last=datetime.fromisoformat(end).date()
     while current<=last:
-        if current.isoformat() not in calendar:return False
+        if current.isoformat() not in calendar or calendar[current.isoformat()].get('calendar_unverified'):return False
         current+=timedelta(days=1)
     return True
 
@@ -69,6 +70,8 @@ def calculate(inputs):
         'adjusted':inputs['adjusted'],'windows':[],'alignment':None,'status':'event_time_unknown',
         'quality':['corporate_actions_unavailable','historical_suspension_unavailable','concurrent_events_not_excluded'],
         'claim':'가격 반응 관측 · 기사 발견 이후 매매 수익이나 인과 효과가 아님'}
+    if inputs.get('calendar_policy'):result['calendar_policy']=inputs['calendar_policy']
+    if any(c.get('calendar_source_conflict') for c in inputs['calendar'].values()):result['quality'].append('vendor_calendar_conflicts_corrected_with_exchange_sources')
     if not source_time:return result
     event_time=h.timestamp(source_time)
     if event_time>clock:return {**result,'status':'event_not_yet_available'}
@@ -106,6 +109,9 @@ def calculate(inputs):
                         mean=sum(baseline)/len(baseline)
                         window['volume_change']=float(Decimal(stocks[end['day']]['volume'])/mean-1)
                     window['volume_baseline_samples']=len(baseline)
+        if inputs.get('calendar_policy') and window['start'] and window['end']:
+            window['calendar_evidence']=[{'day':d,'response_id':c.get('response_id'),'reference':c['calendar_reference'],'source_conflict':c.get('calendar_source_conflict',False)}
+                for d,c in inputs['calendar'].items() if window['start']['day']<=d<=window['end']['day'] and c.get('calendar_reference')]
         result['windows'].append(window)
     return result
 
@@ -121,11 +127,11 @@ def load_inputs(article_id,market,symbol,benchmark=None,basis='public',adjusted=
     if not event:raise ValueError('분류된 사건 제안 없음')
     event_time=event.get('published_at') if basis=='public' else event.get('available_at')
     with h.db() as db:
-        calendar={r['day']:{**json.loads(r['payload']),'response_id':r['response_id']} for r in db.execute('SELECT * FROM calendars WHERE market=?',(market,))}
+        calendar=h.calendar_snapshot(db,market)
     after=[p for p in sessions(calendar,market) if event_time and h.timestamp(p['close'])>h.timestamp(event_time)]
     until=after[min(1,len(after)-1)]['day'] if after else h.timestamp(event_time).astimezone(h.ZoneInfo(h.ZONES[market])).date().isoformat() if event_time else None
     return {'event':{k:event.get(k) for k in ('article_id','event_id','source_key','rule_version','published_at','available_at','review_status','url')},
-        'market':market,'symbol':symbol,'benchmark':benchmark,'basis':basis,'adjusted':adjusted,'as_of':moment.isoformat(),
+        'calendar_policy':h.CALENDAR_POLICY,'market':market,'symbol':symbol,'benchmark':benchmark,'basis':basis,'adjusted':adjusted,'as_of':moment.isoformat(),
         'stock_prices':h.observations(market,symbol,adjusted,until=until),
         'benchmark_prices':h.observations(market,benchmark,adjusted if market=='US' else False,until=until),'calendar':calendar}
 
@@ -143,14 +149,16 @@ def run(article_id,market,symbol,**kwargs):
     return result
 
 
-def snapshot(article_id=None,run_id=None):
+def snapshot(article_id=None,run_id=None,include_inputs=False):
+    if include_inputs and not run_id:raise ValueError('전체 입력 조회에는 실행 식별자 필요')
     if not h.PATH.exists():return {'version':VERSION,'runs':[]}
     if run_id and not re.fullmatch('[a-f0-9]{64}',run_id):raise ValueError('관측 실행 식별자 오류')
     with h.db() as db:
         schema(db)
-        rows=db.execute('SELECT result FROM reaction_runs WHERE (? IS NULL OR article_id=?) AND (? IS NULL OR id=?) ORDER BY created_at DESC LIMIT 20',
+        columns='result,inputs' if include_inputs else 'result'
+        rows=db.execute(f'SELECT {columns} FROM reaction_runs WHERE (? IS NULL OR article_id=?) AND (? IS NULL OR id=?) ORDER BY created_at DESC LIMIT 20',
                         (article_id,article_id,run_id,run_id)).fetchall()
-    return {'version':VERSION,'runs':[json.loads(r[0]) for r in rows]}
+    return {'version':VERSION,'runs':[{**json.loads(r[0]),'calendar_policy_current':json.loads(r[0]).get('calendar_policy')==h.CALENDAR_POLICY,**({'inputs':json.loads(r['inputs'])} if include_inputs else {})} for r in rows]}
 
 
 def replay(identifier):
