@@ -1,0 +1,1512 @@
+{
+  "issue": 27,
+  "actual_http": true,
+  "synthetic_inputs": true,
+  "same_physical_host": true,
+  "production_capacity_verified": false,
+  "normal_budgets": {
+    "p95_ms": 1000,
+    "p99_ms": 3000,
+    "failure_per_attempt": 0.001
+  },
+  "runs": [
+    {
+      "stage": "arrival-1000-60s-smoke",
+      "configured_users": 1000,
+      "configured_seconds": 60,
+      "mode": "arrival",
+      "workload_version": "active-sessions-v1",
+      "manifest_sha256": "fdf9c0b601e6734658e2d905c48e364a8f4c224e11e073aa5412f0577d4ba33d",
+      "expected_rps": 505,
+      "phase": "normal",
+      "result": {
+        "stage": "arrival-1000-60s-smoke",
+        "users": 1000,
+        "duration": "60s",
+        "mode": "arrival",
+        "phase": "normal",
+        "elapsed_seconds": 10.752145051956177,
+        "exit_code": 105,
+        "resource_stop": "server thread safety budget exceeded",
+        "completed_duration": false
+      },
+      "native_window_start_utc_epoch": 1794907724.143224,
+      "expected_requests_full_interval": 30300,
+      "attempted": 3850,
+      "completed": 1849,
+      "body_checked_completed": 1122,
+      "validated_successes": 202,
+      "failures": 1038,
+      "failure_rate": null,
+      "failure_per_attempt_lower_bound": 0.26961038961038963,
+      "unfinished_attempts": 2001,
+      "unverified_attempts": 2610,
+      "native_completed_without_content_check": 727,
+      "failure_or_unverified_rate": 0.9475324675324676,
+      "outcomes": {
+        "ok": 202,
+        "connection": 920
+      },
+      "missed_poll_rounds": 0,
+      "dropped_arrival_iterations": 711,
+      "native_error_codes": {
+        "1211": 1038
+      },
+      "native_transport_failures": {
+        "connection_timeout": 1038
+      },
+      "native_connection_timings_ms": {
+        "http_req_blocked": {
+          "p(99)": 5854.03456,
+          "max": 5870.034,
+          "count": 1849,
+          "avg": 530.8760502974583,
+          "p(50)": 0,
+          "p(95)": 3933.6771999999996
+        },
+        "http_req_connecting": {
+          "p(50)": 0,
+          "p(95)": 3933.6402,
+          "p(99)": 5853.96852,
+          "max": 5870.019,
+          "count": 1849,
+          "avg": 530.8296819902653
+        },
+        "http_req_tls_handshaking": {
+          "max": 0,
+          "count": 1849,
+          "avg": 0,
+          "p(50)": 0,
+          "p(95)": 0,
+          "p(99)": 0
+        }
+      },
+      "attempted_in_scheduled_window": 3850,
+      "native_completed_in_scheduled_window": 1849,
+      "body_checked_in_scheduled_window": 1122,
+      "rps_full_scheduled_window": 64.16666666666667,
+      "completed_rps_full_scheduled_window": 30.816666666666666,
+      "native_event_window_seconds": 10.298894882202148,
+      "native_completion_rps_over_event_window": 179.53382582779017,
+      "observed_request_span_seconds": 10.286226034164429,
+      "rps_over_observed_request_span": 374.28693353740243,
+      "network_bytes_k6": {
+        "data_sent": 128919,
+        "data_received": 2902671
+      },
+      "latency_ms": {
+        "dashboard": {
+          "n": 352,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 3230.7732600000013
+        },
+        "market": {
+          "n": 185,
+          "p50": 0.0,
+          "p95": 1807.474599999998,
+          "p99": 2910.163719999999
+        },
+        "quotes": {
+          "n": 352,
+          "p50": 0.0,
+          "p95": 737.4226499999991,
+          "p99": 1386.5930400000009
+        },
+        "feed": {
+          "n": 101,
+          "p50": 0.0,
+          "p95": 2928.991,
+          "p99": 3437.111
+        },
+        "timeline": {
+          "n": 66,
+          "p50": 0.0,
+          "p95": 437.74175,
+          "p99": 1100.0774999999999
+        },
+        "detail": {
+          "n": 66,
+          "p50": 0.0,
+          "p95": 3719.5345,
+          "p99": 4342.4645999999975
+        }
+      },
+      "initialized_sessions": 0,
+      "distinct_active_session_slots": 0,
+      "session_rounds": 1350,
+      "completed_rounds": 352,
+      "minimum_slot_span_seconds": null,
+      "slot_round_counts": {
+        "min": null,
+        "max": null
+      },
+      "inter_round_gap_seconds": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "server": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 840.1,
+          "p50": 550.7,
+          "p95": 811.1600000000001,
+          "max": 840.1
+        },
+        "rss_bytes": {
+          "first": 104448000,
+          "last": 176242688,
+          "p50": 150847488.0,
+          "p95": 173703168.0,
+          "max": 176242688
+        },
+        "threads": {
+          "first": 5,
+          "last": 574,
+          "p50": 345.0,
+          "p95": 551.0999999999999,
+          "max": 574
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 570,
+          "p50": 336.0,
+          "p95": 546.5999999999999,
+          "max": 570
+        }
+      },
+      "generator": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 19.4,
+          "p50": 18.1,
+          "p95": 19.27,
+          "max": 19.4
+        },
+        "rss_bytes": {
+          "first": 4112384,
+          "last": 531922944,
+          "p50": 296321024.0,
+          "p95": 508362752.0,
+          "max": 531922944
+        },
+        "threads": {
+          "first": 2,
+          "last": 19,
+          "p50": 19.0,
+          "p95": 19.0,
+          "max": 19
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 571,
+          "p50": 335.0,
+          "p95": 547.4,
+          "max": 571
+        }
+      },
+      "fault_recoveries": [],
+      "limits": [
+        "Same-host synthetic input; no production capacity claim.",
+        "Scheduled-window RPS uses the full requested interval even if interrupted; observed-span RPS is separately labelled.",
+        "Interrupted batches can have native completions without JS body validation; these are never successful reads.",
+        "5-second buckets can cross jitter boundaries; per-slot gap and span are required.",
+        "ps CPU is a sampled OS value, not isolated core demand; TCP connections sampled every 5s."
+      ]
+    },
+    {
+      "stage": "diagnostic-10000-30s",
+      "configured_users": 10000,
+      "configured_seconds": 30,
+      "mode": "sessions",
+      "workload_version": "active-sessions-v1",
+      "manifest_sha256": "fdf9c0b601e6734658e2d905c48e364a8f4c224e11e073aa5412f0577d4ba33d",
+      "expected_rps": 5050,
+      "phase": "normal",
+      "result": {
+        "stage": "diagnostic-10000-30s",
+        "users": 10000,
+        "duration": "30s",
+        "mode": "sessions",
+        "phase": "normal",
+        "elapsed_seconds": 12.880795240402222,
+        "exit_code": 105,
+        "resource_stop": "server thread safety budget exceeded",
+        "completed_duration": false
+      },
+      "native_window_start_utc_epoch": 1794907692.706191,
+      "expected_requests_full_interval": 151500,
+      "attempted": 2364,
+      "completed": 87,
+      "body_checked_completed": 0,
+      "validated_successes": 0,
+      "failures": 0,
+      "failure_rate": null,
+      "failure_per_attempt_lower_bound": 0.0,
+      "unfinished_attempts": 2277,
+      "unverified_attempts": 2364,
+      "native_completed_without_content_check": 87,
+      "failure_or_unverified_rate": 1.0,
+      "outcomes": {},
+      "missed_poll_rounds": 0,
+      "dropped_arrival_iterations": 0,
+      "native_error_codes": {},
+      "native_transport_failures": {},
+      "native_connection_timings_ms": {
+        "http_req_blocked": {
+          "avg": 841.3884827586211,
+          "p(50)": 807.985,
+          "p(95)": 1238.5782,
+          "p(99)": 1519.99428,
+          "max": 1527.392,
+          "count": 87
+        },
+        "http_req_connecting": {
+          "avg": 821.792632183908,
+          "p(50)": 801.562,
+          "p(95)": 1128.8689,
+          "p(99)": 1248.2137400000001,
+          "max": 1259.171,
+          "count": 87
+        },
+        "http_req_tls_handshaking": {
+          "count": 87,
+          "avg": 0,
+          "p(50)": 0,
+          "p(95)": 0,
+          "p(99)": 0,
+          "max": 0
+        }
+      },
+      "attempted_in_scheduled_window": 2364,
+      "native_completed_in_scheduled_window": 87,
+      "body_checked_in_scheduled_window": 0,
+      "rps_full_scheduled_window": 78.8,
+      "completed_rps_full_scheduled_window": 2.9,
+      "native_event_window_seconds": 9.025115013122559,
+      "native_completion_rps_over_event_window": 9.63976634907163,
+      "observed_request_span_seconds": 6.804711103439331,
+      "rps_over_observed_request_span": 347.4063724476348,
+      "network_bytes_k6": {
+        "data_sent": 86927,
+        "data_received": 109446
+      },
+      "latency_ms": {},
+      "initialized_sessions": 9992,
+      "distinct_active_session_slots": 938,
+      "session_rounds": 938,
+      "completed_rounds": 0,
+      "minimum_slot_span_seconds": 0.0,
+      "slot_round_counts": {
+        "min": 1,
+        "max": 1
+      },
+      "inter_round_gap_seconds": {
+        "n": 0,
+        "p50": null,
+        "p95": null,
+        "max": null
+      },
+      "server": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 134.0,
+          "p50": 67.0,
+          "p95": 127.3,
+          "max": 134.0
+        },
+        "rss_bytes": {
+          "first": 17154048,
+          "last": 130318336,
+          "p50": 73736192.0,
+          "p95": 124660121.6,
+          "max": 130318336
+        },
+        "threads": {
+          "first": 5,
+          "last": 871,
+          "p50": 438.0,
+          "p95": 827.6999999999999,
+          "max": 871
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 862,
+          "p50": 431.0,
+          "p95": 818.9,
+          "max": 862
+        }
+      },
+      "generator": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 178.5,
+          "p50": 89.25,
+          "p95": 169.575,
+          "max": 178.5
+        },
+        "rss_bytes": {
+          "first": 5013504,
+          "last": 1641709568,
+          "p50": 823361536.0,
+          "p95": 1559874764.8,
+          "max": 1641709568
+        },
+        "threads": {
+          "first": 2,
+          "last": 19,
+          "p50": 10.5,
+          "p95": 18.15,
+          "max": 19
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 864,
+          "p50": 432.0,
+          "p95": 820.8,
+          "max": 864
+        }
+      },
+      "fault_recoveries": [],
+      "limits": [
+        "Same-host synthetic input; no production capacity claim.",
+        "Scheduled-window RPS uses the full requested interval even if interrupted; observed-span RPS is separately labelled.",
+        "Interrupted batches can have native completions without JS body validation; these are never successful reads.",
+        "5-second buckets can cross jitter boundaries; per-slot gap and span are required.",
+        "ps CPU is a sampled OS value, not isolated core demand; TCP connections sampled every 5s."
+      ]
+    },
+    {
+      "stage": "regular-100-10m",
+      "configured_users": 100,
+      "configured_seconds": 600,
+      "mode": "sessions",
+      "workload_version": "active-sessions-v1",
+      "manifest_sha256": "fdf9c0b601e6734658e2d905c48e364a8f4c224e11e073aa5412f0577d4ba33d",
+      "expected_rps": 50.5,
+      "phase": "normal",
+      "result": {
+        "stage": "regular-100-10m",
+        "users": 100,
+        "duration": "10m",
+        "mode": "sessions",
+        "phase": "normal",
+        "elapsed_seconds": 608.2194139957428,
+        "exit_code": 0,
+        "resource_stop": null,
+        "completed_duration": true
+      },
+      "native_window_start_utc_epoch": 1794907049.662889,
+      "expected_requests_full_interval": 30300,
+      "attempted": 30300,
+      "completed": 30300,
+      "body_checked_completed": 30300,
+      "validated_successes": 30300,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "failure_per_attempt_lower_bound": 0.0,
+      "unfinished_attempts": 0,
+      "unverified_attempts": 0,
+      "native_completed_without_content_check": 0,
+      "failure_or_unverified_rate": 0.0,
+      "outcomes": {
+        "ok": 30300
+      },
+      "missed_poll_rounds": 0,
+      "dropped_arrival_iterations": 0,
+      "native_error_codes": {},
+      "native_transport_failures": {},
+      "native_connection_timings_ms": {
+        "http_req_blocked": {
+          "avg": 1.6356627392739191,
+          "p(50)": 0.294,
+          "p(95)": 0.7751999999999947,
+          "p(99)": 37.57838999999999,
+          "max": 360.957,
+          "count": 30300
+        },
+        "http_req_connecting": {
+          "p(99)": 36.85830999999997,
+          "max": 360.907,
+          "count": 30300,
+          "avg": 1.5711088448844892,
+          "p(50)": 0.265,
+          "p(95)": 0.597
+        },
+        "http_req_tls_handshaking": {
+          "p(95)": 0,
+          "p(99)": 0,
+          "max": 0,
+          "count": 30300,
+          "avg": 0,
+          "p(50)": 0
+        }
+      },
+      "attempted_in_scheduled_window": 30300,
+      "native_completed_in_scheduled_window": 30293,
+      "body_checked_in_scheduled_window": 30292,
+      "rps_full_scheduled_window": 50.5,
+      "completed_rps_full_scheduled_window": 50.48833333333334,
+      "native_event_window_seconds": 604.9076640605927,
+      "native_completion_rps_over_event_window": 50.09028947757702,
+      "observed_request_span_seconds": 599.8503379821777,
+      "rps_over_observed_request_span": 50.51259969599325,
+      "network_bytes_k6": {
+        "data_sent": 2759100,
+        "data_received": 1522986300
+      },
+      "latency_ms": {
+        "dashboard": {
+          "n": 12000,
+          "p50": 85.376,
+          "p95": 586.7162,
+          "p99": 1122.5488900000014
+        },
+        "market": {
+          "n": 7200,
+          "p50": 31.367,
+          "p95": 270.07119999999986,
+          "p99": 537.8449800000002
+        },
+        "quotes": {
+          "n": 6000,
+          "p50": 6.718,
+          "p95": 71.32300000000006,
+          "p99": 145.43564
+        },
+        "feed": {
+          "n": 3000,
+          "p50": 91.0625,
+          "p95": 382.2250499999994,
+          "p99": 660.4095899999998
+        },
+        "timeline": {
+          "n": 1800,
+          "p50": 6.8025,
+          "p95": 70.19959999999996,
+          "p99": 159.35935999999995
+        },
+        "detail": {
+          "n": 300,
+          "p50": 121.2315,
+          "p95": 519.4357500000001,
+          "p99": 961.8434
+        }
+      },
+      "initialized_sessions": 100,
+      "distinct_active_session_slots": 100,
+      "session_rounds": 12000,
+      "completed_rounds": 12000,
+      "minimum_slot_span_seconds": 594.9992427825928,
+      "slot_round_counts": {
+        "min": 120,
+        "max": 120
+      },
+      "inter_round_gap_seconds": {
+        "n": 11900,
+        "p50": 5.000009059906006,
+        "p95": 5.001308965682983,
+        "max": 5.079732179641724
+      },
+      "server": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 0.0,
+          "p50": 0.6,
+          "p95": 164.3949999999998,
+          "max": 287.1
+        },
+        "rss_bytes": {
+          "first": 19447808,
+          "last": 40992768,
+          "p50": 39944192.0,
+          "p95": 48010854.4,
+          "max": 62193664
+        },
+        "threads": {
+          "first": 5,
+          "last": 5,
+          "p50": 7.0,
+          "p95": 28.0,
+          "max": 43
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 0,
+          "p50": 1.0,
+          "p95": 18.299999999999983,
+          "max": 36
+        }
+      },
+      "generator": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 0.8,
+          "p50": 9.0,
+          "p95": 16.33,
+          "max": 24.4
+        },
+        "rss_bytes": {
+          "first": 5537792,
+          "last": 121880576,
+          "p50": 117276672.0,
+          "p95": 126723686.39999999,
+          "max": 131334144
+        },
+        "threads": {
+          "first": 2,
+          "last": 19,
+          "p50": 19.0,
+          "p95": 19.0,
+          "max": 19
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 0,
+          "p50": 1.0,
+          "p95": 23.299999999999983,
+          "max": 39
+        }
+      },
+      "fault_recoveries": [],
+      "limits": [
+        "Same-host synthetic input; no production capacity claim.",
+        "Scheduled-window RPS uses the full requested interval even if interrupted; observed-span RPS is separately labelled.",
+        "Interrupted batches can have native completions without JS body validation; these are never successful reads.",
+        "5-second buckets can cross jitter boundaries; per-slot gap and span are required.",
+        "ps CPU is a sampled OS value, not isolated core demand; TCP connections sampled every 5s."
+      ]
+    },
+    {
+      "stage": "regular-1000-10m",
+      "configured_users": 1000,
+      "configured_seconds": 600,
+      "mode": "sessions",
+      "workload_version": "active-sessions-v1",
+      "manifest_sha256": "fdf9c0b601e6734658e2d905c48e364a8f4c224e11e073aa5412f0577d4ba33d",
+      "expected_rps": 505,
+      "phase": "normal",
+      "result": {
+        "stage": "regular-1000-10m",
+        "users": 1000,
+        "duration": "10m",
+        "mode": "sessions",
+        "phase": "normal",
+        "elapsed_seconds": 10.773684024810791,
+        "exit_code": 105,
+        "resource_stop": "server thread safety budget exceeded",
+        "completed_duration": false
+      },
+      "native_window_start_utc_epoch": 1794907658.469247,
+      "expected_requests_full_interval": 303000,
+      "attempted": 3918,
+      "completed": 1915,
+      "body_checked_completed": 1211,
+      "validated_successes": 241,
+      "failures": 1089,
+      "failure_rate": null,
+      "failure_per_attempt_lower_bound": 0.277947932618683,
+      "unfinished_attempts": 2003,
+      "unverified_attempts": 2588,
+      "native_completed_without_content_check": 704,
+      "failure_or_unverified_rate": 0.9384890250127617,
+      "outcomes": {
+        "ok": 241,
+        "connection": 970
+      },
+      "missed_poll_rounds": 0,
+      "dropped_arrival_iterations": 0,
+      "native_error_codes": {
+        "1211": 1089
+      },
+      "native_transport_failures": {
+        "connection_timeout": 1089
+      },
+      "native_connection_timings_ms": {
+        "http_req_blocked": {
+          "max": 5859.013,
+          "count": 1915,
+          "avg": 466.5019227154047,
+          "p(50)": 0,
+          "p(95)": 3933.7269,
+          "p(99)": 5853.58536
+        },
+        "http_req_connecting": {
+          "max": 5858.938,
+          "count": 1915,
+          "avg": 466.4754898172322,
+          "p(50)": 0,
+          "p(95)": 3933.5974,
+          "p(99)": 5853.55738
+        },
+        "http_req_tls_handshaking": {
+          "avg": 0,
+          "p(50)": 0,
+          "p(95)": 0,
+          "p(99)": 0,
+          "max": 0,
+          "count": 1915
+        }
+      },
+      "attempted_in_scheduled_window": 3918,
+      "native_completed_in_scheduled_window": 1915,
+      "body_checked_in_scheduled_window": 1211,
+      "rps_full_scheduled_window": 6.53,
+      "completed_rps_full_scheduled_window": 3.191666666666667,
+      "native_event_window_seconds": 10.467261791229248,
+      "native_completion_rps_over_event_window": 182.95138100058043,
+      "observed_request_span_seconds": 10.442148923873901,
+      "rps_over_observed_request_span": 375.2101247131489,
+      "network_bytes_k6": {
+        "data_sent": 127338,
+        "data_received": 4119201
+      },
+      "latency_ms": {
+        "dashboard": {
+          "n": 384,
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 3813.70744
+        },
+        "feed": {
+          "n": 102,
+          "p50": 0.0,
+          "p95": 3460.941049999999,
+          "p99": 3731.59634
+        },
+        "quotes": {
+          "n": 384,
+          "p50": 0.0,
+          "p95": 659.9740999999997,
+          "p99": 1131.9583000000007
+        },
+        "market": {
+          "n": 223,
+          "p50": 0.0,
+          "p95": 2434.9277999999995,
+          "p99": 2629.2619600000003
+        },
+        "timeline": {
+          "n": 59,
+          "p50": 0.0,
+          "p95": 66.14899999999996,
+          "p99": 843.4295800000014
+        },
+        "detail": {
+          "n": 59,
+          "p50": 0.0,
+          "p95": 3880.1428,
+          "p99": 4030.3885800000007
+        }
+      },
+      "initialized_sessions": 1000,
+      "distinct_active_session_slots": 1000,
+      "session_rounds": 1384,
+      "completed_rounds": 384,
+      "minimum_slot_span_seconds": 0.0,
+      "slot_round_counts": {
+        "min": 1,
+        "max": 2
+      },
+      "inter_round_gap_seconds": {
+        "n": 384,
+        "p50": 7.775287628173828,
+        "p95": 7.785538506507874,
+        "max": 9.421529054641724
+      },
+      "server": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 763.1,
+          "p50": 706.3,
+          "p95": 757.42,
+          "max": 763.1
+        },
+        "rss_bytes": {
+          "first": 18956288,
+          "last": 158957568,
+          "p50": 158957568.0,
+          "p95": 178701926.4,
+          "max": 180895744
+        },
+        "threads": {
+          "first": 5,
+          "last": 549,
+          "p50": 286.0,
+          "p95": 522.7,
+          "max": 549
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 540,
+          "p50": 283.0,
+          "p95": 514.3,
+          "max": 540
+        }
+      },
+      "generator": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 25.0,
+          "p50": 14.3,
+          "p95": 23.93,
+          "max": 25.0
+        },
+        "rss_bytes": {
+          "first": 4603904,
+          "last": 503939072,
+          "p50": 443023360.0,
+          "p95": 497847500.8,
+          "max": 503939072
+        },
+        "threads": {
+          "first": 2,
+          "last": 18,
+          "p50": 18.0,
+          "p95": 18.0,
+          "max": 18
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 535,
+          "p50": 283.0,
+          "p95": 509.79999999999995,
+          "max": 535
+        }
+      },
+      "fault_recoveries": [],
+      "limits": [
+        "Same-host synthetic input; no production capacity claim.",
+        "Scheduled-window RPS uses the full requested interval even if interrupted; observed-span RPS is separately labelled.",
+        "Interrupted batches can have native completions without JS body validation; these are never successful reads.",
+        "5-second buckets can cross jitter boundaries; per-slot gap and span are required.",
+        "ps CPU is a sampled OS value, not isolated core demand; TCP connections sampled every 5s."
+      ]
+    },
+    {
+      "stage": "synchronized-100-60s-smoke",
+      "configured_users": 100,
+      "configured_seconds": 60,
+      "mode": "sessions",
+      "workload_version": "active-sessions-v1",
+      "manifest_sha256": "fdf9c0b601e6734658e2d905c48e364a8f4c224e11e073aa5412f0577d4ba33d",
+      "expected_rps": 50.5,
+      "phase": "normal",
+      "result": {
+        "stage": "synchronized-100-60s-smoke",
+        "users": 100,
+        "duration": "60s",
+        "mode": "sessions",
+        "phase": "normal",
+        "elapsed_seconds": 67.04107689857483,
+        "exit_code": 99,
+        "resource_stop": null,
+        "completed_duration": true
+      },
+      "native_window_start_utc_epoch": 1794907755.334046,
+      "expected_requests_full_interval": 3030,
+      "attempted": 3038,
+      "completed": 3038,
+      "body_checked_completed": 3038,
+      "validated_successes": 2210,
+      "failures": 828,
+      "failure_rate": 0.2725477287689269,
+      "failure_per_attempt_lower_bound": 0.2725477287689269,
+      "unfinished_attempts": 0,
+      "unverified_attempts": 0,
+      "native_completed_without_content_check": 0,
+      "failure_or_unverified_rate": 0.2725477287689269,
+      "outcomes": {
+        "ok": 2210,
+        "connection": 828
+      },
+      "missed_poll_rounds": 45,
+      "dropped_arrival_iterations": 0,
+      "native_error_codes": {
+        "1211": 828
+      },
+      "native_transport_failures": {
+        "connection_timeout": 828
+      },
+      "native_connection_timings_ms": {
+        "http_req_blocked": {
+          "avg": 453.67273666886126,
+          "p(50)": 30.116,
+          "p(95)": 3937.66515,
+          "p(99)": 5877.51278,
+          "max": 5933.111,
+          "count": 3038
+        },
+        "http_req_connecting": {
+          "p(99)": 5877.48463,
+          "max": 5932.916,
+          "count": 3038,
+          "avg": 453.63600921658985,
+          "p(50)": 30.067500000000003,
+          "p(95)": 3937.62025
+        },
+        "http_req_tls_handshaking": {
+          "p(50)": 0,
+          "p(95)": 0,
+          "p(99)": 0,
+          "max": 0,
+          "count": 3038,
+          "avg": 0
+        }
+      },
+      "attempted_in_scheduled_window": 3038,
+      "native_completed_in_scheduled_window": 2979,
+      "body_checked_in_scheduled_window": 2963,
+      "rps_full_scheduled_window": 50.63333333333333,
+      "completed_rps_full_scheduled_window": 49.65,
+      "native_event_window_seconds": 65.6102020740509,
+      "native_completion_rps_over_event_window": 46.30377447353635,
+      "observed_request_span_seconds": 59.24449896812439,
+      "rps_over_observed_request_span": 51.27902257447649,
+      "network_bytes_k6": {
+        "data_sent": 201165,
+        "data_received": 112293528
+      },
+      "latency_ms": {
+        "dashboard": {
+          "n": 1200,
+          "p50": 899.1025,
+          "p95": 3404.970599999999,
+          "p99": 3718.7896699999997
+        },
+        "feed": {
+          "n": 300,
+          "p50": 610.3135,
+          "p95": 1696.6880000000003,
+          "p99": 2353.4237200000002
+        },
+        "quotes": {
+          "n": 600,
+          "p50": 11.2655,
+          "p95": 121.76854999999986,
+          "p99": 252.0845199999999
+        },
+        "timeline": {
+          "n": 180,
+          "p50": 15.725999999999999,
+          "p95": 211.13754999999986,
+          "p99": 289.1117700000001
+        },
+        "detail": {
+          "n": 38,
+          "p50": 173.72899999999998,
+          "p95": 1086.7919,
+          "p99": 1105.0387
+        },
+        "market": {
+          "n": 720,
+          "p50": 169.324,
+          "p95": 734.7141999999999,
+          "p99": 1015.1157499999998
+        }
+      },
+      "initialized_sessions": 100,
+      "distinct_active_session_slots": 100,
+      "session_rounds": 1200,
+      "completed_rounds": 1200,
+      "minimum_slot_span_seconds": 54.99938488006592,
+      "slot_round_counts": {
+        "min": 12,
+        "max": 12
+      },
+      "inter_round_gap_seconds": {
+        "n": 1100,
+        "p50": 4.999968886375427,
+        "p95": 7.831773138046264,
+        "max": 7.848814010620117
+      },
+      "server": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 0.3,
+          "p50": 305.9,
+          "p95": 805.8,
+          "max": 813.3
+        },
+        "rss_bytes": {
+          "first": 14991360,
+          "last": 45056000,
+          "p50": 80068608.0,
+          "p95": 103789363.2,
+          "max": 104497152
+        },
+        "threads": {
+          "first": 5,
+          "last": 5,
+          "p50": 50.0,
+          "p95": 77.99999999999997,
+          "max": 93
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 0,
+          "p50": 46.0,
+          "p95": 71.79999999999995,
+          "max": 88
+        }
+      },
+      "generator": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 1.8,
+          "p50": 3.2,
+          "p95": 12.179999999999996,
+          "max": 14.1
+        },
+        "rss_bytes": {
+          "first": 5586944,
+          "last": 80904192,
+          "p50": 117604352.0,
+          "p95": 129276313.6,
+          "max": 132186112
+        },
+        "threads": {
+          "first": 2,
+          "last": 19,
+          "p50": 19.0,
+          "p95": 19.0,
+          "max": 19
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 0,
+          "p50": 45.0,
+          "p95": 70.79999999999997,
+          "max": 84
+        }
+      },
+      "fault_recoveries": [],
+      "limits": [
+        "Same-host synthetic input; no production capacity claim.",
+        "Scheduled-window RPS uses the full requested interval even if interrupted; observed-span RPS is separately labelled.",
+        "Interrupted batches can have native completions without JS body validation; these are never successful reads.",
+        "5-second buckets can cross jitter boundaries; per-slot gap and span are required.",
+        "ps CPU is a sampled OS value, not isolated core demand; TCP connections sampled every 5s."
+      ]
+    },
+    {
+      "stage": "faults-100-12m",
+      "configured_users": 100,
+      "configured_seconds": 720,
+      "mode": "sessions",
+      "workload_version": "active-sessions-v1",
+      "manifest_sha256": "fdf9c0b601e6734658e2d905c48e364a8f4c224e11e073aa5412f0577d4ba33d",
+      "expected_rps": 50.5,
+      "phase": "fault",
+      "result": {
+        "stage": "faults-100-12m",
+        "users": 100,
+        "duration": "12m",
+        "mode": "sessions",
+        "phase": "fault",
+        "elapsed_seconds": 730.0540857315063,
+        "exit_code": 0,
+        "resource_stop": null,
+        "completed_duration": true,
+        "fault_errors": []
+      },
+      "native_window_start_utc_epoch": 1794907839.577032,
+      "expected_requests_full_interval": 36360,
+      "attempted": 36360,
+      "completed": 36360,
+      "body_checked_completed": 36360,
+      "validated_successes": 35058,
+      "failures": 1302,
+      "failure_rate": 0.03580858085808581,
+      "failure_per_attempt_lower_bound": 0.03580858085808581,
+      "unfinished_attempts": 0,
+      "unverified_attempts": 0,
+      "native_completed_without_content_check": 0,
+      "failure_or_unverified_rate": 0.03580858085808581,
+      "outcomes": {
+        "ok": 35058,
+        "content": 1165,
+        "connection": 137
+      },
+      "missed_poll_rounds": 0,
+      "dropped_arrival_iterations": 0,
+      "native_error_codes": {
+        "1000": 4,
+        "1212": 133
+      },
+      "native_transport_failures": {
+        "other_error": 4,
+        "other_connection": 133
+      },
+      "native_connection_timings_ms": {
+        "http_req_blocked": {
+          "p(95)": 0.5500499999999985,
+          "p(99)": 31.6741,
+          "max": 380.303,
+          "count": 36360,
+          "avg": 1.2252722222222217,
+          "p(50)": 0.292
+        },
+        "http_req_connecting": {
+          "avg": 1.177220544554463,
+          "p(50)": 0.264,
+          "p(95)": 0.477,
+          "p(99)": 31.54541,
+          "max": 380.267,
+          "count": 36360
+        },
+        "http_req_tls_handshaking": {
+          "avg": 0,
+          "p(50)": 0,
+          "p(95)": 0,
+          "p(99)": 0,
+          "max": 0,
+          "count": 36360
+        }
+      },
+      "attempted_in_scheduled_window": 36360,
+      "native_completed_in_scheduled_window": 36338,
+      "body_checked_in_scheduled_window": 36330,
+      "rps_full_scheduled_window": 50.5,
+      "completed_rps_full_scheduled_window": 50.46944444444444,
+      "native_event_window_seconds": 724.9090139865875,
+      "native_completion_rps_over_event_window": 50.158018866451485,
+      "observed_request_span_seconds": 719.8488020896912,
+      "rps_over_observed_request_span": 50.51060708088758,
+      "network_bytes_k6": {
+        "data_sent": 3298833,
+        "data_received": 1820915613
+      },
+      "latency_ms": {
+        "dashboard": {
+          "n": 14400,
+          "p50": 86.712,
+          "p95": 435.23234999999994,
+          "p99": 831.3856400000003
+        },
+        "market": {
+          "n": 8640,
+          "p50": 29.371,
+          "p95": 184.51874999999964,
+          "p99": 361.6174800000002
+        },
+        "quotes": {
+          "n": 7200,
+          "p50": 6.385,
+          "p95": 55.347999999999885,
+          "p99": 130.1150500000001
+        },
+        "feed": {
+          "n": 3600,
+          "p50": 92.16399999999999,
+          "p95": 363.3098999999999,
+          "p99": 580.3527599999977
+        },
+        "timeline": {
+          "n": 2160,
+          "p50": 5.6745,
+          "p95": 52.70099999999984,
+          "p99": 104.4638199999997
+        },
+        "detail": {
+          "n": 360,
+          "p50": 121.7135,
+          "p95": 400.40495000000004,
+          "p99": 550.6070700000001
+        }
+      },
+      "initialized_sessions": 100,
+      "distinct_active_session_slots": 100,
+      "session_rounds": 14400,
+      "completed_rounds": 14400,
+      "minimum_slot_span_seconds": 714.9996421337128,
+      "slot_round_counts": {
+        "min": 144,
+        "max": 144
+      },
+      "inter_round_gap_seconds": {
+        "n": 14300,
+        "p50": 5.000006437301636,
+        "p95": 5.001167154312133,
+        "max": 5.197551012039185
+      },
+      "server": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 0.0,
+          "p50": 0.6,
+          "p95": 172.9,
+          "max": 418.5
+        },
+        "rss_bytes": {
+          "first": 16547840,
+          "last": 28884992,
+          "p50": 44269568.0,
+          "p95": 50266112.0,
+          "max": 57737216
+        },
+        "threads": {
+          "first": 5,
+          "last": 6,
+          "p50": 9.0,
+          "p95": 24.0,
+          "max": 38
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 0,
+          "p50": 1.0,
+          "p95": 15.0,
+          "max": 30
+        }
+      },
+      "generator": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 0.2,
+          "p50": 7.9,
+          "p95": 16.784999999999997,
+          "max": 20.6
+        },
+        "rss_bytes": {
+          "first": 6127616,
+          "last": 57671680,
+          "p50": 118390784.0,
+          "p95": 129775206.39999999,
+          "max": 131891200
+        },
+        "threads": {
+          "first": 2,
+          "last": 19,
+          "p50": 19.0,
+          "p95": 19.0,
+          "max": 19
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 0,
+          "p50": 1.0,
+          "p95": 16.94999999999999,
+          "max": 33
+        }
+      },
+      "fault_recoveries": [
+        {
+          "kind": "429",
+          "removed_at": 1794907894.039096,
+          "recovery": {
+            "seconds_after_removal": 7,
+            "stable_window_seconds": 60,
+            "attempted_in_window": 3030,
+            "failures_in_window": 0,
+            "active_slots": 100
+          },
+          "verdict": "met_at_100_sessions",
+          "scope": "1-second search resolution; conservative zero-error 60s window, API budgets and >=11 heartbeats per slot; synthetic writer and integrity checked separately"
+        },
+        {
+          "kind": "5xx",
+          "removed_at": 1794908004.0408828,
+          "recovery": {
+            "seconds_after_removal": 9,
+            "stable_window_seconds": 60,
+            "attempted_in_window": 3030,
+            "failures_in_window": 0,
+            "active_slots": 100
+          },
+          "verdict": "met_at_100_sessions",
+          "scope": "1-second search resolution; conservative zero-error 60s window, API budgets and >=11 heartbeats per slot; synthetic writer and integrity checked separately"
+        },
+        {
+          "kind": "timeout",
+          "removed_at": 1794908114.0393338,
+          "recovery": {
+            "seconds_after_removal": 8,
+            "stable_window_seconds": 60,
+            "attempted_in_window": 3030,
+            "failures_in_window": 0,
+            "active_slots": 100
+          },
+          "verdict": "met_at_100_sessions",
+          "scope": "1-second search resolution; conservative zero-error 60s window, API budgets and >=11 heartbeats per slot; synthetic writer and integrity checked separately"
+        },
+        {
+          "kind": "missing",
+          "removed_at": 1794908224.0408168,
+          "recovery": {
+            "seconds_after_removal": 10,
+            "stable_window_seconds": 60,
+            "attempted_in_window": 3030,
+            "failures_in_window": 0,
+            "active_slots": 100
+          },
+          "verdict": "met_at_100_sessions",
+          "scope": "1-second search resolution; conservative zero-error 60s window, API budgets and >=11 heartbeats per slot; synthetic writer and integrity checked separately"
+        },
+        {
+          "kind": "db-lock",
+          "removed_at": 1794908314.0407522,
+          "recovery": {
+            "seconds_after_removal": 0,
+            "stable_window_seconds": 60,
+            "attempted_in_window": 3030,
+            "failures_in_window": 0,
+            "active_slots": 100
+          },
+          "verdict": "met_at_100_sessions",
+          "scope": "1-second search resolution; conservative zero-error 60s window, API budgets and >=11 heartbeats per slot; synthetic writer and integrity checked separately"
+        },
+        {
+          "kind": "restart",
+          "removed_at": 1794908421.04582,
+          "recovery": {
+            "seconds_after_removal": 1,
+            "stable_window_seconds": 60,
+            "attempted_in_window": 3030,
+            "failures_in_window": 0,
+            "active_slots": 100
+          },
+          "verdict": "met_at_100_sessions",
+          "scope": "1-second search resolution; conservative zero-error 60s window, API budgets and >=11 heartbeats per slot; synthetic writer and integrity checked separately"
+        }
+      ],
+      "limits": [
+        "Same-host synthetic input; no production capacity claim.",
+        "Scheduled-window RPS uses the full requested interval even if interrupted; observed-span RPS is separately labelled.",
+        "Interrupted batches can have native completions without JS body validation; these are never successful reads.",
+        "5-second buckets can cross jitter boundaries; per-slot gap and span are required.",
+        "ps CPU is a sampled OS value, not isolated core demand; TCP connections sampled every 5s."
+      ]
+    },
+    {
+      "stage": "paging-popular-100-60s-smoke",
+      "configured_users": 100,
+      "configured_seconds": 60,
+      "mode": "sessions",
+      "workload_version": "active-sessions-v1",
+      "manifest_sha256": "fd2bb17ce2927188772265813431b9a3dbfef2036438629b40c0f7722514b28e",
+      "expected_rps": 50.5,
+      "phase": "normal",
+      "result": {
+        "stage": "paging-popular-100-60s-smoke",
+        "users": 100,
+        "duration": "60s",
+        "mode": "sessions",
+        "phase": "normal",
+        "elapsed_seconds": 66.57105731964111,
+        "exit_code": 0,
+        "resource_stop": null,
+        "completed_duration": true,
+        "fault_errors": []
+      },
+      "native_window_start_utc_epoch": 1794908599.419127,
+      "expected_requests_full_interval": 3030,
+      "attempted": 3030,
+      "completed": 3030,
+      "body_checked_completed": 3030,
+      "validated_successes": 3030,
+      "failures": 0,
+      "failure_rate": 0.0,
+      "failure_per_attempt_lower_bound": 0.0,
+      "unfinished_attempts": 0,
+      "unverified_attempts": 0,
+      "native_completed_without_content_check": 0,
+      "failure_or_unverified_rate": 0.0,
+      "outcomes": {
+        "ok": 3030
+      },
+      "missed_poll_rounds": 0,
+      "dropped_arrival_iterations": 0,
+      "native_error_codes": {},
+      "native_transport_failures": {},
+      "native_connection_timings_ms": {
+        "http_req_blocked": {
+          "p(50)": 0.29,
+          "p(95)": 0.448,
+          "p(99)": 30.46279,
+          "max": 83.381,
+          "count": 3030,
+          "avg": 0.7376095709570953
+        },
+        "http_req_connecting": {
+          "avg": 0.7120201320132004,
+          "p(50)": 0.269,
+          "p(95)": 0.419,
+          "p(99)": 30.42033,
+          "max": 83.36,
+          "count": 3030
+        },
+        "http_req_tls_handshaking": {
+          "count": 3030,
+          "avg": 0,
+          "p(50)": 0,
+          "p(95)": 0,
+          "p(99)": 0,
+          "max": 0
+        }
+      },
+      "attempted_in_scheduled_window": 3030,
+      "native_completed_in_scheduled_window": 3016,
+      "body_checked_in_scheduled_window": 3014,
+      "rps_full_scheduled_window": 50.5,
+      "completed_rps_full_scheduled_window": 50.266666666666666,
+      "native_event_window_seconds": 64.9082601070404,
+      "native_completion_rps_over_event_window": 46.681269764483254,
+      "observed_request_span_seconds": 59.84966683387756,
+      "rps_over_observed_request_span": 50.6268482397781,
+      "network_bytes_k6": {
+        "data_sent": 278309,
+        "data_received": 160015659
+      },
+      "latency_ms": {
+        "dashboard": {
+          "n": 1200,
+          "p50": 71.3315,
+          "p95": 343.72269999999986,
+          "p99": 501.38871
+        },
+        "feed": {
+          "n": 300,
+          "p50": 81.4005,
+          "p95": 366.2194,
+          "p99": 429.97040999999984
+        },
+        "quotes": {
+          "n": 600,
+          "p50": 5.263,
+          "p95": 32.92554999999999,
+          "p99": 77.87071999999992
+        },
+        "market": {
+          "n": 720,
+          "p50": 21.003,
+          "p95": 133.46834999999993,
+          "p99": 243.14125999999965
+        },
+        "timeline": {
+          "n": 180,
+          "p50": 3.9185,
+          "p95": 37.657199999999946,
+          "p99": 80.07015000000008
+        },
+        "detail": {
+          "n": 30,
+          "p50": 124.52850000000001,
+          "p95": 405.6687999999998,
+          "p99": 448.49088
+        }
+      },
+      "initialized_sessions": 100,
+      "distinct_active_session_slots": 100,
+      "session_rounds": 1200,
+      "completed_rounds": 1200,
+      "minimum_slot_span_seconds": 54.999383211135864,
+      "slot_round_counts": {
+        "min": 12,
+        "max": 12
+      },
+      "inter_round_gap_seconds": {
+        "n": 1100,
+        "p50": 5.0000375509262085,
+        "p95": 5.001109218597412,
+        "max": 5.002002000808716
+      },
+      "server": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 0.0,
+          "p50": 0.6,
+          "p95": 253.82,
+          "max": 254.9
+        },
+        "rss_bytes": {
+          "first": 12320768,
+          "last": 43581440,
+          "p50": 45023232.0,
+          "p95": 50184192.0,
+          "max": 50479104
+        },
+        "threads": {
+          "first": 7,
+          "last": 7,
+          "p50": 10.0,
+          "p95": 22.4,
+          "max": 23
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 0,
+          "p50": 2.0,
+          "p95": 11.199999999999989,
+          "max": 16
+        }
+      },
+      "generator": {
+        "cpu_percent": {
+          "first": 0.0,
+          "last": 1.3,
+          "p50": 8.0,
+          "p95": 18.199999999999996,
+          "max": 20.6
+        },
+        "rss_bytes": {
+          "first": 5685248,
+          "last": 141131776,
+          "p50": 142688256.0,
+          "p95": 146282905.6,
+          "max": 146292736
+        },
+        "threads": {
+          "first": 2,
+          "last": 18,
+          "p50": 18.0,
+          "p95": 18.0,
+          "max": 18
+        },
+        "tcp_connections": {
+          "first": 0,
+          "last": 0,
+          "p50": 2.0,
+          "p95": 15.0,
+          "max": 15
+        }
+      },
+      "fault_recoveries": [],
+      "limits": [
+        "Same-host synthetic input; no production capacity claim.",
+        "Scheduled-window RPS uses the full requested interval even if interrupted; observed-span RPS is separately labelled.",
+        "Interrupted batches can have native completions without JS body validation; these are never successful reads.",
+        "5-second buckets can cross jitter boundaries; per-slot gap and span are required.",
+        "ps CPU is a sampled OS value, not isolated core demand; TCP connections sampled every 5s."
+      ]
+    }
+  ],
+  "product_baseline": "f7b9190c5bba1166cba2166d4361f2cb0712ed86",
+  "workload_sha256": "edc27ba643d1dc36c6544439880432297928519537318b6cec772d253e6a6ab9",
+  "integrity_check": {
+    "base_payloads_missing": 0,
+    "correction_payloads_missing": 0,
+    "correction_versions": 355,
+    "stored_payload_fingerprint_mismatches": 0,
+    "sample_rows": 2160,
+    "samples_preserved": true,
+    "baseline_supplied": true,
+    "successful_writes_missing": 0,
+    "duplicate_successful_write_keys": 0,
+    "integrity_ok": true
+  },
+  "supplemental_db_probe": {
+    "host_samples": 82,
+    "db_probe_errors": {},
+    "db_probe_max_seconds": {
+      "market.sqlite3": 0.0021036670077592134,
+      "jobs.sqlite3": 0.0010015000589191914,
+      "news.sqlite3": 0.0013641670811921358,
+      "tracking.sqlite3": 0.09356762492097914,
+      "facts.sqlite3": 0.0036813749466091394
+    },
+    "limitations": "probe time includes SQL and lock wait; not isolated DB lock duration; host disk/network includes concurrent work"
+  }
+}
