@@ -55,6 +55,37 @@ class ProcessingBenchmarkTest(unittest.TestCase):
                     self.assertEqual(result['stages_inclusive_seconds']['classify_link']['n'], 1)
                 self.assertTrue(all(v is not False for v in result['checks'].values()))
 
+    def test_supported_synthetic_uses_storage_and_preserves_full_price_windows(self):
+        with tempfile.TemporaryDirectory(prefix='test-eval26-supported-') as directory:
+            root = Path(directory)
+            manifest = benchmark.seed_supported_market(root/'market.sqlite3')
+            self.assertEqual(sum(manifest['bars'].values()), 879)
+            articles = benchmark.supported_articles(1)
+            for scenario in ('new','repeat','correction','rules'):
+                with self.subTest(scenario=scenario):
+                    # Each scenario owns its DB copy; source fixtures never overwrite production data.
+                    run = root/scenario; run.mkdir()
+                    source=benchmark.sqlite3.connect(root/'market.sqlite3'); target=benchmark.sqlite3.connect(run/'market.sqlite3')
+                    try: source.backup(target)
+                    finally: source.close(); target.close()
+                    result = benchmark.replay(run, articles, scenario, 'on', True, True)
+                    self.assertTrue(all(v is not False for v in result['checks'].values()), result['checks'])
+                    self.assertEqual(result['calculated_complete_jobs'], 4)
+                    self.assertEqual(result['counts_after']['bodies'], 1)
+                    self.assertEqual(result['supported_results']['observed_adjusted_pairs'], 2)
+                    if scenario == 'repeat':
+                        self.assertEqual(result['computations']['reactions'], 0)
+                        self.assertEqual(result['computations']['observation_attempts'], 4)
+                    if scenario == 'new':
+                        with patch.object(benchmark.market_history,'PATH',run/'market.sqlite3'):
+                            prices={r['day']:r for r in benchmark.market_history.observations('KR','005930')}
+                            runs=benchmark.event_reactions.snapshot(articles[0]['id'])['runs']
+                        public=next(r for r in runs if r['basis']=='public' and r['symbol']=='005930')
+                        window=next(w for w in public['windows'] if w['name']=='event_day')
+                        expected=float(prices['2026-11-05']['closePrice'])/float(prices['2026-11-04']['closePrice'])-1
+                        self.assertAlmostEqual(window['raw_return'],expected,places=12)
+                        self.assertEqual(public['model']['samples'],120)
+
     def test_external_call_attempt_is_blocked_and_reported(self):
         def accidental_network(job):
             with benchmark.socket.socket() as client:
