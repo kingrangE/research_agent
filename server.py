@@ -448,6 +448,12 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 quotes = stocks.get_quotes(codes)
                 quotes = {code:{**quote,'recent_five_minutes':price_tracking.recent(code)} for code,quote in quotes.items()}
+                import minute_volume
+                members={s['code']:s for s in business_ontology.KNOWLEDGE['securities']}
+                for code,quote in quotes.items():
+                    if code in members:
+                        security=members[code]
+                        quote['volume_comparison']=minute_volume.compare(security['country'],security['provider_symbol'])
             except ValueError:
                 self.respond(b'{"error":"Unknown stock codes"}', "application/json", 400)
                 return

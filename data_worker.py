@@ -194,5 +194,9 @@ if __name__=='__main__':
     client=h.Toss()
     while True:
         print(json.dumps(cycle(client,network=args.mode!='reconcile'),ensure_ascii=False),flush=True)
+        if args.mode=='worker':
+            import minute_volume
+            try:print(json.dumps({'minute_volume':minute_volume.collect(client)},ensure_ascii=False),flush=True)
+            except Exception as error:print('분봉 수집 재시도: '+type(error).__name__,flush=True)
         if args.mode!='worker':break
         time.sleep(30)

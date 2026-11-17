@@ -36,10 +36,12 @@ function quoteHTML(code) {
   const direction = q.change_percent > 0 ? 'up' : q.change_percent < 0 ? 'down' : 'flat';
   const price = q.currency === 'USD' ? `$${q.price.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}` : `${q.price.toLocaleString('ko-KR')}<small>원</small>`;
   const recent=q.recent_five_minutes;
+  const volume=q.volume_comparison;
+  const volumeText=volume ? `평소 대비 거래량 · ${volume.status==='review_required'?'비교 기준 검수 중':volume.status==='low_liquidity'?'평소 거래량이 적어 비교 보류':`비교 자료 수집 중 (${volume.valid_days}/${volume.required_days}거래일)`}` : '';
   const recentText=recent?.status==='ok' && Number.isFinite(recent.change_percent) && !stale
     ? `최근 5분 ${recent.change_percent>0?'+':''}${recent.change_percent.toFixed(2)}% · ${escape(quoteTime(recent.actual_start_at))} ~ ${escape(quoteTime(recent.actual_end_at))}`
     : `최근 5분 · ${recent?.status==='outside_session' ? '정규장 관측 구간 아님' : recent?.status==='stale' || stale ? '시세 지연' : recent?.status==='session_unverified' ? '거래 일정 확인 중' : '비교할 시세 수집 중'}`;
-  return `<span class="stock-values"><strong>${price}</strong><span class="stock-change ${direction}">${q.change_percent > 0 ? '+' : ''}${q.change_percent.toFixed(2)}%<small>전일 대비</small></span></span><span class="quote-time">${recentText}</span><span class="quote-time ${stale ? 'stale' : ''}">${stale ? '이전 조회 · ' : ''}시세 기준 ${escape(quoteTime(q.traded_at))} · ${escape(q.delay_label)}${q.market_status === 'CLOSE' ? ' · 장마감' : ''}<span>출처 ${escape(q.source)} · ${q.currency === 'USD' ? '미국 정규장 · ' : ''}조회 ${escape(quoteTime(q.fetched_at))} (한국시간)</span></span>`;
+  return `<span class="stock-values"><strong>${price}</strong><span class="stock-change ${direction}">${q.change_percent > 0 ? '+' : ''}${q.change_percent.toFixed(2)}%<small>전일 대비</small></span></span><span class="quote-time">${recentText}</span>${volumeText?`<span class="quote-time">${escape(volumeText)}</span>`:''}<span class="quote-time ${stale ? 'stale' : ''}">${stale ? '이전 조회 · ' : ''}시세 기준 ${escape(quoteTime(q.traded_at))} · ${escape(q.delay_label)}${q.market_status === 'CLOSE' ? ' · 장마감' : ''}<span>출처 ${escape(q.source)} · ${q.currency === 'USD' ? '미국 정규장 · ' : ''}조회 ${escape(quoteTime(q.fetched_at))} (한국시간)</span></span>`;
 }
 function changeHTML(code) {
   if (mode === 'demo') return '<span class="quote-unavailable">—</span>';

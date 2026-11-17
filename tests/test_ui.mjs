@@ -976,3 +976,10 @@ test('stock timeline keeps observation gaps and rejects outside-range article ma
   const path=html.match(/<path d="([^"]+)"/)[1];
   assert.equal((path.match(/M/g)||[]).length,2);
 });
+
+test('volume comparison keeps insufficient and unreviewed data out of a published ratio',()=>{
+  const run=ui();
+  const html=run(`mode='live';quotes.A={price:100,change_percent:1,currency:'USD',status:'ok',fetched_at:new Date().toISOString(),volume_comparison:{status:'collecting',valid_days:3,required_days:15}};quoteHTML('A')`);
+  assert.ok(html.includes('3/15거래일'));
+  assert.ok(!html.includes('2.8배'));
+});
